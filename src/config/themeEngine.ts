@@ -1,0 +1,340 @@
+// ══════════════════════════════════════════════════
+//  LOCAL-UPLOAD BG — stored separately from main settings
+//  to avoid base64 bloating the settings JSON.
+const UPLOAD_KEY = 'qms-bg-upload';
+
+export function saveLocalBg(dataUrl: string) {
+  localStorage.setItem(UPLOAD_KEY, dataUrl);
+}
+export function loadLocalBg(): string {
+  return localStorage.getItem(UPLOAD_KEY) ?? '';
+}
+export function clearLocalBg() {
+  localStorage.removeItem(UPLOAD_KEY);
+}
+//
+//  THEME ENGINE — Runtime CSS variable switching
+// ══════════════════════════════════════════════════
+
+export interface ThemePreset {
+  id: string;
+  name: string;
+  description: string;
+  accent: string;
+  accentDim: string;
+  accentLight: string;
+}
+
+export interface AppearanceSettings {
+  themeMode: 'light' | 'dark';
+  accentPreset: string;
+  customAccent: string;
+  bgPattern: 'none' | 'dots' | 'grid' | 'lines' | 'cross' | 'waves' | 'hexagon' | 'circuit' | 'diamond';
+  bgImage: string; // URL or predefined key
+  bgImageOpacity: number; // 0–100
+  bgImageBlur: number; // 0–20
+  borderRadius: 'sharp' | 'rounded' | 'pill';
+  sidebarStyle: 'solid' | 'transparent' | 'glass' | 'gradient';
+  density: 'compact' | 'comfortable' | 'spacious';
+  fontFamily: 'system' | 'inter' | 'roboto' | 'poppins' | 'outfit' | 'mono';
+  cardStyle: 'default' | 'glass' | 'flat' | 'elevated' | 'bordered';
+  animationLevel: 'none' | 'subtle' | 'full';
+  navLayout: 'sidebar' | 'top';
+  colorSaturation: number; // 50–150
+  uiScale: 'sm' | 'md' | 'lg';
+  // NEW settings
+  shadowIntensity: 'none' | 'soft' | 'medium' | 'strong';
+  topbarStyle: 'default' | 'accent' | 'dark' | 'glass';
+  customBgUrl: string;
+  localBgName: string; // filename of the uploaded image (display only)
+  sidebarAccent: boolean; // accent colored sidebar items background
+  compactTables: boolean;
+  showBreadcrumbs: boolean;
+  iconStyle: 'outline' | 'filled' | 'duotone';
+}
+
+// ── COLOR PRESETS ──
+export const COLOR_PRESETS: ThemePreset[] = [
+  { id: 'blue',    name: 'Corporate Blue',   description: 'Professional & trustworthy',  accent: '#2563eb', accentDim: '#1d4ed8', accentLight: '#dbeafe' },
+  { id: 'indigo',  name: 'Deep Indigo',      description: 'Modern enterprise look',      accent: '#4f46e5', accentDim: '#4338ca', accentLight: '#e0e7ff' },
+  { id: 'teal',    name: 'Industrial Teal',  description: 'Factory-floor optimal',       accent: '#0d9488', accentDim: '#0f766e', accentLight: '#ccfbf1' },
+  { id: 'emerald', name: 'Emerald Green',    description: 'Quality & compliance',        accent: '#059669', accentDim: '#047857', accentLight: '#d1fae5' },
+  { id: 'sky',     name: 'Sky Blue',         description: 'Light & clean',               accent: '#0284c7', accentDim: '#0369a1', accentLight: '#e0f2fe' },
+  { id: 'violet',  name: 'Royal Violet',     description: 'Premium & distinctive',       accent: '#7c3aed', accentDim: '#6d28d9', accentLight: '#ede9fe' },
+  { id: 'rose',    name: 'Rose',             description: 'Warm & approachable',         accent: '#e11d48', accentDim: '#be123c', accentLight: '#ffe4e6' },
+  { id: 'orange',  name: 'Safety Orange',    description: 'High visibility',             accent: '#ea580c', accentDim: '#c2410c', accentLight: '#fff7ed' },
+  { id: 'slate',   name: 'Neutral Slate',    description: 'Minimal & subtle',            accent: '#475569', accentDim: '#334155', accentLight: '#f1f5f9' },
+  { id: 'cyan',    name: 'Vivid Cyan',       description: 'Tech-forward',                accent: '#0891b2', accentDim: '#0e7490', accentLight: '#cffafe' },
+  { id: 'amber',   name: 'Amber Gold',       description: 'Energetic & bold',            accent: '#d97706', accentDim: '#b45309', accentLight: '#fef3c7' },
+  { id: 'pink',    name: 'Fuchsia Pink',     description: 'Creative & vibrant',          accent: '#c026d3', accentDim: '#a21caf', accentLight: '#fae8ff' },
+  { id: 'lime',    name: 'Lime Green',       description: 'Fresh & natural',             accent: '#65a30d', accentDim: '#4d7c0f', accentLight: '#ecfccb' },
+  { id: 'red',     name: 'Alert Red',        description: 'Critical & urgent',           accent: '#dc2626', accentDim: '#b91c1c', accentLight: '#fee2e2' },
+  { id: 'gold',    name: 'Premium Gold',     description: 'Luxury & prestige',           accent: '#b45309', accentDim: '#92400e', accentLight: '#fef3c7' },
+];
+
+export const BG_PATTERNS = [
+  { id: 'none',     name: 'Clean Solid',    description: 'No background pattern',   css: '' },
+  { id: 'dots',     name: 'Dot Matrix',     description: 'Subtle dot grid',          css: '' },
+  { id: 'grid',     name: 'Grid Lines',     description: 'Engineering grid',         css: '' },
+  { id: 'lines',    name: 'Ruled Lines',    description: 'Horizontal lines',         css: '' },
+  { id: 'cross',    name: 'Crosshatch',     description: 'Cross pattern',            css: '' },
+  { id: 'waves',    name: 'Soft Waves',     description: 'Organic wave pattern',     css: '' },
+  { id: 'hexagon',  name: 'Hexagons',       description: 'Industrial hex grid',      css: '' },
+  { id: 'circuit',  name: 'Circuit Board',  description: 'Tech circuit pattern',     css: '' },
+  { id: 'diamond',  name: 'Diamond',        description: 'Diamond lattice',          css: '' },
+] as const;
+
+export const BG_IMAGES = [
+  { id: 'none',        name: 'None',               thumb: '' },
+  { id: 'gradient1',   name: 'Aurora Blue',         thumb: 'linear-gradient(135deg,#1e3a5f,#0d9488,#2563eb)' },
+  { id: 'gradient2',   name: 'Violet Dusk',         thumb: 'linear-gradient(135deg,#1e1b4b,#7c3aed,#be185d)' },
+  { id: 'gradient3',   name: 'Forest Deep',         thumb: 'linear-gradient(135deg,#052e16,#059669,#0d9488)' },
+  { id: 'gradient4',   name: 'Sunrise',             thumb: 'linear-gradient(135deg,#451a03,#ea580c,#facc15)' },
+  { id: 'gradient5',   name: 'Ocean Depths',        thumb: 'linear-gradient(135deg,#0c4a6e,#0891b2,#0d9488)' },
+  { id: 'gradient6',   name: 'Midnight',            thumb: 'linear-gradient(135deg,#020617,#1e293b,#334155)' },
+  { id: 'gradient7',   name: 'Rose Garden',         thumb: 'linear-gradient(135deg,#4a044e,#c026d3,#e11d48)' },
+  { id: 'gradient8',   name: 'Golden Hour',         thumb: 'linear-gradient(135deg,#431407,#b45309,#facc15)' },
+  { id: 'mesh1',       name: 'Mesh Aurora',         thumb: 'radial-gradient(at 40% 20%,#2563eb 0,transparent 50%),radial-gradient(at 80% 0,#7c3aed 0,transparent 50%),radial-gradient(at 0 50%,#0d9488 0,transparent 50%),#0f172a' },
+  { id: 'mesh2',       name: 'Mesh Sunset',         thumb: 'radial-gradient(at 20% 80%,#ea580c 0,transparent 50%),radial-gradient(at 80% 20%,#e11d48 0,transparent 50%),radial-gradient(at 50% 50%,#facc15 0,transparent 60%),#1c0a03' },
+  { id: 'mesh3',       name: 'Mesh Ocean',          thumb: 'radial-gradient(at 0% 50%,#0891b2 0,transparent 50%),radial-gradient(at 100% 50%,#059669 0,transparent 50%),radial-gradient(at 50% 0%,#2563eb 0,transparent 50%),#020617' },
+  { id: 'fab1',        name: 'Factory Floor',       thumb: 'linear-gradient(160deg,#1e293b 0%,#0f172a 60%,#1e3a5f 100%)' },
+  { id: 'custom',      name: 'Custom URL',          thumb: '' },
+];
+
+export const FONT_OPTIONS = [
+  { id: 'system',  name: 'System Default',   family: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',    google: null },
+  { id: 'inter',   name: 'Inter',            family: '"Inter", sans-serif',                                           google: 'Inter:wght@300;400;500;600;700;800' },
+  { id: 'roboto',  name: 'Roboto',           family: '"Roboto", sans-serif',                                          google: 'Roboto:wght@300;400;500;700' },
+  { id: 'poppins', name: 'Poppins',          family: '"Poppins", sans-serif',                                         google: 'Poppins:wght@300;400;500;600;700' },
+  { id: 'outfit',  name: 'Outfit',           family: '"Outfit", sans-serif',                                          google: 'Outfit:wght@300;400;500;600;700;800' },
+  { id: 'mono',    name: 'JetBrains Mono',   family: '"JetBrains Mono", monospace',                                   google: 'JetBrains+Mono:wght@400;500;700' },
+];
+
+export const CARD_STYLES = [
+  { id: 'default',  name: 'Default',    description: 'Standard bordered card' },
+  { id: 'glass',    name: 'Glass',      description: 'Frosted glass effect' },
+  { id: 'flat',     name: 'Flat',       description: 'Clean & minimal' },
+  { id: 'elevated', name: 'Elevated',   description: 'Bold drop shadow' },
+  { id: 'bordered', name: 'Bordered',   description: 'Accent border highlight' },
+] as const;
+
+export const RADIUS_OPTIONS = [
+  { id: 'sharp',   name: 'Sharp',   value: '2px',  valueSm: '1px', description: 'Industrial' },
+  { id: 'rounded', name: 'Rounded', value: '8px',  valueSm: '6px', description: 'Default' },
+  { id: 'pill',    name: 'Pill',    value: '16px', valueSm: '12px', description: 'Soft' },
+] as const;
+
+export const DENSITY_OPTIONS = [
+  { id: 'compact',     name: 'Compact',     description: 'More data, less space' },
+  { id: 'comfortable', name: 'Comfortable', description: 'Balanced layout' },
+  { id: 'spacious',    name: 'Spacious',    description: 'Extra breathing room' },
+] as const;
+
+const STORAGE_KEY = 'qms-appearance';
+
+// ── DEFAULT ──
+export const DEFAULT_APPEARANCE: AppearanceSettings = {
+  themeMode: 'light',
+  accentPreset: 'blue',
+  customAccent: '',
+  bgPattern: 'none',
+  bgImage: 'none',
+  bgImageOpacity: 30,
+  bgImageBlur: 4,
+  borderRadius: 'rounded',
+  sidebarStyle: 'solid',
+  density: 'comfortable',
+  fontFamily: 'inter',
+  cardStyle: 'default',
+  animationLevel: 'subtle',
+  navLayout: 'sidebar',
+  colorSaturation: 100,
+  uiScale: 'md',
+  shadowIntensity: 'soft',
+  topbarStyle: 'default',
+  customBgUrl: '',
+  localBgName: '',
+  sidebarAccent: false,
+  compactTables: false,
+  showBreadcrumbs: false,
+  iconStyle: 'outline',
+};
+
+// ── Load from localStorage ──
+export function loadAppearance(): AppearanceSettings {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return { ...DEFAULT_APPEARANCE, ...JSON.parse(saved) };
+  } catch { /* ignore */ }
+  return { ...DEFAULT_APPEARANCE };
+}
+
+// ── Save to localStorage ──
+export function saveAppearance(settings: AppearanceSettings) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+}
+
+// ── Load a Google Font dynamically ──
+function loadGoogleFont(fontId: string) {
+  const font = FONT_OPTIONS.find(f => f.id === fontId);
+  if (!font || !font.google) return;
+  const existingId = `gf-${fontId}`;
+  if (document.getElementById(existingId)) return;
+  const link = document.createElement('link');
+  link.id = existingId;
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?family=${font.google}&display=swap`;
+  document.head.appendChild(link);
+}
+
+// ── Get background CSS for a bgImage id ──
+export function getBgImageCss(id: string, customUrl = ''): string {
+  if (id === 'none') return '';
+  // Local uploaded file — load the data URL from its own storage key
+  if (id === 'local') {
+    const dataUrl = loadLocalBg();
+    return dataUrl ? `url(${dataUrl})` : '';
+  }
+  // Remote URL typed by the user
+  if (id === 'custom' && customUrl) return `url(${customUrl})`;
+  const img = BG_IMAGES.find(i => i.id === id);
+  if (!img || !img.thumb) return '';
+  return img.thumb;
+}
+
+// ── Apply to DOM ──
+export function applyAppearance(settings: AppearanceSettings) {
+  const root = document.documentElement;
+
+  // 1. Dark/Light mode
+  if (settings.themeMode === 'dark') {
+    root.classList.add('dark');
+  } else {
+    root.classList.remove('dark');
+  }
+
+  // 2. Accent color + saturation
+  const preset = COLOR_PRESETS.find(p => p.id === settings.accentPreset);
+  let accentHex = preset?.accent ?? '#2563eb';
+  if (settings.customAccent) accentHex = settings.customAccent;
+
+  root.style.setProperty('--accent', accentHex);
+  root.style.setProperty('--accent-dim', adjustColor(accentHex, -20));
+  root.style.setProperty('--accent-light',
+    settings.themeMode === 'dark'
+      ? hexToRgba(accentHex, 0.12)
+      : adjustColor(accentHex, 80, 0.12)
+  );
+  root.style.setProperty('--color-saturation', `${settings.colorSaturation ?? 100}%`);
+
+  // 3. Background pattern on #content
+  const app = document.getElementById('app');
+  const content = document.getElementById('content');
+  const target = content ?? app;
+  if (target) {
+    target.className = target.className.replace(/bg-pattern-\S+/g, '').trim();
+    target.classList.add(`bg-pattern-${settings.bgPattern}`);
+  }
+
+  // 4. Border radius
+  const radiusOpt = RADIUS_OPTIONS.find(r => r.id === settings.borderRadius);
+  if (radiusOpt) {
+    root.style.setProperty('--radius', radiusOpt.value);
+    root.style.setProperty('--radius-sm', radiusOpt.valueSm);
+  }
+
+  // 5. Font family
+  loadGoogleFont(settings.fontFamily);
+  const fontOpt = FONT_OPTIONS.find(f => f.id === settings.fontFamily);
+  if (fontOpt) {
+    root.style.setProperty('--font-sans', fontOpt.family);
+    document.body.style.fontFamily = fontOpt.family;
+  }
+
+  // 6. Card style class on root
+  root.setAttribute('data-card-style', settings.cardStyle ?? 'default');
+
+  // 7. Animation level
+  root.setAttribute('data-animation', settings.animationLevel ?? 'subtle');
+  if (settings.animationLevel === 'none') {
+    root.style.setProperty('--transition-speed', '0ms');
+  } else if (settings.animationLevel === 'subtle') {
+    root.style.setProperty('--transition-speed', '150ms');
+  } else {
+    root.style.setProperty('--transition-speed', '300ms');
+  }
+
+  // 8. UI Scale
+  const scaleMap: Record<string, string> = { sm: '13px', md: '14px', lg: '15px' };
+  const baseSize = scaleMap[settings.uiScale ?? 'md'] ?? '14px';
+  root.style.setProperty('--ui-base-size', baseSize);
+  document.body.style.fontSize = baseSize;
+
+  // 9. Sidebar style
+  root.setAttribute('data-sidebar', settings.sidebarStyle ?? 'solid');
+
+  // 10. Density
+  root.setAttribute('data-density', settings.density ?? 'comfortable');
+  const densityPad: Record<string, string> = {
+    compact: '10px',
+    comfortable: '18px',
+    spacious: '26px',
+  };
+  root.style.setProperty('--density-pad', densityPad[settings.density ?? 'comfortable']);
+
+  // 11. Background image on #app
+  const bgImageCss = getBgImageCss(settings.bgImage ?? 'none', settings.customBgUrl ?? '');
+  if (settings.bgImage && settings.bgImage !== 'none') {
+    const opacity = (settings.bgImageOpacity ?? 30) / 100;
+    const blur = settings.bgImageBlur ?? 4;
+    root.style.setProperty('--bg-image', bgImageCss);
+    root.style.setProperty('--bg-image-opacity', String(opacity));
+    root.style.setProperty('--bg-image-blur', `${blur}px`);
+    root.setAttribute('data-bg-image', 'true');
+  } else {
+    root.style.setProperty('--bg-image', 'none');
+    root.removeAttribute('data-bg-image');
+  }
+
+  // 12. Shadow intensity
+  const shadowMap: Record<string, { sm: string; md: string; lg: string }> = {
+    none:   { sm: 'none', md: 'none', lg: 'none' },
+    soft:   { sm: '0 1px 2px rgba(0,0,0,0.05)', md: '0 4px 6px -1px rgba(0,0,0,0.07),0 2px 4px rgba(0,0,0,0.04)', lg: '0 10px 15px -3px rgba(0,0,0,0.08),0 4px 6px rgba(0,0,0,0.04)' },
+    medium: { sm: '0 1px 3px rgba(0,0,0,0.1)',  md: '0 4px 8px rgba(0,0,0,0.12)',                                   lg: '0 12px 20px rgba(0,0,0,0.15)' },
+    strong: { sm: '0 2px 4px rgba(0,0,0,0.15)', md: '0 6px 12px rgba(0,0,0,0.2)',                                   lg: '0 16px 32px rgba(0,0,0,0.25)' },
+  };
+  const sMap = shadowMap[settings.shadowIntensity ?? 'soft'];
+  root.style.setProperty('--shadow-sm', sMap.sm);
+  root.style.setProperty('--shadow-md', sMap.md);
+  root.style.setProperty('--shadow-lg', sMap.lg);
+
+  // 13. Topbar style
+  root.setAttribute('data-topbar', settings.topbarStyle ?? 'default');
+
+  // 14. Sidebar accent
+  root.setAttribute('data-sidebar-accent', settings.sidebarAccent ? 'true' : 'false');
+
+  // 15. Compact tables
+  root.setAttribute('data-compact-tables', settings.compactTables ? 'true' : 'false');
+}
+
+// ── Simple color helpers ──
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function adjustColor(hex: string, amount: number, alpha?: number): string {
+  let r = parseInt(hex.slice(1, 3), 16);
+  let g = parseInt(hex.slice(3, 5), 16);
+  let b = parseInt(hex.slice(5, 7), 16);
+  r = Math.min(255, Math.max(0, r + amount));
+  g = Math.min(255, Math.max(0, g + amount));
+  b = Math.min(255, Math.max(0, b + amount));
+  if (alpha !== undefined) {
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
