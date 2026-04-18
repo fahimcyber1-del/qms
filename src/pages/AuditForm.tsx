@@ -1,10 +1,10 @@
-ï»¿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, Check, X, Plus, Trash2, FileText, AlertCircle, Save, Building, User, Users, Award, ClipboardCheck, ShieldCheck, Filter, Camera, Image } from 'lucide-react';
 
 const AUDIT_CLAUSES = [
   {
-    group: "CLAUSE 4 â€“ CONTEXT OF THE ORGANIZATION",
+    group: "CLAUSE 4 – CONTEXT OF THE ORGANIZATION",
     items: [
       { id: "4.1", text: "Organization context documented?" },
       { id: "4.2", text: "Internal issues identified?" },
@@ -15,7 +15,7 @@ const AUDIT_CLAUSES = [
     ]
   },
   {
-    group: "CLAUSE 5 â€“ LEADERSHIP",
+    group: "CLAUSE 5 – LEADERSHIP",
     items: [
       { id: "5.1", text: "Top management commitment demonstrated?" },
       { id: "5.2", text: "Quality policy established?" },
@@ -26,7 +26,7 @@ const AUDIT_CLAUSES = [
     ]
   },
   {
-    group: "CLAUSE 6 â€“ PLANNING",
+    group: "CLAUSE 6 – PLANNING",
     items: [
       { id: "6.1", text: "Risks and opportunities identified?" },
       { id: "6.2", text: "Risk assessment documented?" },
@@ -37,7 +37,7 @@ const AUDIT_CLAUSES = [
     ]
   },
   {
-    group: "CLAUSE 7 â€“ SUPPORT",
+    group: "CLAUSE 7 – SUPPORT",
     items: [
       { id: "7.1.1", text: "Machines adequate for production?" },
       { id: "7.1.2", text: "Inspection tools available?" },
@@ -57,7 +57,7 @@ const AUDIT_CLAUSES = [
     ]
   },
   {
-    group: "CLAUSE 8 â€“ OPERATION",
+    group: "CLAUSE 8 – OPERATION",
     items: [
       { id: "8.1.1", text: "Production planning documented?" },
       { id: "8.1.2", text: "Quality control plan available?" },
@@ -87,7 +87,7 @@ const AUDIT_CLAUSES = [
     ]
   },
   {
-    group: "CLAUSE 9 â€“ PERFORMANCE EVALUATION",
+    group: "CLAUSE 9 – PERFORMANCE EVALUATION",
     items: [
       { id: "9.1.1", text: "DHU monitored?" },
       { id: "9.1.2", text: "RFT monitored?" },
@@ -103,7 +103,7 @@ const AUDIT_CLAUSES = [
     ]
   },
   {
-    group: "CLAUSE 10 â€“ IMPROVEMENT",
+    group: "CLAUSE 10 – IMPROVEMENT",
     items: [
       { id: "10.1.1", text: "Quality improvement plan implemented?" },
       { id: "10.1.2", text: "Process improvement activities conducted?" },
@@ -244,7 +244,7 @@ export function AuditForm({ params, onNavigate }: AuditFormProps) {
             </h1>
             <div className="flex items-center gap-3 mt-0.5">
               <span className="text-xs font-bold text-gray-400 font-mono tracking-tighter">{formData.auditId}</span>
-              <span className="text-[10px] text-gray-300">â€¢</span>
+              <span className="text-[10px] text-gray-300">•</span>
               <span className="text-xs font-bold text-blue-500 uppercase tracking-widest">{formData.auditType}</span>
             </div>
           </div>

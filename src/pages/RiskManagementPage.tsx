@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
   ShieldAlert, TrendingUp, Plus, Edit2, 
@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-// â”€â”€ Types â”€â”€
+// ── Types ──
 export type RiskCategory = 'Product' | 'Process' | 'Critical Process';
 export type RiskStatus = 'Open' | 'Pending' | 'Closed';
 export type RiskLevel = 'Low' | 'Medium' | 'High' | 'Critical';
@@ -36,9 +36,10 @@ export interface RiskManagementRecord {
   mitigationPlan: string;
   status: RiskStatus;
   comments: RiskComment[];
+  attachments: { name: string, data: string }[];
 }
 
-// â”€â”€ Default Data â”€â”€
+// ── Default Data ──
 const DEFAULT_RECORDS: RiskManagementRecord[] = [
   {
     id: 1, code: 'RM-001', title: 'Fabric Color Bleeding during Wash', category: 'Product',
@@ -102,7 +103,7 @@ const CATEGORY_COLORS: Record<RiskCategory, string> = {
   'Critical Process': 'text-rose-600 bg-rose-50 border-rose-200',
 };
 
-// â”€â”€ Main Component â”€â”€
+// ── Main Component ──
 export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, params?: any) => void }) {
   const [records, setRecords] = useState<RiskManagementRecord[]>([]);
   const [mode, setMode] = useState<'list' | 'view' | 'form'>('list');
@@ -149,7 +150,7 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
       severity: 1, likelihood: 1, score: 1, level: 'Low',
       identifiedDate: new Date().toISOString().split('T')[0], targetDate: '',
       responsiblePerson: '', existingControls: '', mitigationPlan: '',
-      status: 'Open', comments: []
+      status: 'Open', comments: [], attachments: []
     });
     setMode('form');
   };
@@ -224,6 +225,24 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
     setNewComment('');
   };
 
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const newAtts: any[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const data = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      newAtts.push({ name: file.name, data });
+    }
+    
+    setFormData(prev => ({ ...prev, attachments: [...(prev.attachments || []), ...newAtts] }));
+  };
+
   // Exports
   const handleExportExcel = () => {
     const dataToExport = (selectedIds.length > 0 ? records.filter(r => selectedIds.includes(r.id)) : filtered).map(r => ({
@@ -291,6 +310,12 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
           ]),
           { columnStyles: { 0: { cellWidth: 30 }, 1: { cellWidth: 35 } } }
         ) + 6;
+      }
+
+      if (record.attachments && record.attachments.length > 0) {
+        const { embedAttachments } = await import('../utils/pdfExport');
+        const rawData = record.attachments.map(a => typeof a === 'string' ? a : a.data);
+        await embedAttachments(doc, rawData, 'RISK MITIGATION EVIDENCE PHOTOS');
       }
 
       drawSignatureRow(doc, y, ['Risk Owner', 'QA Manager', 'Dept. Head', 'Authorized By']);
@@ -534,6 +559,28 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
                   {selectedRecord.mitigationPlan || <span className="opacity-50 italic">No mitigation plan documented.</span>}
                 </div>
               </div>
+
+              <div className="col-span-4 mt-2 pt-6 border-t border-border-main">
+                <p className="text-[10px] font-bold text-text-3 uppercase tracking-wide mb-3">Photographic Evidence</p>
+                {!selectedRecord.attachments || selectedRecord.attachments.length === 0 ? (
+                  <div className="text-xs text-text-3 italic opacity-50">No evidence photos attached.</div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    {selectedRecord.attachments.map((file, i) => (
+                      <div key={i} className="aspect-square bg-bg-2 rounded-xl border border-border-main overflow-hidden group relative">
+                        {file.data && file.data.startsWith('data:image') ? (
+                          <img src={file.data} alt={file.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-accent"><Download className="w-6 h-6" /></div>
+                        )}
+                        <div className="absolute inset-x-0 bottom-0 bg-black/60 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="text-[9px] text-white truncate font-medium">{file.name}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -697,6 +744,33 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
             <div>
               <label className={labelClass}>Mitigation / Corrective Action Plan</label>
               <textarea className={`${inputClass} min-h-[120px] resize-y leading-relaxed font-medium`} placeholder="Outline the action plan to reduce the severity or likelihood of this risk." value={formData.mitigationPlan || ''} onChange={e => setFormData({ ...formData, mitigationPlan: e.target.value })} />
+            </div>
+
+            <div className="pt-4">
+               <div className="flex justify-between items-center mb-4">
+                 <label className={labelClass}>Supporting Evidence & Photos</label>
+                 <label className="text-[10px] font-black uppercase tracking-widest text-accent cursor-pointer hover:underline">
+                   Add Attachment
+                   <input type="file" multiple className="hidden" onChange={handleFileAttach} />
+                 </label>
+               </div>
+               
+               {!formData.attachments || formData.attachments.length === 0 ? (
+                 <div className="text-xs text-text-3 italic text-center py-6 bg-bg-2 rounded-xl border border-dashed border-border-main">
+                   No evidence attached.
+                 </div>
+               ) : (
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {formData.attachments.map((file, i) => (
+                      <div key={i} className="flex items-center justify-between bg-bg-2 p-2.5 rounded-lg border border-border-main group">
+                        <span className="text-xs font-medium text-text-1 truncate pr-2">{file.name}</span>
+                        <button type="button" onClick={() => setFormData(p => ({ ...p, attachments: (p.attachments || []).filter((_, idx) => idx !== i) }))} className="text-red-500 hover:bg-red-50 rounded p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                 </div>
+               )}
             </div>
           </div>
         </div>

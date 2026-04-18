@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { 
   Plus, Search, Filter, Trash2, Edit2 as Edit, FileText, Download, Printer, 
@@ -49,7 +49,7 @@ function DefectLibrary() {
       categoryId: '1', 
       code: 'Z01', 
       name: 'Zipper Missing', 
-      localName: 'à¦šà§‡à¦‡à¦¨ à¦¨à§‡à¦‡ (Chain Nei)',
+      localName: 'চেইন নেই (Chain Nei)',
       department: 'Accessories', 
       process: 'Zipper', 
       severity: 'Critical', 
@@ -66,7 +66,6 @@ function DefectLibrary() {
         zoneB: 'Critical',
         zoneC: 'Critical'
       },
-      standardReference: 'ASTM D2061', 
       revision: 'v1.0', 
       createdBy: 'Admin', 
       createdAt: new Date().toISOString(), 
@@ -77,7 +76,7 @@ function DefectLibrary() {
       categoryId: '1', 
       code: 'Z02', 
       name: 'Zipper Broken Teeth', 
-      localName: 'à¦šà§‡à¦‡à¦¨ à¦¦à¦¾à¦à¦¤ à¦­à¦¾à¦™à¦¾ (Chain Daat Bhanga)',
+      localName: 'চেইন দাঁত ভাঙ্গা (Chain Daat Bhanga)',
       department: 'Accessories', 
       process: 'Zipper', 
       severity: 'Major', 
@@ -1027,48 +1026,48 @@ function DefectLibrary() {
 
   const downloadIndividualPDF = async (defect: Defect) => {
     const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
+      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
       proTable, embedAttachments, addPageFooters, drawSignatureRow
     } = await import('../utils/pdfExport');
 
     const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    const categoryName = categories.find(c => c.id === defect.categoryId)?.name || 'N/A';
-    let y = drawPdfHeader(doc, 'Defect Library Report', `${defect.code} \u2022 ${defect.severity}`);
+    const categoryName = categories.find(c => c.id === defect.categoryId)?.name || 'General';
+    let y = drawPdfHeader(doc, 'Defect Specification Report', `Code: ${defect.code} \u2022 ${defect.severity}`);
 
-    y = drawInfoGrid(doc, y, [
+    y = drawRecordTable(doc, y, 'Defect Classification', [
       { label: 'Defect Code',        value: defect.code },
       { label: 'Defect Name',        value: defect.name },
       { label: 'Local Name',         value: defect.localName || '\u2014' },
       { label: 'Category',           value: categoryName },
       { label: 'Severity Level',     value: defect.severity },
       { label: 'Department',         value: defect.department || '\u2014' },
-      { label: 'Process',            value: defect.process || '\u2014' },
-      { label: 'Standard Reference', value: defect.standardReference || '\u2014' },
+      { label: 'Process / Stage',    value: defect.process || '\u2014' },
+      { label: 'Standard Ref.',      value: defect.standardReference || '\u2014' },
     ]);
 
-    const sections: { label: string; content?: string }[] = [
-      { label: 'Description',        content: defect.description },
-      { label: 'Root Cause',         content: defect.rootCause },
-      { label: 'Corrective Action',  content: defect.correctiveAction },
-      { label: 'Preventive Action',  content: defect.preventiveAction },
-    ];
-
-    for (const sec of sections) {
-      if (!sec.content) continue;
-      y = drawSectionLabel(doc, y, sec.label);
-      y = proTable(doc, y, [['Details']], [[sec.content]]) + 6;
-    }
+    y = drawRecordTable(doc, y, 'Technical Analysis & Mitigation', [
+      { label: 'Issue Description',  value: defect.description, fullWidth: true },
+      { label: 'Root Cause Analysis',value: defect.rootCause || 'Analysis pending...', fullWidth: true },
+      { label: 'Corrective Action',  value: defect.correctiveAction || 'Immediate action required', fullWidth: true },
+      { label: 'Preventive Action',  value: defect.preventiveAction || 'Long-term mitigation required', fullWidth: true },
+    ]);
 
     if (defect.zoningImpact) {
-      y = drawSectionLabel(doc, y, 'Zoning Impact');
+      y = drawSectionLabel(doc, y, 'Impact Zoning (A/B/C)');
       y = proTable(doc, y,
-        [['Zone A (Visible)', 'Zone B (Semi-Visible)', 'Zone C (Hidden)']],
+        [['Zone A - Critical', 'Zone B - Minor', 'Zone C - Hidden']],
         [[defect.zoningImpact.zoneA || '\u2014', defect.zoningImpact.zoneB || '\u2014', defect.zoningImpact.zoneC || '\u2014']],
-        { columnStyles: { 0: { halign: 'center', fontStyle: 'bold' }, 1: { halign: 'center', fontStyle: 'bold' }, 2: { halign: 'center', fontStyle: 'bold' } } }
-      ) + 6;
+        { 
+          columnStyles: { 
+            0: { halign: 'center', fontStyle: 'bold' }, 
+            1: { halign: 'center', fontStyle: 'bold' }, 
+            2: { halign: 'center', fontStyle: 'bold' } 
+          } 
+        }
+      ) + 12;
     }
 
-    drawSignatureRow(doc, y, ['QA Manager', 'Technical Head', 'Approved By']);
+    y = drawSignatureRow(doc, y, ['Quality Specialist', 'Production Manager', 'Compliance Auditor']);
 
     // Collect and embed reference images
     const loadToBase64 = (src: string): Promise<string> => new Promise((resolve, reject) => {
@@ -1359,7 +1358,7 @@ function DefectLibrary() {
                 </div>
               </div>
 
-              {/* Sidebar â€” Right Column */}
+              {/* Sidebar — Right Column */}
               <div className="space-y-6">
                 {/* Severity Indicator */}
                 <div className={`rounded-2xl border shadow-sm overflow-hidden ${
@@ -1903,7 +1902,7 @@ function DefectLibrary() {
                               <div className="text-text-1 font-medium object-contain">
                                 {categories.find(c => c.id === defect.categoryId)?.name || 'Uncategorized'}
                               </div>
-                              <div className="text-xs text-text-2">{defect.department} â€¢ {defect.process}</div>
+                              <div className="text-xs text-text-2">{defect.department} • {defect.process}</div>
                             </td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${SEVERITY_COLORS[defect.severity as keyof typeof SEVERITY_COLORS]}`}>

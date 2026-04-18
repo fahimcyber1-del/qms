@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, Plus, Save, Activity, Calendar, User, AlertTriangle, Layers, X, Edit2, Trash2, Download } from 'lucide-react';
 import { InspectionRecord, InspectionDefect } from '../types';
@@ -17,25 +17,104 @@ export function ProductionQualityForm({ params, onNavigate }: ProductionQualityF
   const { mode, data, recordType = 'detailed' } = params;
   const isReadOnly = mode === 'view';
   
-  const [units] = useState(['Unit-1', 'Unit-2', 'Unit-3', 'Unit-4', 'Unit-5']);
-  const [sections] = useState(['Sewing', 'Finishing', 'Cutting', 'Packing']);
-  const [lines] = useState(['Line-1', 'Line-2', 'Line-3', 'Line-4', 'Line-5', 'Line-6', 'Line-7', 'Line-8', 'Line-9', 'Line-10']);
+  const [units, setUnits] = React.useState<string[]>([]);
+  const [sections, setSections] = React.useState<string[]>([]);
+  const [lines, setLines] = React.useState<string[]>([]);
+  const [defectOptions, setDefectOptions] = React.useState<any[]>([]);
 
-  const [formData, setFormData] = useState<Partial<InspectionRecord>>(data || {
-    id: `PQ-${Date.now()}`,
-    date: new Date().toISOString().split('T')[0],
-    factory: 'Main Factory', unit: units[0] || '', section: sections[0] || '', floor: '',
-    lineNumber: lines[0] || '', style: '', orderNumber: '', buyer: '',
-    operatorId: '', qcInspector: '', dayTarget: 0, checkedQuantity: 0,
-    goodsQuantity: 0, totalDefects: 0, standardRft: 98, standardDhu: 2,
-    standardPercentageDefective: 3, shift: 'Day', machineNumber: '', remark: '',
-    source: recordType, topDefects: [{ name: '', count: 0 }, { name: '', count: 0 }, { name: '', count: 0 }],
-    uid: 'user'
+  React.useEffect(() => {
+    const u = localStorage.getItem('garmentqms_config_units');
+    const s = localStorage.getItem('garmentqms_config_sections');
+    const l = localStorage.getItem('garmentqms_config_lines');
+    const d = localStorage.getItem('garmentqms_defects');
+    
+    const loadedUnits = u ? JSON.parse(u) : ['Unit-1', 'Unit-2', 'Unit-3', 'Unit-4', 'Unit-5'];
+    const loadedSections = s ? JSON.parse(s) : ['Sewing', 'Finishing', 'Cutting', 'Packing'];
+    const loadedLines = l ? JSON.parse(l) : ['Line-1', 'Line-2', 'Line-3', 'Line-4', 'Line-5', 'Line-6', 'Line-7', 'Line-8', 'Line-9', 'Line-10'];
+
+    setUnits(loadedUnits);
+    setSections(loadedSections);
+    setLines(loadedLines);
+    if (d) setDefectOptions(JSON.parse(d));
+
+    // If creating, initialize defaults from loaded config
+    if (mode === 'create') {
+      setFormData(prev => ({
+        ...prev,
+        unit: loadedUnits[0] || '',
+        section: loadedSections[0] || '',
+        lineNumber: loadedLines[0] || ''
+      }));
+    }
+  }, [mode]);
+
+  const [formData, setFormData] = useState<Partial<InspectionRecord>>(() => {
+    if (data) return data;
+    
+    // Fetch KPI Targets
+    let dhuTarget = 5;
+    let rftTarget = 95;
+    try {
+      const kpis = JSON.parse(localStorage.getItem('garmentqms_kpis') || '[]');
+      const dhuKpi = kpis.find((k: any) => k.kpiName === 'DHU');
+      const rftKpi = kpis.find((k: any) => k.kpiName === 'RFT');
+      if (dhuKpi) dhuTarget = dhuKpi.targetValue;
+      if (rftKpi) rftTarget = rftKpi.targetValue;
+    } catch(e) {}
+
+    return {
+      id: `PQ-${Date.now()}`,
+      date: new Date().toISOString().split('T')[0],
+      factory: 'Main Factory', unit: '', section: '', floor: '',
+      lineNumber: '', style: '', orderNumber: '', buyer: '',
+      operatorId: '', qcInspector: '', dayTarget: 0, checkedQuantity: 0,
+      goodsQuantity: 0, totalDefects: 0, standardRft: rftTarget, standardDhu: dhuTarget,
+      standardPercentageDefective: 3, shift: 'Day', machineNumber: '', remark: '',
+      source: recordType, topDefects: [{ name: '', count: 0 }, { name: '', count: 0 }, { name: '', count: 0 }],
+      uid: 'user'
+    };
   });
 
   const handleChange = (field: keyof InspectionRecord, value: any) => {
     if (isReadOnly) return;
     setFormData({ ...formData, [field]: value });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isReadOnly) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        // Simple CSV parse: Name, Count
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+        const newDefects = [...(formData.topDefects || [])];
+        
+        let added = 0;
+        lines.forEach((line, i) => {
+          if (i === 0 && line.toLowerCase().includes('name')) return; // skip header
+          const parts = line.split(',');
+          if (parts.length >= 2) {
+            newDefects.push({
+              name: parts[0].trim(),
+              count: parseInt(parts[1].trim()) || 0
+            });
+            added++;
+          }
+        });
+        
+        if (added > 0) {
+          setFormData({ ...formData, topDefects: newDefects });
+        }
+      } catch (err) {
+        console.error('Failed to parse defects CSV', err);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleSave = () => {
@@ -136,7 +215,7 @@ export function ProductionQualityForm({ params, onNavigate }: ProductionQualityF
             <ChevronLeft className="w-5 h-5" />
           </button>
           <h2 className="text-2xl font-bold text-text-1">
-            {mode === 'create' ? `New ${formData.source === 'detailed' ? 'Detailed' : 'Quick'} Quality Record` : 
+            {mode === 'create' ? `New Quality Inspection Record` : 
              mode === 'edit' ? `Edit Quality Record` : `Quality Record Details`}
           </h2>
         </div>
@@ -215,11 +294,10 @@ export function ProductionQualityForm({ params, onNavigate }: ProductionQualityF
             </div>
           </div>
 
-          {formData.source === 'detailed' && (
-            <div className="bg-bg-1 p-6 md:p-8 rounded-2xl border border-border-main shadow-sm">
-              <h4 className="font-bold text-lg mb-6 flex items-center gap-2 text-text-1 border-b border-border-main pb-3">
-                <User className="w-5 h-5 text-purple-500" /> 2. Style & Personnel
-              </h4>
+          <div className="bg-bg-1 p-6 md:p-8 rounded-2xl border border-border-main shadow-sm">
+            <h4 className="font-bold text-lg mb-6 flex items-center gap-2 text-text-1 border-b border-border-main pb-3">
+              <User className="w-5 h-5 text-purple-500" /> 2. Style & Personnel
+            </h4>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Buyer">
                   <input className="w-full bg-bg-2 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={formData.buyer} readOnly={isReadOnly} onChange={e => handleChange('buyer', e.target.value)} />
@@ -235,14 +313,13 @@ export function ProductionQualityForm({ params, onNavigate }: ProductionQualityF
                 </Field>
               </div>
             </div>
-          )}
-        </div>
+          </div>
 
         {/* Results Info Column */}
         <div className="space-y-6">
           <div className="bg-bg-1 p-6 md:p-8 rounded-2xl border border-border-main shadow-sm">
             <h4 className="font-bold text-lg mb-6 flex items-center gap-2 text-text-1 border-b border-border-main pb-3">
-              <Activity className="w-5 h-5 text-blue-500" /> {formData.source === 'detailed' ? '3' : '2'}. Inspection Results
+              <Activity className="w-5 h-5 text-blue-500" /> 3. Inspection Results
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Field label="Checked Qty" required>
@@ -271,52 +348,89 @@ export function ProductionQualityForm({ params, onNavigate }: ProductionQualityF
           </div>
 
           <div className="bg-bg-1 p-6 md:p-8 rounded-2xl border border-border-main shadow-sm">
-            <h4 className="font-bold text-lg mb-6 flex items-center gap-2 text-text-1 border-b border-border-main pb-3">
-              <AlertTriangle className="w-5 h-5 text-amber-500" /> {formData.source === 'detailed' ? '4' : '3'}. Top Minor/Major Defects
-            </h4>
-            <div className="space-y-4">
-              {[0, 1, 2].map((idx) => {
-                const defect = formData.topDefects?.[idx] || { name: '', count: 0 };
-                return (
-                  <div key={idx} className="flex gap-4 items-center">
-                    <div className="flex-1">
-                      <input 
-                        type="text" 
-                        placeholder={`Defect ${idx + 1} Designation`} 
-                        className="w-full bg-bg-2 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1"
-                        value={defect.name}
-                        readOnly={isReadOnly}
-                        onChange={(e) => {
-                          if (isReadOnly) return;
-                          const newDefects = [...(formData.topDefects || [{},{},{}])];
-                          newDefects[idx] = { ...newDefects[idx], name: e.target.value } as InspectionDefect;
-                          setFormData({ ...formData, topDefects: newDefects });
-                        }}
-                      />
-                    </div>
-                    <div className="w-32">
-                      <input 
-                        type="number" 
-                        placeholder="Qty" 
-                        className="w-full bg-bg-2 border-none rounded-xl px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-red-500 outline-none text-red-500 text-center"
-                        value={defect.count || ''}
-                        readOnly={isReadOnly}
-                        onChange={(e) => {
-                          if (isReadOnly) return;
-                          const newDefects = [...(formData.topDefects || [{},{},{}])];
-                          newDefects[idx] = { ...newDefects[idx], count: Number(e.target.value) } as InspectionDefect;
-                          setFormData({ ...formData, topDefects: newDefects });
-                        }}
-                      />
-                    </div>
+            <div className="flex items-center justify-between mb-6 border-b border-border-main pb-3">
+              <h4 className="font-bold text-lg flex items-center gap-2 text-text-1">
+                <AlertTriangle className="w-5 h-5 text-amber-500" /> 4. Detected Defects
+              </h4>
+              {!isReadOnly && (
+                <div className="flex items-center gap-2">
+                  <label className="btn btn-ghost border border-border-main cursor-pointer px-3 py-1.5 text-sm flex items-center gap-2">
+                    <Download className="w-4 h-4" /> Upload CSV
+                    <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+                  </label>
+                  <button type="button" onClick={() => setFormData({ ...formData, topDefects: [...(formData.topDefects || []), { name: '', count: 0 }] })} className="btn btn-primary px-3 py-1.5 text-sm flex items-center gap-2 shadow-sm">
+                    <Plus className="w-4 h-4" /> Add Defect
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            <datalist id="defect-options">
+              {defectOptions.map((d: any) => (
+                <option key={d.id || d.code} value={d.name}>{d.code} - {d.name}</option>
+              ))}
+            </datalist>
+
+            <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+              {(formData.topDefects || []).map((defect, idx) => (
+                <div key={idx} className="flex gap-4 items-center group">
+                  <div className="w-8 text-center text-text-3 font-mono text-sm">{idx + 1}.</div>
+                  <div className="flex-1">
+                    <input 
+                      type="text" 
+                      list="defect-options"
+                      placeholder={`Select or type defect designation`} 
+                      className="w-full bg-bg-2 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1"
+                      value={defect.name}
+                      readOnly={isReadOnly}
+                      onChange={(e) => {
+                        if (isReadOnly) return;
+                        const newDefects = [...(formData.topDefects || [])];
+                        newDefects[idx] = { ...newDefects[idx], name: e.target.value } as InspectionDefect;
+                        setFormData({ ...formData, topDefects: newDefects });
+                      }}
+                    />
                   </div>
-                );
-              })}
+                  <div className="w-24">
+                    <input 
+                      type="number" 
+                      placeholder="Qty" 
+                      className="w-full bg-bg-2 border-none rounded-xl px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-red-500 outline-none text-red-500 text-center"
+                      value={defect.count === 0 && !defect.name ? '' : defect.count || ''}
+                      readOnly={isReadOnly}
+                      onChange={(e) => {
+                        if (isReadOnly) return;
+                        const newDefects = [...(formData.topDefects || [])];
+                        newDefects[idx] = { ...newDefects[idx], count: Number(e.target.value) } as InspectionDefect;
+                        setFormData({ ...formData, topDefects: newDefects });
+                      }}
+                    />
+                  </div>
+                  {!isReadOnly && (
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        const newDefects = [...(formData.topDefects || [])];
+                        newDefects.splice(idx, 1);
+                        setFormData({ ...formData, topDefects: newDefects });
+                      }}
+                      className="w-10 h-10 rounded-xl flex items-center justify-center text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {(!formData.topDefects || formData.topDefects.length === 0) && (
+                <div className="text-center p-4 text-text-3 text-sm border border-dashed border-border-main rounded-xl">
+                  No defects logged. Add a defect or upload a CSV.
+                </div>
+              )}
             </div>
           </div>
 
           <div className="bg-bg-1 p-6 md:p-8 rounded-2xl border border-border-main shadow-sm">
-            <Field label={`${formData.source === 'detailed' ? '5' : '4'}. Remarks / Notes`}>
+            <Field label="5. Remarks / Notes">
               <textarea 
                 className="w-full bg-bg-2 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1 min-h-[100px] resize-y" 
                 placeholder="Include corrective actions taken, operator notes, etc..."

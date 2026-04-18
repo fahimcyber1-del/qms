@@ -51,6 +51,8 @@ export interface AppearanceSettings {
   compactTables: boolean;
   showBreadcrumbs: boolean;
   iconStyle: 'outline' | 'filled' | 'duotone';
+  // Dashboard style
+  dashboardStyle: 'modern' | 'corporate' | 'minimal' | 'glassmorphic' | 'neon' | 'executive' | 'sunset' | 'mono' | 'cyberpunk' | 'nature' | 'holographic';
 }
 
 // ── COLOR PRESETS ──
@@ -97,7 +99,13 @@ export const BG_IMAGES = [
   { id: 'mesh1',       name: 'Mesh Aurora',         thumb: 'radial-gradient(at 40% 20%,#2563eb 0,transparent 50%),radial-gradient(at 80% 0,#7c3aed 0,transparent 50%),radial-gradient(at 0 50%,#0d9488 0,transparent 50%),#0f172a' },
   { id: 'mesh2',       name: 'Mesh Sunset',         thumb: 'radial-gradient(at 20% 80%,#ea580c 0,transparent 50%),radial-gradient(at 80% 20%,#e11d48 0,transparent 50%),radial-gradient(at 50% 50%,#facc15 0,transparent 60%),#1c0a03' },
   { id: 'mesh3',       name: 'Mesh Ocean',          thumb: 'radial-gradient(at 0% 50%,#0891b2 0,transparent 50%),radial-gradient(at 100% 50%,#059669 0,transparent 50%),radial-gradient(at 50% 0%,#2563eb 0,transparent 50%),#020617' },
+  { id: 'mesh4',       name: 'Mesh Cyber',          thumb: 'radial-gradient(at 30% 70%,#ec4899 0,transparent 50%),radial-gradient(at 70% 30%,#06b6d4 0,transparent 50%),#020617' },
+  { id: 'mesh5',       name: 'Mesh Emerald',        thumb: 'radial-gradient(at 10% 20%,#10b981 0,transparent 40%),radial-gradient(at 90% 80%,#3b82f6 0,transparent 40%),#0f172a' },
+  { id: 'mesh6',       name: 'Crystal Rose',        thumb: 'radial-gradient(at 80% 10%,#fda4af 0,transparent 50%),radial-gradient(at 20% 90%,#c084fc 0,transparent 50%),#4c1d95' },
   { id: 'fab1',        name: 'Factory Floor',       thumb: 'linear-gradient(160deg,#1e293b 0%,#0f172a 60%,#1e3a5f 100%)' },
+  { id: 'fab2',        name: 'Carbon Matrix',       thumb: 'linear-gradient(135deg,#1f2937,#111827)' },
+  { id: 'gradient9',   name: 'Hologram',            thumb: 'linear-gradient(120deg,#c084fc,#f472b6,#38bdf8)' },
+  { id: 'gradient10',  name: 'Velvet Night',        thumb: 'linear-gradient(180deg,#2e1065,#1e1b4b,#000000)' },
   { id: 'custom',      name: 'Custom URL',          thumb: '' },
 ];
 
@@ -158,6 +166,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   compactTables: false,
   showBreadcrumbs: false,
   iconStyle: 'outline',
+  dashboardStyle: 'modern',
 };
 
 // ── Load from localStorage ──

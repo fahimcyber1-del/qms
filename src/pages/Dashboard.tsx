@@ -1,25 +1,53 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
-import { Activity, CheckCircle, Package, AlertTriangle, ClipboardCheck, TrendingDown, AlertCircle, Factory, Search, Award, GraduationCap, Wrench, Target, Archive, Files } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  PolarAngleAxis,
+  PolarGrid,
+  Radar,
+  RadarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowUpRight,
+  Award,
+  BarChart3,
+  Calendar,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
+  Clock3,
+  Factory,
+  Gauge,
+  GraduationCap,
+  Layers3,
+  ShieldAlert,
+  Sparkles,
+  Target,
+  TrendingUp,
+  Wrench,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 import { getCertificates, getDaysUntilExpiry } from '../utils/certificateUtils';
 import { getProductionQualityRecords } from '../utils/qualityUtils';
 import { getProcedures } from '../utils/procedureUtils';
 import { getDocuments } from '../utils/docUtils';
 import { CertificateRecord } from '../types';
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1 }
-  }
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
-};
+import { db } from '../db/db';
+import { AppearanceSettings, loadAppearance } from '../config/themeEngine';
+import { SmartKPI, calculateActualValue, formatRadarData } from '../utils/kpiEngine';
 
 interface Defect {
   name: string;
@@ -38,474 +66,1104 @@ interface InspectionRecord {
   topDefects: Defect[];
   uid: string;
   source: string;
-  createdAt: any;
+  createdAt: unknown;
 }
 
 interface DashboardProps {
   onNavigate?: (page: string) => void;
 }
 
-function Dashboard({ onNavigate }: DashboardProps) {
+const PALETTE = {
+  navy: '#123b7a',
+  blue: '#1d5fd1',
+  cyan: '#0f9bb8',
+  emerald: '#08916a',
+  amber: '#d98a11',
+  red: '#d9485f',
+  slate: '#5f6f8a',
+  indigo: '#5b5bd6',
+};
+
+const CHART_COLORS = [PALETTE.blue, PALETTE.cyan, PALETTE.emerald, PALETTE.amber, PALETTE.red];
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.05, delayChildren: 0.03 } },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 240, damping: 24 } },
+};
+
+const DASHBOARD_STYLE_PRESETS = {
+  modern: {
+    rootBg: 'radial-gradient(circle at top left, rgba(29,95,209,0.12), transparent 28%), radial-gradient(circle at top right, rgba(15,155,184,0.12), transparent 22%), var(--bg-0)',
+    panelBg: 'linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 94%, white 6%), color-mix(in srgb, var(--bg-1) 98%, black 2%))',
+    panelBorder: 'color-mix(in srgb, var(--border) 84%, white 16%)',
+    panelShadow: 'var(--shadow-sm)',
+    tileBg: 'linear-gradient(180deg, var(--dash-accent-soft), transparent 55%), var(--bg-1)',
+    heroBg: 'linear-gradient(135deg, rgba(10,31,73,0.98), rgba(18,59,122,0.94) 42%, rgba(7,119,135,0.94))',
+    heroBorder: 'rgba(255,255,255,0.08)',
+    heroShadow: '0 24px 80px rgba(7, 25, 63, 0.28)',
+    heroOverlay: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18), transparent 22%), radial-gradient(circle at 80% 0%, rgba(255,255,255,0.12), transparent 18%)',
+    heroOrb: 'rgba(255,255,255,0.10)',
+  },
+  corporate: {
+    rootBg: 'linear-gradient(180deg, #f6f8fc, var(--bg-0))',
+    panelBg: 'linear-gradient(180deg, #ffffff, #f8fbff)',
+    panelBorder: 'rgba(37,99,235,0.16)',
+    panelShadow: '0 14px 34px rgba(15,23,42,0.06)',
+    tileBg: 'linear-gradient(180deg, var(--dash-accent-soft), rgba(255,255,255,0.88))',
+    heroBg: 'linear-gradient(135deg, #123b7a, #1d5fd1 58%, #0f9bb8)',
+    heroBorder: 'rgba(29,95,209,0.18)',
+    heroShadow: '0 18px 48px rgba(18,59,122,0.18)',
+    heroOverlay: 'linear-gradient(135deg, rgba(255,255,255,0.14), transparent 45%)',
+    heroOrb: 'rgba(255,255,255,0.14)',
+  },
+  minimal: {
+    rootBg: 'linear-gradient(180deg, #fbfcfe, var(--bg-0))',
+    panelBg: 'linear-gradient(180deg, #ffffff, #ffffff)',
+    panelBorder: 'rgba(148,163,184,0.22)',
+    panelShadow: 'none',
+    tileBg: 'linear-gradient(180deg, rgba(148,163,184,0.04), #ffffff)',
+    heroBg: 'linear-gradient(135deg, #ffffff, #f8fafc)',
+    heroBorder: 'rgba(148,163,184,0.20)',
+    heroShadow: 'none',
+    heroOverlay: 'linear-gradient(135deg, rgba(148,163,184,0.10), transparent 55%)',
+    heroOrb: 'rgba(148,163,184,0.10)',
+  },
+  glassmorphic: {
+    rootBg: 'radial-gradient(circle at top left, rgba(124,58,237,0.14), transparent 30%), radial-gradient(circle at 80% 10%, rgba(14,165,233,0.16), transparent 26%), linear-gradient(180deg, rgba(248,250,252,0.96), rgba(241,245,249,0.96))',
+    panelBg: 'linear-gradient(180deg, rgba(255,255,255,0.58), rgba(255,255,255,0.38))',
+    panelBorder: 'rgba(255,255,255,0.44)',
+    panelShadow: '0 18px 48px rgba(15,23,42,0.10)',
+    tileBg: 'linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0.42))',
+    heroBg: 'linear-gradient(135deg, rgba(59,130,246,0.82), rgba(124,58,237,0.78) 54%, rgba(14,165,233,0.74))',
+    heroBorder: 'rgba(255,255,255,0.24)',
+    heroShadow: '0 22px 72px rgba(59,130,246,0.18)',
+    heroOverlay: 'radial-gradient(circle at 18% 22%, rgba(255,255,255,0.26), transparent 20%), radial-gradient(circle at 78% 6%, rgba(255,255,255,0.20), transparent 18%)',
+    heroOrb: 'rgba(255,255,255,0.22)',
+  },
+  neon: {
+    rootBg: 'radial-gradient(circle at top left, rgba(168,85,247,0.22), transparent 30%), radial-gradient(circle at top right, rgba(16,185,129,0.18), transparent 22%), linear-gradient(180deg, #020617, #0f172a)',
+    panelBg: 'linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.92))',
+    panelBorder: 'rgba(148,163,184,0.18)',
+    panelShadow: '0 0 0 1px rgba(124,58,237,0.18), 0 18px 48px rgba(124,58,237,0.14)',
+    tileBg: 'linear-gradient(180deg, var(--dash-accent-soft), rgba(15,23,42,0.94))',
+    heroBg: 'linear-gradient(135deg, rgba(3,7,18,0.98), rgba(76,29,149,0.94) 48%, rgba(6,95,70,0.92))',
+    heroBorder: 'rgba(167,139,250,0.22)',
+    heroShadow: '0 0 0 1px rgba(167,139,250,0.16), 0 24px 80px rgba(124,58,237,0.20)',
+    heroOverlay: 'radial-gradient(circle at 20% 20%, rgba(167,139,250,0.26), transparent 22%), radial-gradient(circle at 84% 0%, rgba(52,211,153,0.22), transparent 18%)',
+    heroOrb: 'rgba(167,139,250,0.14)',
+  },
+  executive: {
+    rootBg: 'radial-gradient(circle at top left, rgba(214,166,59,0.10), transparent 28%), linear-gradient(180deg, #eef3fb, var(--bg-0))',
+    panelBg: 'linear-gradient(180deg, #ffffff, #f8fbff)',
+    panelBorder: 'rgba(183,139,45,0.22)',
+    panelShadow: '0 16px 40px rgba(15,23,42,0.08)',
+    tileBg: 'linear-gradient(180deg, var(--dash-accent-soft), rgba(255,255,255,0.92))',
+    heroBg: 'linear-gradient(135deg, #0f1f3d, #183a71 58%, #224f96)',
+    heroBorder: 'rgba(214,166,59,0.22)',
+    heroShadow: '0 20px 60px rgba(15,31,61,0.24)',
+    heroOverlay: 'linear-gradient(135deg, rgba(214,166,59,0.18), transparent 48%)',
+    heroOrb: 'rgba(214,166,59,0.18)',
+  },
+  sunset: {
+    rootBg: 'radial-gradient(circle at top left, rgba(251,146,60,0.16), transparent 28%), radial-gradient(circle at top right, rgba(251,113,133,0.14), transparent 24%), linear-gradient(180deg, #fff7ed, var(--bg-0))',
+    panelBg: 'linear-gradient(180deg, #fffdfb, #fff7ed)',
+    panelBorder: 'rgba(234,88,12,0.18)',
+    panelShadow: '0 14px 36px rgba(249,115,22,0.10)',
+    tileBg: 'linear-gradient(180deg, var(--dash-accent-soft), rgba(255,255,255,0.90))',
+    heroBg: 'linear-gradient(135deg, #7c2d12, #ea580c 52%, #fb7185)',
+    heroBorder: 'rgba(251,146,60,0.18)',
+    heroShadow: '0 22px 68px rgba(234,88,12,0.18)',
+    heroOverlay: 'radial-gradient(circle at 18% 22%, rgba(255,237,213,0.20), transparent 22%), radial-gradient(circle at 82% 0%, rgba(255,255,255,0.10), transparent 18%)',
+    heroOrb: 'rgba(255,237,213,0.18)',
+  },
+  mono: {
+    rootBg: 'linear-gradient(180deg, #e2e8f0, #f8fafc)',
+    panelBg: 'linear-gradient(180deg, #ffffff, #f1f5f9)',
+    panelBorder: 'rgba(100,116,139,0.24)',
+    panelShadow: '0 12px 28px rgba(15,23,42,0.08)',
+    tileBg: 'linear-gradient(180deg, rgba(100,116,139,0.10), rgba(255,255,255,0.94))',
+    heroBg: 'linear-gradient(135deg, #0f172a, #1e293b 52%, #334155)',
+    heroBorder: 'rgba(148,163,184,0.20)',
+    heroShadow: '0 18px 56px rgba(15,23,42,0.20)',
+    heroOverlay: 'linear-gradient(135deg, rgba(255,255,255,0.10), transparent 50%)',
+    heroOrb: 'rgba(255,255,255,0.10)',
+  },
+  cyberpunk: {
+    rootBg: 'linear-gradient(180deg, #0f0c29, #302b63 60%, #24243e)',
+    panelBg: 'linear-gradient(180deg, rgba(0,0,0,0.8), rgba(20,20,20,0.95))',
+    panelBorder: 'rgba(236,72,153,0.4)',
+    panelShadow: '0 8px 32px rgba(236,72,153,0.15)',
+    tileBg: 'linear-gradient(180deg, rgba(236,72,153,0.1), rgba(0,0,0,0.4))',
+    heroBg: 'linear-gradient(135deg, #111, #222 40%, #000)',
+    heroBorder: 'rgba(6,182,212,0.5)',
+    heroShadow: '0 12px 40px rgba(6,182,212,0.3)',
+    heroOverlay: 'linear-gradient(45deg, rgba(236,72,153,0.2), transparent 40%)',
+    heroOrb: 'rgba(236,72,153,0.2)',
+  },
+  nature: {
+    rootBg: 'radial-gradient(circle at top left, rgba(134,239,172,0.2), transparent 40%), linear-gradient(180deg, #f0fdf4, var(--bg-0))',
+    panelBg: 'linear-gradient(180deg, #ffffff, #f8fafc)',
+    panelBorder: 'rgba(34,197,94,0.15)',
+    panelShadow: '0 10px 30px rgba(21,128,61,0.08)',
+    tileBg: 'linear-gradient(180deg, rgba(220,252,231,0.6), rgba(240,253,244,0.2))',
+    heroBg: 'linear-gradient(135deg, #14532d, #166534 50%, #15803d)',
+    heroBorder: 'rgba(134,239,172,0.3)',
+    heroShadow: '0 12px 48px rgba(20,83,45,0.2)',
+    heroOverlay: 'linear-gradient(135deg, rgba(255,255,255,0.15), transparent 45%)',
+    heroOrb: 'rgba(134,239,172,0.15)',
+  },
+  holographic: {
+    rootBg: 'radial-gradient(circle at top right, rgba(236,72,153,0.15), transparent 30%), radial-gradient(circle at top left, rgba(6,182,212,0.15), transparent 30%), linear-gradient(180deg, #ffffff, #fdf4ff)',
+    panelBg: 'linear-gradient(180deg, rgba(255,255,255,0.7), rgba(255,255,255,0.4))',
+    panelBorder: 'rgba(255,255,255,0.6)',
+    panelShadow: '0 18px 48px rgba(139,92,246,0.1)',
+    tileBg: 'linear-gradient(180deg, rgba(255,255,255,0.8), rgba(255,255,255,0.5))',
+    heroBg: 'linear-gradient(135deg, rgba(167,139,250,0.8), rgba(244,114,182,0.8) 50%, rgba(56,189,248,0.8))',
+    heroBorder: 'rgba(255,255,255,0.5)',
+    heroShadow: '0 24px 60px rgba(236,72,153,0.2)',
+    heroOverlay: 'radial-gradient(circle at 40% 40%, rgba(255,255,255,0.3), transparent 30%)',
+    heroOrb: 'rgba(255,255,255,0.4)',
+  },
+};
+
+type DashboardStylePreset = {
+  rootBg: string;
+  panelBg: string;
+  panelBorder: string;
+  panelShadow: string;
+  tileBg: string;
+  heroBg: string;
+  heroBorder: string;
+  heroShadow: string;
+  heroOverlay: string;
+  heroOrb: string;
+};
+
+type DashboardStyleId = keyof typeof DASHBOARD_STYLE_PRESETS;
+
+const DASHBOARD_DARK_OVERRIDES: Partial<Record<DashboardStyleId, Partial<DashboardStylePreset>>> = {
+  modern: {
+    rootBg:
+      'radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 16%, transparent), transparent 28%), radial-gradient(circle at top right, rgba(14,165,233,0.16), transparent 24%), linear-gradient(180deg, var(--bg-0), color-mix(in srgb, var(--bg-0) 92%, black 8%))',
+    panelBg:
+      'linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 94%, white 6%), color-mix(in srgb, var(--bg-1) 96%, black 4%))',
+    panelBorder: 'color-mix(in srgb, var(--border) 88%, white 12%)',
+    panelShadow: 'var(--shadow-md)',
+    tileBg:
+      'linear-gradient(180deg, var(--dash-accent-soft), color-mix(in srgb, var(--bg-1) 94%, black 6%))',
+  },
+  corporate: {
+    rootBg:
+      'radial-gradient(circle at top left, var(--accent-light), transparent 28%), linear-gradient(180deg, var(--bg-0), color-mix(in srgb, var(--bg-0) 88%, black 12%))',
+    panelBg:
+      'linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 96%, white 4%), var(--bg-1))',
+    panelBorder: 'color-mix(in srgb, var(--accent) 24%, var(--border))',
+    panelShadow: 'var(--shadow-md)',
+    tileBg:
+      'linear-gradient(180deg, var(--dash-accent-soft), color-mix(in srgb, var(--bg-1) 94%, black 6%))',
+    heroBg:
+      'linear-gradient(135deg, #091120, #123b7a 58%, color-mix(in srgb, var(--accent) 38%, #0f172a))',
+    heroBorder: 'rgba(255,255,255,0.08)',
+    heroShadow: '0 22px 60px rgba(2,6,23,0.34)',
+    heroOverlay: 'linear-gradient(135deg, rgba(255,255,255,0.12), transparent 45%)',
+    heroOrb: 'rgba(59,130,246,0.16)',
+  },
+  minimal: {
+    rootBg:
+      'linear-gradient(180deg, var(--bg-0), color-mix(in srgb, var(--bg-0) 90%, black 10%))',
+    panelBg:
+      'linear-gradient(180deg, var(--bg-1), color-mix(in srgb, var(--bg-1) 96%, black 4%))',
+    panelBorder: 'var(--border)',
+    panelShadow: 'var(--shadow-sm)',
+    tileBg: 'linear-gradient(180deg, rgba(148,163,184,0.06), var(--bg-1))',
+    heroBg:
+      'linear-gradient(135deg, color-mix(in srgb, var(--bg-1) 94%, white 6%), color-mix(in srgb, var(--bg-2) 92%, black 8%))',
+    heroBorder: 'var(--border)',
+    heroShadow: 'var(--shadow-sm)',
+    heroOverlay: 'linear-gradient(135deg, rgba(148,163,184,0.08), transparent 55%)',
+    heroOrb: 'rgba(148,163,184,0.12)',
+  },
+  glassmorphic: {
+    rootBg:
+      'radial-gradient(circle at top left, rgba(124,58,237,0.18), transparent 30%), radial-gradient(circle at 80% 10%, rgba(14,165,233,0.16), transparent 24%), linear-gradient(180deg, var(--bg-0), color-mix(in srgb, var(--bg-0) 90%, black 10%))',
+    panelBg: 'linear-gradient(180deg, rgba(22,24,34,0.74), rgba(22,24,34,0.52))',
+    panelBorder: 'rgba(255,255,255,0.10)',
+    panelShadow: '0 18px 48px rgba(2,6,23,0.22)',
+    tileBg: 'linear-gradient(180deg, rgba(59,130,246,0.12), rgba(22,24,34,0.56))',
+    heroBg:
+      'linear-gradient(135deg, rgba(17,24,39,0.96), rgba(59,130,246,0.78) 48%, rgba(124,58,237,0.72))',
+    heroBorder: 'rgba(255,255,255,0.10)',
+    heroShadow: '0 24px 72px rgba(15,23,42,0.26)',
+    heroOverlay:
+      'radial-gradient(circle at 18% 22%, rgba(255,255,255,0.16), transparent 20%), radial-gradient(circle at 78% 6%, rgba(255,255,255,0.12), transparent 18%)',
+    heroOrb: 'rgba(255,255,255,0.14)',
+  },
+  executive: {
+    rootBg:
+      'radial-gradient(circle at top left, rgba(214,166,59,0.14), transparent 28%), linear-gradient(180deg, var(--bg-0), color-mix(in srgb, var(--bg-0) 90%, black 10%))',
+    panelBg:
+      'linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 94%, white 6%), var(--bg-1))',
+    panelBorder: 'rgba(214,166,59,0.18)',
+    panelShadow: 'var(--shadow-md)',
+    tileBg:
+      'linear-gradient(180deg, rgba(214,166,59,0.08), color-mix(in srgb, var(--bg-1) 94%, black 6%))',
+    heroBg: 'linear-gradient(135deg, #0a1224, #0f1f3d 48%, #183a71)',
+    heroBorder: 'rgba(214,166,59,0.18)',
+    heroShadow: '0 22px 64px rgba(2,6,23,0.32)',
+    heroOverlay: 'linear-gradient(135deg, rgba(214,166,59,0.14), transparent 48%)',
+    heroOrb: 'rgba(214,166,59,0.14)',
+  },
+  sunset: {
+    rootBg:
+      'radial-gradient(circle at top left, rgba(251,146,60,0.14), transparent 28%), radial-gradient(circle at top right, rgba(251,113,133,0.12), transparent 24%), linear-gradient(180deg, var(--bg-0), color-mix(in srgb, var(--bg-0) 90%, black 10%))',
+    panelBg:
+      'linear-gradient(180deg, color-mix(in srgb, var(--bg-1) 94%, white 6%), var(--bg-1))',
+    panelBorder: 'rgba(234,88,12,0.18)',
+    panelShadow: 'var(--shadow-md)',
+    tileBg:
+      'linear-gradient(180deg, rgba(234,88,12,0.08), color-mix(in srgb, var(--bg-1) 94%, black 6%))',
+    heroBg: 'linear-gradient(135deg, #431407, #9a3412 48%, #fb7185)',
+    heroBorder: 'rgba(251,146,60,0.18)',
+    heroShadow: '0 22px 64px rgba(67,20,7,0.32)',
+    heroOverlay:
+      'radial-gradient(circle at 18% 22%, rgba(255,237,213,0.14), transparent 22%), radial-gradient(circle at 82% 0%, rgba(255,255,255,0.08), transparent 18%)',
+    heroOrb: 'rgba(255,237,213,0.12)',
+  },
+  mono: {
+    rootBg:
+      'linear-gradient(180deg, var(--bg-0), color-mix(in srgb, var(--bg-0) 88%, black 12%))',
+    panelBg:
+      'linear-gradient(180deg, var(--bg-1), color-mix(in srgb, var(--bg-1) 96%, black 4%))',
+    panelBorder: 'rgba(148,163,184,0.18)',
+    panelShadow: 'var(--shadow-md)',
+    tileBg:
+      'linear-gradient(180deg, rgba(148,163,184,0.08), color-mix(in srgb, var(--bg-1) 94%, black 6%))',
+    heroBg: 'linear-gradient(135deg, #020617, #0f172a 52%, #1e293b)',
+    heroBorder: 'rgba(148,163,184,0.18)',
+    heroShadow: '0 20px 60px rgba(2,6,23,0.30)',
+    heroOverlay: 'linear-gradient(135deg, rgba(255,255,255,0.08), transparent 50%)',
+    heroOrb: 'rgba(255,255,255,0.08)',
+  },
+};
+
+function resolveDashboardStyle(style?: string): DashboardStyleId {
+  return style && style in DASHBOARD_STYLE_PRESETS ? (style as DashboardStyleId) : 'modern';
+}
+
+function getDashboardStylePreset(
+  style: DashboardStyleId,
+  themeMode: AppearanceSettings['themeMode']
+): DashboardStylePreset {
+  const base = DASHBOARD_STYLE_PRESETS[style] ?? DASHBOARD_STYLE_PRESETS.modern;
+  if (themeMode !== 'dark') return base;
+  return { ...base, ...(DASHBOARD_DARK_OVERRIDES[style] ?? {}) };
+}
+
+function formatShortDate(date: Date) {
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatTime(date: Date) {
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function getStatusTone(value: number, good: number, warn: number) {
+  if (value >= good) return { label: 'Strong', color: PALETTE.emerald };
+  if (value >= warn) return { label: 'Watch', color: PALETTE.amber };
+  return { label: 'Critical', color: PALETTE.red };
+}
+
+const axisStyle = { fill: 'var(--text-3)', fontSize: 10, fontWeight: 700 } as const;
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div
+      className="rounded-2xl border p-3 shadow-2xl backdrop-blur-xl"
+      style={{ background: 'rgba(9, 16, 30, 0.92)', borderColor: 'rgba(255,255,255,0.08)', minWidth: 150 }}
+    >
+      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/65">{label}</p>
+      <div className="space-y-1.5">
+        {payload.map((entry: any, index: number) => (
+          <div key={index} className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full" style={{ background: entry.color }} />
+              <span className="text-[11px] font-semibold text-white/80">{entry.name}</span>
+            </div>
+            <span className="text-[12px] font-black text-white">
+              {typeof entry.value === 'number'
+                ? entry.value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                : entry.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+function Panel({
+  title,
+  subtitle,
+  icon: Icon,
+  accent,
+  action,
+  children,
+  className = '',
+}: {
+  title: string;
+  subtitle?: string;
+  icon: any;
+  accent: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <motion.section
+      variants={itemVariants}
+      data-dashboard-surface="panel"
+      className={`relative overflow-hidden border shadow-sm ${className}`}
+      style={{
+        background: 'var(--dash-panel-bg)',
+        borderColor: 'var(--dash-panel-border)',
+        boxShadow: 'var(--dash-panel-shadow)',
+      }}
+    >
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-px"
+        style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
+      />
+      <div data-dashboard-region="panel-header" className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl"
+            style={{ background: `${accent}16`, boxShadow: `inset 0 0 0 1px ${accent}18` }}
+          >
+            <Icon style={{ width: 18, height: 18, color: accent }} />
+          </div>
+          <div className="min-w-0">
+            <h3 className="truncate text-[12px] font-black uppercase tracking-[0.18em] text-text-1">{title}</h3>
+            {subtitle ? <p className="mt-1 text-xs text-text-3">{subtitle}</p> : null}
+          </div>
+        </div>
+        {action}
+      </div>
+      <div data-dashboard-region="panel-body">{children}</div>
+    </motion.section>
+  );
+}
+
+function MetricTile({
+  title,
+  value,
+  subtitle,
+  accent,
+  icon: Icon,
+  trend,
+}: {
+  title: string;
+  value: string | number;
+  subtitle: string;
+  accent: string;
+  icon: any;
+  trend?: string;
+}) {
+  return (
+    <motion.div
+      variants={itemVariants}
+      data-dashboard-surface="tile"
+      className="relative overflow-hidden border"
+      style={{
+        ['--dash-accent-soft' as any]: `${accent}10`,
+        background: 'var(--dash-tile-bg)',
+        borderColor: `${accent}26`,
+        boxShadow: 'var(--dash-panel-shadow)',
+      }}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div
+          className="flex h-11 w-11 items-center justify-center rounded-2xl"
+          style={{ background: `${accent}16`, boxShadow: `inset 0 0 0 1px ${accent}20` }}
+        >
+          <Icon style={{ width: 18, height: 18, color: accent }} />
+        </div>
+        {trend ? (
+          <span
+            className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em]"
+            style={{ color: accent, background: `${accent}12` }}
+          >
+            {trend}
+          </span>
+        ) : null}
+      </div>
+      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-text-3">{title}</div>
+      <div className="mt-2 text-[30px] font-black leading-none text-text-1">{value}</div>
+      <div className="mt-2 text-xs leading-relaxed text-text-3">{subtitle}</div>
+    </motion.div>
+  );
+}
+
+function ProgressRow({
+  label,
+  value,
+  total,
+  accent,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  accent: string;
+}) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-bold text-text-1">{label}</span>
+        <span className="text-[11px] font-black" style={{ color: accent }}>
+          {pct}%
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-bg-2">
+        <motion.div
+          className="h-full rounded-full"
+          style={{ background: `linear-gradient(90deg, ${accent}, ${accent}aa)` }}
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 1 }}
+        />
+      </div>
+      <div className="mt-1 text-[10px] text-text-3">
+        {value} of {total} items
+      </div>
+    </div>
+  );
+}
+
+export function Dashboard({ onNavigate }: DashboardProps) {
   const [inspections, setInspections] = useState<InspectionRecord[]>([]);
   const [capas, setCapas] = useState<any[]>([]);
+  const [audits, setAudits] = useState<any[]>([]);
   const [certificates, setCertificates] = useState<CertificateRecord[]>([]);
   const [documentsCount, setDocumentsCount] = useState(0);
   const [proceduresCount, setProceduresCount] = useState(0);
-  const [auditPassRate, setAuditPassRate] = useState(100);
+  const [sopsCount, setSopsCount] = useState(0);
+  const [risksCount, setRisksCount] = useState(0);
+  const [trainingRecords, setTrainingRecords] = useState<any[]>([]);
+  const [supplierCount, setSupplierCount] = useState(0);
+  const [complaintsCount, setComplaintsCount] = useState(0);
+  const [kpiRecords, setKpiRecords] = useState<SmartKPI[]>([]);
+  const [clockTime, setClockTime] = useState(new Date());
+  const [appearance, setAppearance] = useState<AppearanceSettings>(loadAppearance);
+  const [dateRange, setDateRange] = useState<number | 'custom'>(30);
+  const [customDates, setCustomDates] = useState({ start: '', end: '' });
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   useEffect(() => {
-    // Load certificates
-    setCertificates(getCertificates());
-
-    // Load Inspections
-    setInspections(getProductionQualityRecords() as unknown as InspectionRecord[]);
-
-    // CAPAs
-    try {
-      const storedCapas = localStorage.getItem('garmentqms_capas');
-      if (storedCapas) setCapas(JSON.parse(storedCapas));
-    } catch(e) {}
-
-    // Documents
-    setDocumentsCount(getDocuments().length);
-
-    // Procedures
-    setProceduresCount(getProcedures().length);
-
-    // Audits Pass Rate
-    try {
-      const auditsStr = localStorage.getItem('garmentqms_audits');
-      if (auditsStr) {
-        const audits = JSON.parse(auditsStr);
-        if (audits.length > 0) {
-          const passed = audits.filter((a: any) => a.overallScore != null && parseFloat(a.overallScore) >= 75).length;
-          setAuditPassRate(Math.round((passed / audits.length) * 100));
-        }
+    const load = async () => {
+      setCertificates(getCertificates());
+      setInspections(getProductionQualityRecords() as unknown as InspectionRecord[]);
+      setDocumentsCount(getDocuments().length);
+      setProceduresCount(getProcedures().length);
+      try {
+        const stored = localStorage.getItem('garmentqms_capas');
+        setCapas(stored ? JSON.parse(stored) : []);
+      } catch {
+        setCapas([]);
       }
-    } catch(e) {}
+      try {
+        const stored = localStorage.getItem('garmentqms_audits');
+        setAudits(stored ? JSON.parse(stored) : []);
+      } catch {
+        setAudits([]);
+      }
+      try {
+        const stored = localStorage.getItem('garmentqms_sops');
+        setSopsCount(stored ? JSON.parse(stored).length : 0);
+      } catch {
+        setSopsCount(0);
+      }
+      try {
+        const stored = localStorage.getItem('garmentqms_risks');
+        setRisksCount(stored ? JSON.parse(stored).length : 0);
+      } catch {
+        setRisksCount(0);
+      }
+      const [training, suppliers, complaints, kpis] = await Promise.all([
+        db.training.toArray(),
+        db.supplierManagement.count(),
+        db.customerComplaints.count(),
+        db.kpiRecords.toArray(),
+      ]);
+      setTrainingRecords(training);
+      setSupplierCount(suppliers);
+      setComplaintsCount(complaints);
+      const kpiWithVals = await Promise.all(kpis.map(async (k: any) => ({ ...k, currentValue: await calculateActualValue(k) })));
+      setKpiRecords(kpiWithVals);
+    };
+
+    load();
+    const refreshTimer = window.setInterval(load, 30000);
+    const clockTimer = window.setInterval(() => setClockTime(new Date()), 1000);
+    return () => {
+      window.clearInterval(refreshTimer);
+      window.clearInterval(clockTimer);
+    };
   }, []);
 
-  // Aggregated Data for KPIs
-  const kpis = useMemo(() => {
-    if (inspections.length === 0) return { dhu: 0, rft: 0, totalChecked: 0, totalGoods: 0, totalDefects: 0 };
-    
-    let totalChecked = 0;
-    let totalGoods = 0;
-    let totalDefects = 0;
+  useEffect(() => {
+    const syncAppearance = (event?: Event) => {
+      const nextAppearance = (event as CustomEvent<AppearanceSettings> | undefined)?.detail ?? loadAppearance();
+      setAppearance(nextAppearance);
+    };
 
-    inspections.forEach(insp => {
-      totalChecked += insp.checkedQuantity || 0;
-      totalGoods += insp.goodsQuantity || 0;
-      totalDefects += insp.totalDefects || 0;
+    window.addEventListener('qms-appearance-updated', syncAppearance as EventListener);
+    window.addEventListener('storage', syncAppearance as EventListener);
+    return () => {
+      window.removeEventListener('qms-appearance-updated', syncAppearance as EventListener);
+      window.removeEventListener('storage', syncAppearance as EventListener);
+    };
+  }, []);
+
+  const filterDateAgo = useMemo(() => {
+    if (dateRange === 'custom') return '';
+    const date = new Date();
+    date.setDate(date.getDate() - (dateRange as number));
+    return date.toISOString().split('T')[0];
+  }, [dateRange]);
+
+  const recentInspections = useMemo(() => {
+    return inspections.filter((item) => {
+      const d = item.date || '';
+      if (dateRange === 'custom') {
+        if (customDates.start && d < customDates.start) return false;
+        if (customDates.end && d > customDates.end) return false;
+        return true;
+      }
+      return d >= filterDateAgo;
     });
+  }, [inspections, filterDateAgo, dateRange, customDates]);
 
+  const qualityKpis = useMemo(() => {
+    const totalChecked = recentInspections.reduce((sum, item) => sum + (item.checkedQuantity || 0), 0);
+    const totalGoods = recentInspections.reduce((sum, item) => sum + (item.goodsQuantity || 0), 0);
+    const totalDefects = recentInspections.reduce((sum, item) => sum + (item.totalDefects || 0), 0);
     const dhu = totalChecked > 0 ? (totalDefects / totalChecked) * 100 : 0;
     const rft = totalChecked > 0 ? (totalGoods / totalChecked) * 100 : 0;
+    return { totalChecked, totalGoods, totalDefects, dhu, rft };
+  }, [recentInspections]);
 
-    return { dhu, rft, totalChecked, totalGoods, totalDefects };
-  }, [inspections]);
+  const trendData = useMemo(() => {
+    const grouped: Record<string, { checked: number; goods: number; defects: number }> = {};
+    [...recentInspections]
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+      .forEach((item) => {
+        const key = item.date || 'Unknown';
+        if (!grouped[key]) grouped[key] = { checked: 0, goods: 0, defects: 0 };
+        grouped[key].checked += item.checkedQuantity || 0;
+        grouped[key].goods += item.goodsQuantity || 0;
+        grouped[key].defects += item.totalDefects || 0;
+      });
 
-  // DHU Trend Data (Grouped by Date/Week)
-  const dhuTrendData = useMemo(() => {
-    const grouped: Record<string, { totalChecked: number, totalDefects: number }> = {};
-    
-    // Sort inspections by date ascending for the chart
-    const sorted = [...inspections].sort((a, b) => a.date.localeCompare(b.date));
-    
-    sorted.forEach(insp => {
-      const date = insp.date;
-      if (!grouped[date]) grouped[date] = { totalChecked: 0, totalDefects: 0 };
-      grouped[date].totalChecked += insp.checkedQuantity || 0;
-      grouped[date].totalDefects += insp.totalDefects || 0;
-    });
+    return Object.entries(grouped)
+      .map(([date, values]) => ({
+        name: date === 'Unknown' ? 'N/A' : date.split('-').slice(1).join('/'),
+        rft: values.checked > 0 ? Number(((values.goods / values.checked) * 100).toFixed(1)) : 0,
+        dhu: values.checked > 0 ? Number(((values.defects / values.checked) * 100).toFixed(2)) : 0,
+        defects: values.defects,
+      }))
+      .slice(-12);
+  }, [recentInspections]);
 
-    return Object.entries(grouped).map(([date, vals]) => ({
-      name: date.split('-').slice(1).join('/'), // MM/DD format
-      actual: Number((vals.totalChecked > 0 ? (vals.totalDefects / vals.totalChecked) * 100 : 0).toFixed(2)),
-      target: 3.0
-    })).slice(-12); // Last 12 entries
-  }, [inspections]);
-
-  // Top Defects Data
-  const defectChartData = useMemo(() => {
-    const defectCounts: Record<string, number> = {};
-    inspections.forEach(insp => {
-      (insp.topDefects || []).forEach(d => {
-        defectCounts[d.name] = (defectCounts[d.name] || 0) + (d.count || 1);
+  const defectBreakdown = useMemo(() => {
+    const totals: Record<string, number> = {};
+    recentInspections.forEach((item) => {
+      (item.topDefects || []).forEach((defect) => {
+        totals[defect.name] = (totals[defect.name] || 0) + (defect.count || 0);
       });
     });
-
-    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-    return Object.entries(defectCounts)
+    const total = Object.values(totals).reduce((sum, count) => sum + count, 0);
+    return Object.entries(totals)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, value], index) => ({
         name,
         value,
-        color: colors[index % colors.length]
+        share: total > 0 ? Math.round((value / total) * 100) : 0,
+        color: CHART_COLORS[index % CHART_COLORS.length],
       }));
-  }, [inspections]);
+  }, [recentInspections]);
 
-  // Line Performance Data
-  const linePerfData = useMemo(() => {
-    const lineData: Record<string, { totalChecked: number, totalGoods: number, totalDefects: number }> = {};
-    inspections.forEach(insp => {
-      const line = insp.lineNumber || 'Unknown';
-      if (!lineData[line]) lineData[line] = { totalChecked: 0, totalGoods: 0, totalDefects: 0 };
-      lineData[line].totalChecked += insp.checkedQuantity || 0;
-      lineData[line].totalGoods += insp.goodsQuantity || 0;
-      lineData[line].totalDefects += insp.totalDefects || 0;
+  const linePerformance = useMemo(() => {
+    const grouped: Record<string, { checked: number; goods: number; defects: number }> = {};
+    recentInspections.forEach((item) => {
+      const line = item.lineNumber || 'Unknown';
+      if (!grouped[line]) grouped[line] = { checked: 0, goods: 0, defects: 0 };
+      grouped[line].checked += item.checkedQuantity || 0;
+      grouped[line].goods += item.goodsQuantity || 0;
+      grouped[line].defects += item.totalDefects || 0;
     });
 
-    return Object.entries(lineData).map(([name, vals]) => ({
-      name,
-      dhu: Number((vals.totalChecked > 0 ? (vals.totalDefects / vals.totalChecked) * 100 : 0).toFixed(2)),
-      rft: Number((vals.totalChecked > 0 ? (vals.totalGoods / vals.totalChecked) * 100 : 0).toFixed(2))
-    })).slice(0, 7);
-  }, [inspections]);
+    return Object.entries(grouped)
+      .map(([name, values]) => ({
+        name,
+        rft: values.checked > 0 ? Number(((values.goods / values.checked) * 100).toFixed(1)) : 0,
+        dhu: values.checked > 0 ? Number(((values.defects / values.checked) * 100).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.rft - a.rft)
+      .slice(0, 6);
+  }, [recentInspections]);
 
-  let capaClosureRate = 100;
-  if (capas.length > 0) {
-    const closed = capas.filter(c => c.status === 'Closed').length;
-    capaClosureRate = Math.round((closed / capas.length) * 100);
-  }
+  const auditStats = useMemo(() => {
+    const total = audits.length;
+    const passed = audits.filter((item: any) => item.overallScore != null && parseFloat(item.overallScore) >= 75).length;
+    return { total, passed, rate: total > 0 ? Math.round((passed / total) * 100) : 0 };
+  }, [audits]);
 
-  const radarData = [
-    { subject: 'DHU', A: Math.min(100, (kpis.dhu / 3) * 100), B: 100, fullMark: 100 },
-    { subject: 'RFT', A: kpis.rft, B: 100, fullMark: 100 },
-    { subject: 'Audit Pass', A: auditPassRate, B: 100, fullMark: 100 },
-    { subject: 'CAPA Closure', A: capaClosureRate, B: 100, fullMark: 100 },
-    { subject: 'Training', A: 80, B: 100, fullMark: 100 },
-  ];
+  const capaStats = useMemo(() => {
+    const open = capas.filter((item) => item.status === 'Open' || item.status === 'In Progress').length;
+    const overdue = capas.filter((item) => item.status === 'Overdue').length;
+    const closed = capas.filter((item) => item.status === 'Closed').length;
+    const total = capas.length;
+    return { open, overdue, closed, total, closureRate: total > 0 ? Math.round((closed / total) * 100) : 0 };
+  }, [capas]);
 
-  const expiringCerts = certificates.filter(c => {
-    const days = getDaysUntilExpiry(c.expiryDate);
-    return days <= 30 && days > 0;
-  });
+  const certStats = useMemo(() => {
+    const expired = certificates.filter((item) => getDaysUntilExpiry(item.expiryDate) <= 0).length;
+    const expiringSoon = certificates.filter((item) => {
+      const daysLeft = getDaysUntilExpiry(item.expiryDate);
+      return daysLeft > 0 && daysLeft <= 30;
+    }).length;
+    const valid = certificates.length - expired - expiringSoon;
+    return { expired, expiringSoon, valid, total: certificates.length };
+  }, [certificates]);
 
-  const expiredCerts = certificates.filter(c => getDaysUntilExpiry(c.expiryDate) <= 0);
+  const trainingStats = useMemo(() => {
+    const grouped: Record<string, { total: number; completed: number }> = {};
+    trainingRecords.forEach((item: any) => {
+      const department = item.department || item.data?.department || 'General';
+      if (!grouped[department]) grouped[department] = { total: 0, completed: 0 };
+      grouped[department].total += 1;
+      const status = String(item.status || item.data?.status || '').toLowerCase();
+      if (status === 'completed' || status === 'done' || status === 'active') grouped[department].completed += 1;
+    });
+    return Object.entries(grouped)
+      .map(([department, values]) => ({
+        department,
+        total: values.total,
+        completed: values.completed,
+        score: values.total > 0 ? Math.round((values.completed / values.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 4);
+  }, [trainingRecords]);
+
+  const radarData = useMemo(() => {
+    return formatRadarData(kpiRecords);
+  }, [kpiRecords]);
+
+  const commandStats = useMemo(
+    () => [
+      { label: 'Prod. Quality', value: recentInspections.length, page: 'prod-quality', accent: PALETTE.blue },
+      { label: 'Documents', value: documentsCount, page: 'doc-control', accent: PALETTE.indigo },
+      { label: 'Procedures', value: proceduresCount, page: 'procedure', accent: PALETTE.cyan },
+      { label: 'SOPs', value: sopsCount, page: 'sop', accent: PALETTE.teal },
+      { label: 'KPI Central', value: kpiRecords.length, page: 'kpi', accent: PALETTE.emerald },
+      { label: 'Risks', value: risksCount, page: 'risk', accent: PALETTE.red },
+      { label: 'Suppliers', value: supplierCount, page: 'supplier', accent: PALETTE.amber },
+      { label: 'Complaints', value: complaintsCount, page: 'complaints', accent: PALETTE.rose },
+    ],
+    [complaintsCount, documentsCount, proceduresCount, risksCount, sopsCount, supplierCount, recentInspections.length, kpiRecords.length]
+  );
+
+  const liveFeed = useMemo(() => {
+    const items = [
+      {
+        id: 'quality',
+        label: 'Quality throughput updated',
+        detail: `${qualityKpis.totalChecked.toLocaleString()} pieces checked in ${dateRange === 'custom' ? 'custom date range' : `the last ${dateRange} days`}`,
+        accent: PALETTE.blue,
+      },
+      {
+        id: 'capa',
+        label: 'Corrective actions in motion',
+        detail: `${capaStats.open} open, ${capaStats.overdue} overdue, ${capaStats.closed} closed`,
+        accent: capaStats.overdue > 0 ? PALETTE.red : PALETTE.amber,
+      },
+      {
+        id: 'cert',
+        label: 'Compliance certificate watch',
+        detail: `${certStats.expiringSoon} expiring soon and ${certStats.expired} expired`,
+        accent: certStats.expired > 0 ? PALETTE.red : PALETTE.emerald,
+      },
+      {
+        id: 'audit',
+        label: 'Audit performance snapshot',
+        detail: `${auditStats.passed}/${auditStats.total} audits meeting threshold`,
+        accent: auditStats.rate >= 80 ? PALETTE.emerald : PALETTE.amber,
+      },
+    ];
+    return items;
+  }, [auditStats.passed, auditStats.rate, auditStats.total, capaStats.closed, capaStats.open, capaStats.overdue, certStats.expired, certStats.expiringSoon, qualityKpis.totalChecked]);
+
+  const rftTone = getStatusTone(Math.round(qualityKpis.rft), 95, 88);
+  const auditTone = getStatusTone(auditStats.rate, 90, 75);
+  const capaTone = getStatusTone(capaStats.closureRate, 85, 65);
+  const dashboardStyle = resolveDashboardStyle(appearance.dashboardStyle);
+  const activeStyle = getDashboardStylePreset(dashboardStyle, appearance.themeMode);
+  const heroTone = appearance.themeMode === 'dark' || dashboardStyle !== 'minimal' ? 'dark' : 'light';
+  const densityTokens =
+    appearance.density === 'compact'
+      ? { hero: '18px', panel: '14px', tile: '14px', card: '14px' }
+      : appearance.density === 'spacious'
+        ? { hero: '30px', panel: '24px', tile: '20px', card: '20px' }
+        : { hero: '24px', panel: '20px', tile: '16px', card: '18px' };
 
   return (
-    <motion.div 
-      className="page active space-y-6 w-full p-4 md:p-8"
-      variants={containerVariants}
+    <motion.div
       initial="hidden"
       animate="show"
+      variants={containerVariants}
+      data-dashboard-root="true"
+      className="min-h-screen space-y-6 px-4 py-6 sm:px-6 lg:px-8 bg-bg-0"
+      style={{
+        background: appearance.bgImage && appearance.bgImage !== 'none' ? 'transparent' : 'var(--bg-0)',
+        ['--dash-panel-bg' as any]: 'var(--bg-1)',
+        ['--dash-panel-border' as any]: 'color-mix(in srgb, var(--border) 100%, transparent)',
+        ['--dash-panel-shadow' as any]: 'var(--shadow-sm)',
+        ['--dash-tile-bg' as any]: 'var(--bg-1)',
+        ['--dash-hero-padding' as any]: densityTokens.hero,
+        ['--dash-panel-padding' as any]: densityTokens.panel,
+        ['--dash-tile-padding' as any]: densityTokens.tile,
+        ['--dash-card-padding' as any]: densityTokens.card,
+        ['--dash-radius-hero' as any]: 'calc(var(--radius) * 1.5)',
+        ['--dash-radius-panel' as any]: 'calc(var(--radius) * 1.5)',
+        ['--dash-radius-tile' as any]: 'calc(var(--radius) * 1.5)',
+        ['--dash-radius-card' as any]: 'calc(var(--radius) * 1.5)',
+      }}
     >
-      <motion.div variants={itemVariants} className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Live Dashboard</h2>
-      </motion.div>
-
-      {/* Certificate Alerts */}
-      {(expiringCerts.length > 0 || expiredCerts.length > 0) && (
-        <motion.div variants={itemVariants} className="flex flex-col gap-2">
-          {expiredCerts.map(cert => (
-            <div key={cert.id} className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg flex items-start gap-3 shadow-sm">
-              <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-red-800 font-semibold text-sm">Certificate Expired</h4>
-                <p className="text-red-700 text-sm mt-1">The certificate <strong>{cert.name}</strong> ({cert.number}) expired on {cert.expiryDate}. Please renew immediately.</p>
-              </div>
-            </div>
-          ))}
-          {expiringCerts.map(cert => (
-            <div key={cert.id} className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg flex items-start gap-3 shadow-sm">
-              <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <h4 className="text-amber-800 font-semibold text-sm">Certificate Expiring Soon</h4>
-                <p className="text-amber-700 text-sm mt-1">The certificate <strong>{cert.name}</strong> ({cert.number}) will expire in {getDaysUntilExpiry(cert.expiryDate)} days ({cert.expiryDate}).</p>
-              </div>
-            </div>
-          ))}
-        </motion.div>
-      )}
-
-      {/* Top KPIs */}
-      <motion.div variants={containerVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <motion.div variants={itemVariants} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total DHU</span>
-            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Activity className="w-4 h-4" /></div>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">{kpis.dhu.toFixed(2)}%</div>
-          <div className="text-xs text-gray-500">Real-time aggregation</div>
-        </motion.div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+        <div>
+          <h1 className="text-2xl font-bold text-text-1">Enterprise Dashboard</h1>
+          <p className="text-sm text-text-3 mt-1">Real-time quality, compliance, and operational insights.</p>
+        </div>
         
-        <motion.div variants={itemVariants} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">RFT %</span>
-            <div className="p-2 bg-green-50 text-green-600 rounded-lg"><CheckCircle className="w-4 h-4" /></div>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">{kpis.rft.toFixed(1)}%</div>
-          <div className="text-xs text-gray-500">Quality pass rate</div>
-        </motion.div>
+        <div className="flex justify-end flex-wrap items-center gap-3">
+          <div className="relative">
+            <button
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className="flex items-center gap-2 px-4 py-2 bg-bg-1 border border-border-main rounded-md text-sm font-semibold text-text-1 hover:border-accent transition-colors shadow-sm cursor-pointer"
+            >
+              <Calendar className="h-4 w-4 text-text-3" />
+              {dateRange === 'custom' ? 'Custom Range' : `Last ${dateRange} Days`}
+              <ChevronDown className={`h-4 w-4 text-text-3 transition-transform ${isFilterOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-        <motion.div variants={itemVariants} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Checked</span>
-            <div className="p-2 bg-amber-50 text-amber-600 rounded-lg"><Package className="w-4 h-4" /></div>
+            {isFilterOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsFilterOpen(false)} />
+                <div className="absolute top-full right-0 mt-2 w-56 flex flex-col gap-1 bg-bg-1 border border-border-main rounded-md shadow-lg p-2 z-[100]">
+                  {[7, 30, 90, 365].map((days) => (
+                    <button
+                      key={days}
+                      onClick={() => { setDateRange(days); setIsFilterOpen(false); }}
+                      className={`text-left px-3 py-2 text-sm font-medium rounded-md flex justify-between items-center transition-colors cursor-pointer ${
+                        dateRange === days ? 'bg-accent/10 text-accent' : 'text-text-1 hover:bg-bg-2'
+                      }`}
+                    >
+                      Last {days} Days
+                      {dateRange === days && <CheckCircle2 className="h-4 w-4" />}
+                    </button>
+                  ))}
+                  <div className="pt-2 mt-1 border-t border-border-main flex flex-col gap-2">
+                    <span className="text-xs font-semibold text-text-3 px-2">Custom Range</span>
+                    <input type="date" value={customDates.start} onChange={(e) => { setCustomDates(p => ({ ...p, start: e.target.value })); setDateRange('custom'); }} className="w-full text-sm bg-bg-2 border border-border-main rounded px-2 py-1.5 focus:border-accent outline-none text-text-1 cursor-pointer" />
+                    <input type="date" value={customDates.end} onChange={(e) => { setCustomDates(p => ({ ...p, end: e.target.value })); setDateRange('custom'); }} className="w-full text-sm bg-bg-2 border border-border-main rounded px-2 py-1.5 focus:border-accent outline-none text-text-1 cursor-pointer" />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">{kpis.totalChecked}</div>
-          <div className="text-xs text-gray-500">Units inspected</div>
-        </motion.div>
+          <button
+            onClick={() => onNavigate?.('settings')}
+            className="flex items-center gap-2 px-4 py-2 bg-bg-1 border border-border-main rounded-md text-sm font-semibold text-text-1 hover:border-accent transition-colors shadow-sm cursor-pointer"
+          >
+            <Sparkles className="h-4 w-4 text-accent" />
+            Appearance
+          </button>
+        </div>
+      </div>
 
-        <motion.div variants={itemVariants} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Defects</span>
-            <div className="p-2 bg-red-50 text-red-600 rounded-lg"><AlertTriangle className="w-4 h-4" /></div>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">{kpis.totalDefects}</div>
-          <div className="text-xs text-gray-500">Issues identified</div>
-        </motion.div>
-
-        <motion.div 
-          variants={itemVariants} 
-          className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => onNavigate?.('doc-control')}
-        >
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Document Control</span>
-            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Archive className="w-4 h-4" /></div>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">{documentsCount}</div>
-          <div className="text-xs text-gray-500">Active QMS documents</div>
-        </motion.div>
-
-        <motion.div 
-          variants={itemVariants} 
-          className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col hover:shadow-md transition-shadow cursor-pointer"
-          onClick={() => onNavigate?.('procedure')}
-        >
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Procedures</span>
-            <div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><Files className="w-4 h-4" /></div>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">{proceduresCount}</div>
-          <div className="text-xs text-gray-500">Documented SOPs</div>
-        </motion.div>
-
-        <motion.div variants={itemVariants} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Audit Pass Rate</span>
-            <div className="p-2 bg-purple-50 text-purple-600 rounded-lg"><ClipboardCheck className="w-4 h-4" /></div>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 mb-1">{auditPassRate}%</div>
-          <div className="text-xs text-gray-500">Historical performance</div>
-        </motion.div>
+      <motion.div variants={containerVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricTile
+          title="Right First Time"
+          value={`${qualityKpis.rft.toFixed(1)}%`}
+          subtitle="Primary production quality signal."
+          accent={PALETTE.blue}
+          icon={Target}
+          trend={`${recentInspections.length} inspections`}
+        />
+        <MetricTile
+          title="Defect Per Hundred Units"
+          value={qualityKpis.dhu.toFixed(2)}
+          subtitle="Lower is better. Defect pressure tracking."
+          accent={PALETTE.red}
+          icon={ShieldAlert}
+          trend={qualityKpis.dhu <= 3 ? 'On target' : 'Above target'}
+        />
+        <MetricTile
+          title="CAPA Pressure"
+          value={capaStats.open}
+          subtitle={`${capaStats.overdue} overdue actions need attention.`}
+          accent={PALETTE.amber}
+          icon={Wrench}
+          trend={`${capaStats.closed} closed`}
+        />
+        <MetricTile
+          title="Compliance Watch"
+          value={certStats.expired + certStats.expiringSoon}
+          subtitle="Expired & expiring certificates alerts."
+          accent={PALETTE.emerald}
+          icon={Award}
+          trend={certStats.expired > 0 ? 'Renewal needed' : 'Stable'}
+        />
       </motion.div>
 
-      <motion.div variants={containerVariants} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* DHU Trend */}
-        <motion.div variants={itemVariants} className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:shadow-md transition-shadow">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2"><TrendingDown className="w-5 h-5 text-blue-500" /> DHU Trend</h3>
-            <div className="flex gap-2">
-              <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full">Target &lt;3%</span>
-              <span className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-full">Current: {kpis.dhu.toFixed(2)}%</span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 flex flex-col">
+          <Panel
+            title="Operational Trend"
+            subtitle="Live quality curve with RFT and DHU comparison"
+            icon={TrendingUp}
+            accent={PALETTE.blue}
+            className="flex-1"
+            action={
+              <button
+                onClick={() => onNavigate?.('prod-quality')}
+                className="text-xs font-semibold text-accent hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                View Module <ChevronRight className="h-3 w-3" />
+              </button>
+            }
+          >
+            <div className="h-[320px] w-full mt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData}>
+                  <defs>
+                    <linearGradient id="rftFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={PALETTE.blue} stopOpacity={0.25} />
+                      <stop offset="100%" stopColor={PALETTE.blue} stopOpacity={0.01} />
+                    </linearGradient>
+                    <linearGradient id="dhuFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={PALETTE.red} stopOpacity={0.15} />
+                      <stop offset="100%" stopColor={PALETTE.red} stopOpacity={0.01} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} opacity={0.6} />
+                  <XAxis dataKey="name" tick={axisStyle} axisLine={false} tickLine={false} dy={10} />
+                  <YAxis tick={axisStyle} axisLine={false} tickLine={false} dx={-10} width={34} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area type="monotone" dataKey="rft" name="RFT %" stroke={PALETTE.blue} fill="url(#rftFill)" strokeWidth={2.5} />
+                  <Area type="monotone" dataKey="dhu" name="DHU %" stroke={PALETTE.red} fill="url(#dhuFill)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </Panel>
+        </div>
+        
+        <div className="lg:col-span-1 flex flex-col">
+          <Panel
+            title="Live Feed"
+            subtitle="Critical operational signals"
+            icon={Activity}
+            accent={PALETTE.cyan}
+            className="flex-1"
+          >
+            <div className="space-y-4 mt-2">
+              {liveFeed.map((item) => (
+                <div
+                  key={item.id}
+                  className="p-3 rounded-md bg-bg-2/60 border border-border-main flex items-start gap-3"
+                >
+                  <div className="mt-1 h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: item.accent }} />
+                  <div>
+                    <h4 className="text-[13px] font-bold text-text-1">{item.label}</h4>
+                    <p className="text-[11px] text-text-3 mt-1 leading-relaxed">{item.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <Panel
+          title="Defect Mix"
+          subtitle="Top recurring defects distribution"
+          icon={Layers3}
+          accent={PALETTE.red}
+        >
+          <div className="flex flex-col justify-between h-[280px]">
+            <div className="h-40 w-full mb-3 shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={defectBreakdown}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={50}
+                    outerRadius={75}
+                    paddingAngle={3}
+                    stroke="none"
+                  >
+                    {defectBreakdown.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="space-y-2 mt-auto overflow-y-auto pr-2">
+              {defectBreakdown.length > 0 ? (
+                defectBreakdown.map((item) => (
+                  <div key={item.name} className="flex justify-between items-center text-xs">
+                    <span className="font-semibold text-text-1 truncate pr-2 flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full block border border-white/10" style={{ backgroundColor: item.color }} />
+                      {item.name}
+                    </span>
+                    <span className="text-text-3 shrink-0">{item.value} cases ({item.share}%)</span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center text-xs text-text-3">No defect data available</div>
+              )}
             </div>
           </div>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={dhuTrendData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                <XAxis dataKey="name" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 12 }} />
-                <YAxis stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 12 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#111827', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#4b5563', paddingTop: '10px' }} />
-                <Line type="monotone" dataKey="actual" name="DHU%" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
-                <Line type="step" dataKey="target" name="Target" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
+        </Panel>
 
-        {/* Top 5 Defects */}
-        <motion.div variants={itemVariants} className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:shadow-md transition-shadow">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-6"><AlertCircle className="w-5 h-5 text-amber-500" /> Top 5 Defects</h3>
-          <div className="h-72">
+        <Panel
+          title="Line Performance"
+          subtitle="RFT and DHU comparison by line"
+          icon={Factory}
+          accent={PALETTE.amber}
+        >
+          <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={defectChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} dataKey="value">
-                  {defectChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#111827', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 12, color: '#4b5563' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
-      </motion.div>
-
-      <motion.div variants={containerVariants} className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Line Performance */}
-        <motion.div variants={itemVariants} className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:shadow-md transition-shadow">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-6"><Factory className="w-5 h-5 text-indigo-500" /> Line-Wise Performance</h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={linePerfData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                <XAxis dataKey="name" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 12 }} />
-                <YAxis yAxisId="left" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 12 }} />
-                <YAxis yAxisId="right" orientation="right" stroke="#6b7280" tick={{ fill: '#6b7280', fontSize: 12 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e5e7eb', color: '#111827', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{ fill: '#f3f4f6' }} />
-                <Legend wrapperStyle={{ fontSize: 12, color: '#4b5563', paddingTop: '10px' }} />
-                <Bar yAxisId="left" dataKey="dhu" name="DHU%" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                <Bar yAxisId="right" dataKey="rft" name="RFT%" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              <BarChart data={linePerformance} barGap={4} margin={{ top: 10, right: 0, bottom: 0, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} opacity={0.6} />
+                <XAxis dataKey="name" tick={axisStyle} axisLine={false} tickLine={false} dy={10} />
+                <YAxis tick={axisStyle} axisLine={false} tickLine={false} />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="rft" name="RFT %" fill={PALETTE.amber} radius={[4, 4, 0, 0]} barSize={12} />
+                <Bar dataKey="dhu" name="DHU %" fill={PALETTE.red} radius={[4, 4, 0, 0]} barSize={12} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </motion.div>
+        </Panel>
 
-        {/* Inspection Status */}
-        <motion.div variants={itemVariants} className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:shadow-md transition-shadow">
-          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2 mb-6"><Search className="w-5 h-5 text-teal-500" /> Inspection Status</h3>
-          <div className="space-y-5">
-            <div>
-              <div className="flex justify-between mb-1.5 text-sm font-medium"><span className="text-gray-700">Inline Pass</span><span className="text-green-600">82%</span></div>
-              <div className="w-full bg-gray-100 rounded-full h-2.5"><div className="bg-green-500 h-2.5 rounded-full" style={{ width: '82%' }}></div></div>
-            </div>
-            <div>
-              <div className="flex justify-between mb-1.5 text-sm font-medium"><span className="text-gray-700">Endline Pass</span><span className="text-green-600">91%</span></div>
-              <div className="w-full bg-gray-100 rounded-full h-2.5"><div className="bg-green-500 h-2.5 rounded-full" style={{ width: '91%' }}></div></div>
-            </div>
-            <div>
-              <div className="flex justify-between mb-1.5 text-sm font-medium"><span className="text-gray-700">Final Pass</span><span className="text-amber-600">78%</span></div>
-              <div className="w-full bg-gray-100 rounded-full h-2.5"><div className="bg-amber-500 h-2.5 rounded-full" style={{ width: '78%' }}></div></div>
-            </div>
-            <div>
-              <div className="flex justify-between mb-1.5 text-sm font-medium"><span className="text-gray-700">Pre-Final Pass</span><span className="text-green-600">88%</span></div>
-              <div className="w-full bg-gray-100 rounded-full h-2.5"><div className="bg-green-500 h-2.5 rounded-full" style={{ width: '88%' }}></div></div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Certification Status */}
-        <motion.div variants={itemVariants} className="bg-bg-1/50 backdrop-blur-md rounded-xl border border-border-main shadow-sm p-6 hover:shadow-md transition-shadow">
-          <h3 className="text-lg font-semibold text-text-1 flex items-center gap-2 mb-6"><Award className="w-5 h-5 text-purple-500" /> Cert Status</h3>
-          <div className="space-y-4">
-            {certificates.length > 0 ? certificates.slice(0, 5).map(cert => {
-              const daysLeft = getDaysUntilExpiry(cert.expiryDate);
-              const isExpiringSoon = daysLeft > 0 && daysLeft <= 30;
-              const isExpired = daysLeft <= 0;
-              
-              let badgeClass = "bg-green-500/10 text-green-500";
-              let badgeText = "Valid";
-              
-              if (isExpired) {
-                badgeClass = "bg-red-500/10 text-red-500";
-                badgeText = "Expired";
-              } else if (isExpiringSoon) {
-                badgeClass = "bg-amber-500/10 text-amber-500";
-                badgeText = "Expiring";
-              }
-
-              return (
-                <div key={cert.id} className="flex justify-between items-center pb-3 border-b border-border-main last:border-0 last:pb-0">
-                  <span className="text-sm font-medium text-text-2 truncate pr-2" title={cert.name}>{cert.name}</span>
-                  <span className={`px-2.5 py-1 text-xs font-medium rounded-full flex-shrink-0 ${badgeClass}`}>{badgeText}</span>
-                </div>
-              );
-            }) : (
-              <div className="text-text-3 text-sm">No certificates found.</div>
-            )}
-          </div>
-        </motion.div>
-      </motion.div>
-
-      {/* Training & CAPA */}
-      <motion.div variants={containerVariants} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Training Status */}
-        <motion.div variants={itemVariants} className="bg-bg-1/50 backdrop-blur-md rounded-xl border border-border-main shadow-sm p-6 hover:shadow-md transition-shadow">
-          <h3 className="text-lg font-semibold text-text-1 flex items-center gap-2 mb-6"><GraduationCap className="w-5 h-5 text-pink-500" /> Training Status</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-bg-2 text-text-2 border-b border-border-main">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Department</th>
-                  <th className="px-4 py-3 font-semibold text-center">Planned</th>
-                  <th className="px-4 py-3 font-semibold text-center">Done</th>
-                  <th className="px-4 py-3 font-semibold text-right">%</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-main">
-                <tr className="hover:bg-bg-2/50">
-                  <td className="px-4 py-3 font-medium text-text-1">Sewing</td>
-                  <td className="px-4 py-3 text-center text-text-2">12</td>
-                  <td className="px-4 py-3 text-center text-text-2">10</td>
-                  <td className="px-4 py-3 text-right font-medium text-green-500">83%</td>
-                </tr>
-                <tr className="hover:bg-bg-2/50">
-                  <td className="px-4 py-3 font-medium text-text-1">Cutting</td>
-                  <td className="px-4 py-3 text-center text-text-2">8</td>
-                  <td className="px-4 py-3 text-center text-text-2">8</td>
-                  <td className="px-4 py-3 text-right font-medium text-green-500">100%</td>
-                </tr>
-                <tr className="hover:bg-bg-2/50">
-                  <td className="px-4 py-3 font-medium text-text-1">Finishing</td>
-                  <td className="px-4 py-3 text-center text-text-2">6</td>
-                  <td className="px-4 py-3 text-center text-text-2">4</td>
-                  <td className="px-4 py-3 text-right font-medium text-amber-500">67%</td>
-                </tr>
-                <tr className="hover:bg-bg-2/50">
-                  <td className="px-4 py-3 font-medium text-text-1">QC Dept</td>
-                  <td className="px-4 py-3 text-center text-text-2">10</td>
-                  <td className="px-4 py-3 text-center text-text-2">9</td>
-                  <td className="px-4 py-3 text-right font-medium text-green-500">90%</td>
-                </tr>
-                <tr className="hover:bg-bg-2/50">
-                  <td className="px-4 py-3 font-medium text-text-1">IE/IE Tech</td>
-                  <td className="px-4 py-3 text-center text-text-2">4</td>
-                  <td className="px-4 py-3 text-center text-text-2">2</td>
-                  <td className="px-4 py-3 text-right font-medium text-red-500">50%</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </motion.div>
-
-        {/* CAPA Summary */}
-        <motion.div variants={itemVariants} className="bg-bg-1/50 backdrop-blur-md rounded-xl border border-border-main shadow-sm p-6 hover:shadow-md transition-shadow">
-          <h3 className="text-lg font-semibold text-text-1 flex items-center gap-2 mb-6"><Wrench className="w-5 h-5 text-orange-500" /> CAPA Summary</h3>
-          <div className="space-y-6 pl-4 border-l-2 border-border-main">
-            {capas.length > 0 ? capas.map(capa => (
-              <div key={capa.id} className="relative">
-                <div className={`absolute -left-[21px] top-1.5 w-3 h-3 rounded-full border-2 border-bg-0 ${
-                  capa.status === 'Closed' ? 'bg-green-500' : 
-                  capa.status === 'Overdue' ? 'bg-red-500' : 
-                  capa.status === 'In Progress' ? 'bg-blue-500' : 'bg-amber-500'
-                }`}></div>
-                <div className="font-medium text-text-1 text-sm mb-1">{capa.nc}</div>
-                <div className="text-xs text-text-3">
-                  {capa.status === 'Closed' ? 'Closed' : `Deadline: ${capa.deadline}`} &middot; Responsible: {capa.responsible}
-                </div>
-              </div>
-            )) : (
-              <div className="text-text-3 text-sm">No recent CAPA records found.</div>
-            )}
-          </div>
-        </motion.div>
-
-        {/* KPI vs Target */}
-        <motion.div variants={itemVariants} className="bg-bg-1/50 backdrop-blur-md rounded-xl border border-border-main shadow-sm p-6 hover:shadow-md transition-shadow">
-          <h3 className="text-lg font-semibold text-text-1 flex items-center gap-2 mb-6"><Target className="w-5 h-5 text-red-500" /> KPI vs Target</h3>
-          <div className="h-64">
+        <Panel title="KPI Performance" subtitle="Cross-functional metric scores" icon={Target} accent={PALETTE.indigo}>
+          <div className="h-[280px] w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
-                <PolarGrid stroke="var(--border)" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text-3)', fontSize: 12 }} />
-                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                <Radar name="Actual" dataKey="A" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.2} />
-                <Radar name="Target" dataKey="B" stroke="var(--amber)" strokeDasharray="4 4" fill="var(--amber)" fillOpacity={0.1} />
-                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-1)', borderColor: 'var(--border)', color: 'var(--text-1)', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-              </RadarChart>
+              <BarChart layout="vertical" data={radarData} margin={{ top: 10, right: 20, left: 80, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} opacity={0.4} />
+                <XAxis type="number" domain={[0, 100]} hide />
+                <YAxis dataKey="subject" type="category" tick={axisStyle} axisLine={false} tickLine={false} width={120} tickFormatter={(tick) => tick.length > 20 ? tick.substring(0, 17) + '...' : tick} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--bg-2)' }} />
+                <Bar dataKey="value" name="Score" radius={[0, 8, 8, 0]} barSize={20} background={{ fill: 'var(--bg-2)' }}>
+                  {radarData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           </div>
-        </motion.div>
-      </motion.div>
+        </Panel>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-6">
+        <Panel
+          title="Compliance & Readiness"
+          subtitle="Aggregated department progressions"
+          icon={CheckCircle2}
+          accent={PALETTE.emerald}
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mt-4">
+            <div className="space-y-6">
+              <ProgressRow label="Audit passing threshold" value={auditStats.passed} total={auditStats.total || 1} accent={PALETTE.blue} />
+              <ProgressRow label="CAPA closure rate" value={capaStats.closed} total={capaStats.total || 1} accent={PALETTE.amber} />
+              <ProgressRow label="Valid certificates" value={certStats.valid} total={certStats.total || 1} accent={PALETTE.emerald} />
+            </div>
+            <div className="space-y-4">
+              {trainingStats.length > 0 ? (
+                trainingStats.map((item) => (
+                  <div key={item.department} className="border-b border-border-main pb-3 last:border-0 last:pb-0">
+                    <div className="flex justify-between text-xs mb-1.5">
+                      <span className="font-bold text-text-1">{item.department}</span>
+                      <span className="font-bold text-indigo-500">{item.score}%</span>
+                    </div>
+                    <div className="h-2 bg-bg-2 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${item.score}%` }} />
+                    </div>
+                    <div className="text-[10px] text-text-3 mt-1.5">{item.completed}/{item.total} trained</div>
+                  </div>
+                ))
+              ) : (
+                 <div className="flex flex-col items-center justify-center p-6 text-center h-full">
+                   <GraduationCap className="h-10 w-10 text-text-4 mb-3" />
+                   <p className="text-sm text-text-3 font-medium">No active training metrics</p>
+                 </div>
+              )}
+            </div>
+          </div>
+        </Panel>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <Panel title="Command Shortcuts" subtitle="Fast navigation blocks" icon={Gauge} accent={PALETTE.cyan}>
+            <div className="grid gap-3 mt-3 grid-cols-2">
+              {commandStats.map((item) => (
+                <button
+                  key={item.label}
+                  onClick={() => onNavigate?.(item.page)}
+                  className="flex flex-col p-4 rounded-lg bg-bg-2/50 hover:bg-bg-2 transition-colors border border-border-main text-left cursor-pointer group"
+                >
+                  <span className="text-xs font-bold text-text-3 whitespace-nowrap group-hover:text-text-1 transition-colors">{item.label}</span>
+                  <span className="text-2xl font-black mt-2" style={{ color: item.accent }}>{item.value}</span>
+                </button>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel title="Risk Focus" subtitle="Immediate attention required" icon={AlertTriangle} accent={PALETTE.red}>
+            <div className="space-y-3 mt-3">
+              {[
+                { label: 'Overdue CAPA', value: capaStats.overdue, accent: PALETTE.red, page: 'capa' },
+                { label: 'Expiring Certificates', value: certStats.expiringSoon, accent: PALETTE.amber, page: 'certification' },
+                { label: 'Open Complaints', value: complaintsCount, accent: PALETTE.red, page: 'complaints' },
+                { label: 'Logged Risks', value: risksCount, accent: PALETTE.indigo, page: 'risk' },
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  onClick={() => onNavigate?.(item.page)}
+                  className="w-full flex items-center justify-between p-3.5 rounded-lg bg-bg-2/50 hover:bg-bg-2 transition-colors border border-border-main text-left cursor-pointer group"
+                >
+                  <span className="text-xs font-bold text-text-2 group-hover:text-text-1 transition-colors">{item.label}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-black" style={{ color: item.accent }}>{item.value}</span>
+                    <ChevronRight className="h-4 w-4 text-text-4 group-hover:text-text-1 transition-colors" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      </div>
     </motion.div>
   );
 }
-
-export { Dashboard };

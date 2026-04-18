@@ -12,6 +12,7 @@ interface ExportModalProps {
   data: any[];
   columns: { key: string; label: string }[];
   title: string;
+  moduleId?: string;
   dateKey?: string;
   extraFilters?: {
     key: string;
@@ -24,7 +25,7 @@ interface ExportModalProps {
 
 export function ExportModal({
   isOpen, onClose, data, columns, title,
-  dateKey = 'date', extraFilters, attachmentKey,
+  moduleId, dateKey = 'date', extraFilters, attachmentKey,
 }: ExportModalProps) {
   const [format,       setFormat]      = useState<'csv' | 'xlsx' | 'pdf'>('pdf');
   const [startDate,    setStartDate]   = useState('');
@@ -75,7 +76,8 @@ export function ExportModal({
     } else if (format === 'pdf') {
       const doc  = createDoc({ orientation, paperSize: pageSize });
       let   y    = drawPdfHeader(doc, title,
-        `Records exported: ${filteredData.length}  |  Date range: ${startDate || 'All'} – ${endDate || 'All'}`
+        `Records exported: ${filteredData.length}  |  Date range: ${startDate || 'All'} – ${endDate || 'All'}`,
+        moduleId ?? title
       );
 
       // Info grid (counts)
@@ -96,7 +98,18 @@ export function ExportModal({
         }),
       );
 
-      y = proTable(doc, y, head, body);
+      // Smart column sizing for common labels
+      const columnStyles: any = {};
+      columns.forEach((col, idx) => {
+        const lbl = col.label.toLowerCase();
+        if (lbl.includes('issue') || lbl.includes('description') || lbl.includes('nc') || lbl.includes('clause')) {
+           columnStyles[idx] = { cellWidth: 'auto', minCellWidth: 40 };
+        } else if (lbl.includes('date') || lbl.includes('id') || lbl.includes('status')) {
+           columnStyles[idx] = { halign: 'center', cellWidth: orientation === 'l' ? 30 : 22 };
+        }
+      });
+
+      y = proTable(doc, y, head, body, { columnStyles });
 
       // Collect attachments from all records if key provided
       if (attachmentKey) {
@@ -104,7 +117,7 @@ export function ExportModal({
           item => (Array.isArray(item[attachmentKey]) ? item[attachmentKey] : [])
         );
         if (allAttachments.length > 0) {
-          await embedAttachments(doc, allAttachments, 'PHOTOGRAPHIC EVIDENCE');
+          await embedAttachments(doc, allAttachments, 'EXPORTED EVIDENCE PHOTOS');
         }
       }
 

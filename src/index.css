@@ -304,6 +304,86 @@ html.dark[data-topbar="glass"] #topbar {
   margin-right: 0 !important;
 }
 
+/* Dashboard appearance hooks */
+[data-dashboard-root="true"] {
+  transition: background var(--transition-speed), color var(--transition-speed);
+}
+
+[data-dashboard-surface="hero"] {
+  border-radius: var(--dash-radius-hero, calc(var(--radius) * 4)) !important;
+  padding: var(--dash-hero-padding, 24px) !important;
+  transition: background var(--transition-speed), border-color var(--transition-speed), box-shadow var(--transition-speed);
+}
+
+[data-dashboard-surface="panel"] {
+  border-radius: var(--dash-radius-panel, calc(var(--radius) * 3.5)) !important;
+  transition: background var(--transition-speed), border-color var(--transition-speed), box-shadow var(--transition-speed);
+}
+
+[data-dashboard-region="panel-header"] {
+  padding: var(--dash-panel-padding, 20px) var(--dash-panel-padding, 20px) 0 !important;
+}
+
+[data-dashboard-region="panel-body"] {
+  padding: var(--dash-panel-padding, 20px) !important;
+}
+
+[data-dashboard-surface="tile"] {
+  border-radius: var(--dash-radius-tile, calc(var(--radius) * 3)) !important;
+  padding: var(--dash-tile-padding, 16px) !important;
+  transition: background var(--transition-speed), border-color var(--transition-speed), box-shadow var(--transition-speed);
+}
+
+[data-dashboard-surface="aux"],
+[data-dashboard-surface="interactive"] {
+  border-radius: var(--dash-radius-card, calc(var(--radius) * 2.75)) !important;
+  padding: var(--dash-card-padding, 18px) !important;
+  transition: background var(--transition-speed), border-color var(--transition-speed), box-shadow var(--transition-speed), transform var(--transition-speed);
+}
+
+html[data-card-style="glass"] [data-dashboard-surface="panel"],
+html[data-card-style="glass"] [data-dashboard-surface="tile"],
+html[data-card-style="glass"] [data-dashboard-surface="aux"],
+html[data-card-style="glass"] [data-dashboard-surface="interactive"] {
+  background: rgba(255,255,255,0.62) !important;
+  backdrop-filter: blur(14px) saturate(160%);
+  border-color: rgba(255,255,255,0.22) !important;
+}
+
+html.dark[data-card-style="glass"] [data-dashboard-surface="panel"],
+html.dark[data-card-style="glass"] [data-dashboard-surface="tile"],
+html.dark[data-card-style="glass"] [data-dashboard-surface="aux"],
+html.dark[data-card-style="glass"] [data-dashboard-surface="interactive"] {
+  background: rgba(22,24,34,0.64) !important;
+  border-color: rgba(255,255,255,0.08) !important;
+}
+
+html[data-card-style="flat"] [data-dashboard-surface="panel"],
+html[data-card-style="flat"] [data-dashboard-surface="tile"],
+html[data-card-style="flat"] [data-dashboard-surface="aux"],
+html[data-card-style="flat"] [data-dashboard-surface="interactive"] {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  background: var(--bg-2) !important;
+}
+
+html[data-card-style="elevated"] [data-dashboard-surface="panel"],
+html[data-card-style="elevated"] [data-dashboard-surface="tile"],
+html[data-card-style="elevated"] [data-dashboard-surface="aux"],
+html[data-card-style="elevated"] [data-dashboard-surface="interactive"] {
+  box-shadow: var(--shadow-lg) !important;
+  border-color: transparent !important;
+}
+
+html[data-card-style="bordered"] [data-dashboard-surface="panel"],
+html[data-card-style="bordered"] [data-dashboard-surface="tile"],
+html[data-card-style="bordered"] [data-dashboard-surface="aux"],
+html[data-card-style="bordered"] [data-dashboard-surface="interactive"] {
+  box-shadow: none !important;
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--border)) !important;
+  border-left: 3px solid var(--accent) !important;
+}
+
 
 
 /* ═══════════════════════════════════════════════════

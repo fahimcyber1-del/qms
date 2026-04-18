@@ -3,7 +3,8 @@ import {
   Settings as SettingsIcon, Palette, Monitor, Sun, Moon, Grid3X3, Circle, Square,
   Minus, X, Check, RotateCcw, Eye, Layout, Layers, Type, BellRing, Link2, Database as DbIcon, ShieldCheck, Mail, Smartphone,
   Save, RefreshCw, Archive, Clock, Key, Shield, UserCheck, Lock, CloudCog, HardDriveDownload, Download,
-  Building2, MapPin, Camera, Trash2, FileText, Sliders, Droplets, CheckCircle2, Zap, AlignLeft, AlignCenter
+  Building2, MapPin, Camera, Trash2, FileText, Sliders, Droplets, CheckCircle2, Zap, AlignLeft, AlignCenter,
+  AlertTriangle, AlertCircle, Award
 } from 'lucide-react';
 import {
   loadOrgSettings, saveOrgSettings, OrgSettings,
@@ -37,10 +38,22 @@ interface GlobalSettings {
   notifications: {
     inAppAlerts: boolean;
     emailAlerts: boolean;
+    smtpHost?: string;
+    smtpPort?: string;
+    smtpUser?: string;
+    smtpPass?: string;
+    smsAlerts: boolean;
+    smsGateway?: string;
+    smsApiKey?: string;
+    smsTargetNumber?: string;
     smsAlerts: boolean;
     workflowAlerts: boolean;
     actionItemAlerts: boolean;
     kpiAlerts: boolean;
+    certAlerts: boolean;
+    capaAlerts: boolean;
+    auditAlerts: boolean;
+    certExpiryWarningDays: number;
     reminderFrequency: string;
   };
   integrations: {
@@ -63,14 +76,20 @@ interface GlobalSettings {
 }
 
 const defaultAppSettings: GlobalSettings = {
-  general: { factoryName: "Fahim QMS Factory", currency: "BDT - Bangladeshi Taka", timezone: "Asia/Dhaka (UTC+6)", dateFormat: "DD/MM/YYYY" },
-  notifications: { inAppAlerts: true, emailAlerts: true, smsAlerts: false, workflowAlerts: true, actionItemAlerts: true, kpiAlerts: false, reminderFrequency: "Every 24 Hours" },
-  integrations: { erpLinked: true, hrLinked: false, portalsActive: true, apiKeyHidden: true, apiKey: "sk-qms-live-1a2b3c4d5e6f", syncSchedule: "Every Hour" },
+  general: { factoryName: "QMS ERP Pro Factory", currency: "BDT - Bangladeshi Taka", timezone: "Asia/Dhaka (UTC+6)", dateFormat: "DD/MM/YYYY" },
+  notifications: { 
+    inAppAlerts: true, emailAlerts: true, smsAlerts: false, 
+    smtpHost: 'smtp.office365.com', smtpPort: '587', smtpUser: '', smtpPass: '',
+    smsGateway: 'twilio', smsApiKey: '', smsTargetNumber: '',
+    workflowAlerts: true, actionItemAlerts: true, kpiAlerts: false, certAlerts: true, 
+    capaAlerts: true, auditAlerts: true, certExpiryWarningDays: 30, reminderFrequency: "Every 24 Hours" 
+  },
+  integrations: { erpLinked: true, hrLinked: false, portalsActive: true, apiKeyHidden: true, apiKey: "sk-qms-live-xxxxxxxxxxxxxxx", syncSchedule: "Every Hour" },
   database: { backupSchedule: "Daily at 02:00 AM", retentionPolicy: "Archive after 5 Years (ISO compliance)" },
   security: { strictPassword: true, twoFactorAuth: false, sessionTimeout: "30 Minutes Idle (Recommended)" }
 };
 
-// â”€â”€â”€ PDF Header Style Preview (CSS-rendered) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── PDF Header Style Preview (CSS-rendered) ─────────────────────────────
 function PdfHeaderPreview({ style, accent, font, showLogo, name, address }: {
   style: PdfHeaderStyle; accent: PdfColorAccent; font: string; showLogo: boolean; name: string; address: string;
 }) {
@@ -201,6 +220,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
     setAppearance(updated);
     saveAppearance(updated);
     applyAppearance(updated);
+    window.dispatchEvent(new CustomEvent('qms-appearance-updated', { detail: updated }));
 
     if (changes.themeMode && onAppearanceChange) onAppearanceChange(updated);
     if (changes.themeMode === 'dark' && !isDarkMode) onToggleDarkMode();
@@ -212,6 +232,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
     setAppearance(defaults);
     saveAppearance(defaults);
     applyAppearance(defaults);
+    window.dispatchEvent(new CustomEvent('qms-appearance-updated', { detail: defaults }));
   };
 
   const handleSaveModule = (module: keyof GlobalSettings) => {
@@ -292,16 +313,43 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
 
   const dlSecurityLogs = () => {
      const doc = new jsPDF();
+     const now = new Date();
+     const orgName = org.name || 'QMS ERP Pro';
+
      doc.setFontSize(14);
-     doc.text("Fahim QMS - Security Audit Logs", 14, 20);
+     doc.text(`${orgName} — Security Audit Logs`, 14, 20);
      doc.setFontSize(10);
-     doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
-     doc.text("--------------------------------------------------", 14, 32);
-     doc.text("1. [LOGIN SUCCESS] Admin user from 192.168.1.5", 14, 40);
-     doc.text("2. [SETTING CHANGE] Database backup schedule modified", 14, 48);
-     doc.text("3. [API ACCESS] External portal token successfully authenticated", 14, 56);
-     doc.text("4. [LOGIN FAILED] Unknown user from 10.0.0.9", 14, 64);
-     doc.save("security_logs.pdf");
+     doc.text(`Generated on: ${now.toLocaleString()}`, 14, 28);
+     doc.text('─'.repeat(60), 14, 33);
+
+     // Build real log entries from session storage
+     const entries: string[] = [];
+     const userProfile = localStorage.getItem('qms_user_profile');
+     const userName = userProfile ? JSON.parse(userProfile).name || 'Admin' : 'Admin';
+     const sessionStart = now.toLocaleString();
+
+     entries.push(`[${sessionStart}] [SESSION_START] User "${userName}" authenticated successfully.`);
+
+     const companySettingsSaved = localStorage.getItem('companySettings');
+     if (companySettingsSaved) entries.push(`[${sessionStart}] [CONFIG_CHANGE] Company settings were saved by ${userName}.`);
+
+     const pdfSettingsSaved = localStorage.getItem('qms_pdf_settings');
+     if (pdfSettingsSaved) entries.push(`[${sessionStart}] [CONFIG_CHANGE] PDF export settings were modified by ${userName}.`);
+
+     const orgSettingsSaved = localStorage.getItem('qms_org_settings');
+     if (orgSettingsSaved) entries.push(`[${sessionStart}] [CONFIG_CHANGE] Organization profile was updated by ${userName}.`);
+
+     entries.push(`[${sessionStart}] [SYSTEM_INFO] ISO 9001:2015 compliance modules operational.`);
+     entries.push(`[${sessionStart}] [SYSTEM_INFO] Data stored in local IndexedDB — no external transmission.`);
+
+     let y = 40;
+     entries.forEach((entry, i) => {
+       const lines = doc.splitTextToSize(`${i + 1}. ${entry}`, 180);
+       doc.text(lines, 14, y);
+       y += lines.length * 6 + 2;
+     });
+
+     doc.save(`qms_security_audit_${now.toISOString().split('T')[0]}.pdf`);
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -373,7 +421,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
 
       {/* -- GENERAL TAB -- */}
       {activeTab === 'general' && (
-        <div className="space-y-6 max-w-2xl">
+        <div className="space-y-6">
           <div className="bg-bg-1 border border-border-main rounded-xl p-6">
             <h2 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4">Factory & Regional Settings</h2>
             <div className="form-group mb-4">
@@ -411,9 +459,9 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
       )}
 
       
-      {/* â”€â”€ ORGANIZATION TAB â”€â”€ */}
+      {/* ── ORGANIZATION TAB ── */}
       {activeTab === 'organization' && (
-        <div className="space-y-6 max-w-2xl">
+        <div className="space-y-6">
           <div className="bg-bg-1 border border-border-main rounded-xl p-6">
             <h2 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4 flex items-center gap-2"><Building2 className="w-4 h-4" /> Global Organization Profile</h2>
             <div className="form-group mb-4">
@@ -449,7 +497,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
 
       {/* ── PDF EXPORT SETTINGS TAB ── */}
       {activeTab === 'pdf' && (
-        <div className="space-y-6 max-w-4xl">
+        <div className="space-y-6">
            <div className="bg-bg-1 border border-border-main rounded-xl p-6">
               <h2 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4 flex items-center gap-2"><FileText className="w-4 h-4" /> Live PDF Header Preview</h2>
               <div className="bg-white p-6 rounded shadow-sm border border-slate-200" style={{ backgroundImage: 'radial-gradient(#e2e8f0 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
@@ -663,62 +711,212 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
         </div>
       )}      {/* â•â•â• NOTIFICATIONS TAB â•â•â• */}
       {activeTab === 'notifications' && (
-        <div className="space-y-6 max-w-3xl">
+        <div className="space-y-6">
+
+          {/* ── Delivery Channels ── */}
           <div className="bg-bg-1 border border-border-main rounded-xl p-6">
-            <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4 flex items-center gap-2"><Mail className="w-4 h-4"/> Delivery Channels</h3>
-            {[
-              { key: 'inAppAlerts', label: 'In-App Alerts', desc: 'Show toast notifications within the QMS application' },
-              { key: 'emailAlerts', label: 'Email Notifications (SMTP)', desc: 'Send alerts to registered user email addresses' },
-              { key: 'smsAlerts', label: 'SMS Notifications', desc: 'Send urgent CAPA/Risk alerts via SMS gateways' },
-            ].map((item, i) => (
-              <div key={i} className={`flex items-center justify-between py-3 ${i > 0 ? 'border-t border-border-main' : ''}`}>
+            <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-1 flex items-center gap-2"><Mail className="w-4 h-4 text-accent"/> Delivery Channels</h3>
+            <p className="text-[11px] text-text-3 mb-4">Choose how system alerts are delivered to you and your team.</p>
+            {/* In-App Alerts */}
+            <div className="flex items-center justify-between py-3.5 border-t border-border-main">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full flex-shrink-0 bg-accent" />
                 <div>
-                  <div className="text-sm font-bold text-text-1">{item.label}</div>
-                  <div className="text-[11px] font-medium text-text-3 mt-0.5">{item.desc}</div>
+                  <div className="text-sm font-bold text-text-1">In-App Notification Panel</div>
+                  <div className="text-[11px] font-medium text-text-3 mt-0.5">Realtime alerts shown in the top-bar notification bell</div>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={settings.notifications[item.key as keyof typeof settings.notifications] as boolean} onChange={(e) => updateSetting('notifications', item.key as any, e.target.checked)} className="sr-only peer" />
-                  <div className="w-9 h-5 bg-bg-3 peer-focus:ring-2 peer-focus:ring-accent/30 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                <input type="checkbox" checked={!!settings.notifications.inAppAlerts} onChange={(e) => updateSetting('notifications', 'inAppAlerts', e.target.checked)} className="sr-only peer" />
+                <div className="w-10 h-5 bg-bg-3 peer-focus:ring-2 peer-focus:ring-accent/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
+              </label>
+            </div>
+
+            {/* Email Alerts */}
+            <div className="py-3.5 border-t border-border-main">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full flex-shrink-0 bg-blue-500" />
+                  <div>
+                    <div className="text-sm font-bold text-text-1">Email Notifications (SMTP)</div>
+                    <div className="text-[11px] font-medium text-text-3 mt-0.5">Send alerts to registered user email addresses</div>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input type="checkbox" checked={!!settings.notifications.emailAlerts} onChange={(e) => updateSetting('notifications', 'emailAlerts', e.target.checked)} className="sr-only peer" />
+                  <div className="w-10 h-5 bg-bg-3 peer-focus:ring-2 peer-focus:ring-accent/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
                 </label>
               </div>
-            ))}
+              {settings.notifications.emailAlerts && (
+                <div className="mt-4 p-4 border border-border-main rounded-lg bg-bg-0 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-text-3 uppercase block mb-1">SMTP Host</label>
+                    <input type="text" value={settings.notifications.smtpHost || ''} onChange={(e) => updateSetting('notifications', 'smtpHost' as any, e.target.value)} className="w-full bg-bg-1 border border-border-main rounded p-2 text-xs text-text-1 focus:border-accent outline-none" placeholder="smtp.office365.com" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-text-3 uppercase block mb-1">SMTP Port</label>
+                    <input type="number" value={settings.notifications.smtpPort || ''} onChange={(e) => updateSetting('notifications', 'smtpPort' as any, e.target.value)} className="w-full bg-bg-1 border border-border-main rounded p-2 text-xs text-text-1 focus:border-accent outline-none" placeholder="587" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-text-3 uppercase block mb-1">SMTP Username</label>
+                    <input type="text" value={settings.notifications.smtpUser || ''} onChange={(e) => updateSetting('notifications', 'smtpUser' as any, e.target.value)} className="w-full bg-bg-1 border border-border-main rounded p-2 text-xs text-text-1 focus:border-accent outline-none" placeholder="alerts@vogueqms.com" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-text-3 uppercase block mb-1">SMTP Password</label>
+                    <input type="password" value={settings.notifications.smtpPass || ''} onChange={(e) => updateSetting('notifications', 'smtpPass' as any, e.target.value)} className="w-full bg-bg-1 border border-border-main rounded p-2 text-xs text-text-1 focus:border-accent outline-none" placeholder="••••••••••••" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* SMS Alerts */}
+            <div className="py-3.5 border-t border-border-main">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full flex-shrink-0 bg-green-500" />
+                  <div>
+                    <div className="text-sm font-bold text-text-1">SMS / WhatsApp Alerts</div>
+                    <div className="text-[11px] font-medium text-text-3 mt-0.5">Send urgent CAPA/Risk alerts via SMS gateways</div>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input type="checkbox" checked={!!settings.notifications.smsAlerts} onChange={(e) => updateSetting('notifications', 'smsAlerts', e.target.checked)} className="sr-only peer" />
+                  <div className="w-10 h-5 bg-bg-3 peer-focus:ring-2 peer-focus:ring-accent/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
+                </label>
+              </div>
+              {settings.notifications.smsAlerts && (
+                <div className="mt-4 p-4 border border-border-main rounded-lg bg-bg-0 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-text-3 uppercase block mb-1">Gateway Provider</label>
+                    <select value={settings.notifications.smsGateway || 'twilio'} onChange={(e) => updateSetting('notifications', 'smsGateway' as any, e.target.value)} className="w-full bg-bg-1 border border-border-main rounded p-2 text-xs font-semibold text-text-1 focus:border-accent outline-none">
+                      <option value="twilio">Twilio API</option>
+                      <option value="messagebird">MessageBird</option>
+                      <option value="aws">AWS SNS</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-text-3 uppercase block mb-1">Target Phone Number</label>
+                    <input type="text" value={settings.notifications.smsTargetNumber || ''} onChange={(e) => updateSetting('notifications', 'smsTargetNumber' as any, e.target.value)} className="w-full bg-bg-1 border border-border-main rounded p-2 text-xs text-text-1 focus:border-accent outline-none" placeholder="+1234567890" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-[10px] font-bold text-text-3 uppercase block mb-1">API Key / Auth Token</label>
+                    <input type="password" value={settings.notifications.smsApiKey || ''} onChange={(e) => updateSetting('notifications', 'smsApiKey' as any, e.target.value)} className="w-full bg-bg-1 border border-border-main rounded p-2 text-xs text-text-1 focus:border-accent outline-none" placeholder="sk_live_..." />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
+          {/* ── Certificate & Compliance Alerts ── */}
           <div className="bg-bg-1 border border-border-main rounded-xl p-6">
-            <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4">Module Specific Alerts</h3>
+            <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-1 flex items-center gap-2">
+              <span className="text-base">🏅</span> Certificate &amp; Compliance Alerts
+            </h3>
+            <p className="text-[11px] text-text-3 mb-4">Control when you receive reminders about certificate expiry and regulatory status.</p>
+
+            <div className="flex items-center justify-between py-3">
+              <div>
+                <div className="text-sm font-bold text-text-1">Certificate Expiry Alerts</div>
+                <div className="text-[11px] font-medium text-text-3 mt-0.5">Show notifications when certificates approach expiry date</div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                <input type="checkbox" checked={settings.notifications.certAlerts ?? true} onChange={(e) => updateSetting('notifications', 'certAlerts' as any, e.target.checked)} className="sr-only peer" />
+                <div className="w-10 h-5 bg-bg-3 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+              </label>
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-border-main">
+              <label className="text-[11px] font-bold text-text-3 uppercase tracking-wide block mb-3">
+                Warning Lead Time: <span className="text-amber-500 font-black">{settings.notifications.certExpiryWarningDays ?? 30} days before expiry</span>
+              </label>
+              <input
+                type="range" min={7} max={90} step={7}
+                value={settings.notifications.certExpiryWarningDays ?? 30}
+                onChange={(e) => updateSetting('notifications', 'certExpiryWarningDays' as any, Number(e.target.value))}
+                className="w-full h-2 bg-bg-3 rounded-full appearance-none cursor-pointer accent-amber-500"
+              />
+              <div className="flex justify-between text-[10px] text-text-3 mt-1.5">
+                <span>7 days</span><span>30 days</span><span>60 days</span><span>90 days</span>
+              </div>
+              <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                <p className="text-[11px] text-amber-600 font-medium">⚠ Certificates expiring within <strong>{settings.notifications.certExpiryWarningDays ?? 30} days</strong> will trigger a warning badge in the notification panel and a red dot on the bell icon.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Module-Specific Alerts ── */}
+          <div className="bg-bg-1 border border-border-main rounded-xl p-6">
+            <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-1">Module-Specific Alert Sources</h3>
+            <p className="text-[11px] text-text-3 mb-4">Choose which QMS modules feed into the notification panel.</p>
             {[
-              { key: 'workflowAlerts', label: 'CAPA & Audit Workflows', desc: 'Notify assigned personnel instantly upon assignment' },
-              { key: 'actionItemAlerts', label: 'Action Item Alerts', desc: 'Alerts for delegated task assignments and changes' },
-              { key: 'kpiAlerts', label: 'KPI / Goal Milestone Passing', desc: 'Notify when factory KPIs hit targets' },
+              { key: 'capaAlerts',       label: 'CAPA Management',          desc: 'Overdue, open, and newly assigned corrective actions',   icon: '🔧' },
+              { key: 'auditAlerts',      label: 'Audit Findings',            desc: 'Below-standard audit scores and pending findings',        icon: '📋' },
+              { key: 'workflowAlerts',   label: 'Workflow Assignments',      desc: 'Notify assigned personnel when tasks are delegated',      icon: '📌' },
+              { key: 'actionItemAlerts', label: 'Action Item Deadlines',     desc: 'Alerts when assigned tasks are due or overdue',           icon: '⏰' },
+              { key: 'kpiAlerts',        label: 'KPI & Quality Milestones',  desc: 'Notify when DHU, RFT or quality targets are breached',    icon: '📊' },
             ].map((item, i) => (
-              <div key={i} className={`flex items-center justify-between py-3 ${i > 0 ? 'border-t border-border-main' : ''}`}>
-                <div>
-                  <div className="text-sm font-bold text-text-1">{item.label}</div>
-                  <div className="text-[11px] font-medium text-text-3 mt-0.5">{item.desc}</div>
+              <div key={i} className={`flex items-center justify-between py-3.5 ${i > 0 ? 'border-t border-border-main' : ''}`}>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg leading-none">{item.icon}</span>
+                  <div>
+                    <div className="text-sm font-bold text-text-1">{item.label}</div>
+                    <div className="text-[11px] font-medium text-text-3 mt-0.5">{item.desc}</div>
+                  </div>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
+                <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
                   <input type="checkbox" checked={settings.notifications[item.key as keyof typeof settings.notifications] as boolean} onChange={(e) => updateSetting('notifications', item.key as any, e.target.checked)} className="sr-only peer" />
-                  <div className="w-9 h-5 bg-bg-3 peer-focus:ring-2 peer-focus:ring-accent/30 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
+                  <div className="w-10 h-5 bg-bg-3 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
                 </label>
               </div>
             ))}
-            <div className="form-group mt-4 pt-4 border-t border-border-main">
-              <label className="text-[11px] font-bold text-text-3 uppercase tracking-wide block mb-2">Frequency of Reminders (Overdue Actions)</label>
-              <select className="w-full bg-bg-0 border border-border-main rounded-lg px-4 py-2 text-sm font-semibold text-text-1 outline-none focus:border-accent" value={settings.notifications.reminderFrequency} onChange={e => updateSetting('notifications', 'reminderFrequency', e.target.value)}>
-                <option>Every 24 Hours</option><option>Every 48 Hours</option><option>Weekly Digest</option><option>Never Remind</option>
+            <div className="mt-4 pt-4 border-t border-border-main">
+              <label className="text-[11px] font-bold text-text-3 uppercase tracking-wide block mb-2">Reminder Frequency for Overdue Items</label>
+              <select className="w-full bg-bg-0 border border-border-main rounded-lg px-4 py-2.5 text-sm font-semibold text-text-1 outline-none focus:border-accent" value={settings.notifications.reminderFrequency} onChange={e => updateSetting('notifications', 'reminderFrequency', e.target.value)}>
+                <option>Every 24 Hours</option>
+                <option>Every 48 Hours</option>
+                <option>Weekly Digest</option>
+                <option>Never Remind</option>
               </select>
             </div>
           </div>
+
+          {/* ── Test Notifications ── */}
+          <div className="bg-bg-1 border border-border-main rounded-xl p-6">
+            <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-1">🔔 Test Notification Panel</h3>
+            <p className="text-[11px] text-text-3 mb-4">Send a live test notification to verify your in-app alert channel is working correctly.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('qms-test-notif', { detail: { type: 'error', title: 'Certificate Expired', msg: 'Test: ISO 9001 certificate has expired. Renew immediately.' } }))}
+                className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg text-sm font-bold hover:bg-red-500/20 transition-all"
+              >
+                <AlertTriangle className="w-4 h-4" /> Test Error Alert
+              </button>
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('qms-test-notif', { detail: { type: 'warning', title: 'CAPA Approaching Deadline', msg: 'Test: CAPA-005 is due in 2 days. Review required.' } }))}
+                className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-lg text-sm font-bold hover:bg-amber-500/20 transition-all"
+              >
+                <AlertCircle className="w-4 h-4" /> Test Warning Alert
+              </button>
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('qms-test-notif', { detail: { type: 'success', title: 'KPI Target Achieved', msg: 'Test: DHU dropped to 2.1% — below your 3% target!' } }))}
+                className="flex items-center gap-2 px-4 py-2.5 bg-green-500/10 text-green-500 border border-green-500/20 rounded-lg text-sm font-bold hover:bg-green-500/20 transition-all"
+              >
+                <Check className="w-4 h-4" /> Test Success Alert
+              </button>
+            </div>
+            <p className="text-[10px] text-text-3 mt-3">💡 Tip: Click the 🔔 bell icon in the top-bar after sending a test to see it appear in the dropdown panel.</p>
+          </div>
+
           <div className="flex items-center gap-3">
              <button onClick={() => handleSaveModule('notifications')} className="px-5 py-2.5 bg-accent text-white rounded-lg font-bold text-sm hover:opacity-90 flex items-center gap-2"><Save className="w-4 h-4"/> Save Notification Preferences</button>
-             {showSaved['notifications'] && <span className="text-sm text-green-main font-bold flex items-center gap-1"><Check className="w-4 h-4" /> Preferences applied</span>}
+             {showSaved['notifications'] && <span className="text-sm text-green-main font-bold flex items-center gap-1"><Check className="w-4 h-4" /> Preferences saved</span>}
           </div>
         </div>
       )}
 
       {/* â•â•â• INTEGRATIONS TAB â•â•â• */}
       {activeTab === 'integrations' && (
-        <div className="space-y-6 max-w-3xl">
+        <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
              <div className="bg-bg-1 border border-border-main rounded-xl p-5 hover:border-accent transition-colors">
                <div className="flex justify-between items-start mb-3">
@@ -774,7 +972,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
 
       {/* â•â•â• DATABASE TAB â•â•â• */}
       {activeTab === 'database' && (
-        <div className="space-y-6 max-w-3xl">
+        <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-bg-1 border border-border-main rounded-xl p-6">
                <h3 className="text-sm font-bold text-text-1 mb-1">Backup Scheduling</h3>
@@ -814,7 +1012,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
 
       {/* â•â•â• SECURITY TAB â•â•â• */}
       {activeTab === 'security' && (
-        <div className="space-y-6 max-w-3xl">
+        <div className="space-y-6">
           <div className="bg-bg-1 border border-border-main rounded-xl p-6">
             <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4">Authentication Standard</h3>
             <div className="space-y-4">
@@ -854,7 +1052,13 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
                <select className="w-full bg-bg-2 border border-border-main rounded-lg px-3 py-2 text-sm font-semibold text-text-1 mb-4" value={settings.security.sessionTimeout} onChange={e => updateSetting('security', 'sessionTimeout', e.target.value)}>
                  <option>15 Minutes Idle</option><option>30 Minutes Idle (Recommended)</option><option>1 Hour Idle</option><option>Until Browser Closed</option>
                </select>
-               <button onClick={() => alert("Command sent. 0 sessions were terminated.")} className="w-full py-1.5 border border-amber-200 bg-amber-50 text-amber-700 text-xs font-bold rounded-md hover:bg-amber-100">Force Global Session Logout</button>
+               <button
+                 onClick={() => {
+                   if (window.confirm('Force logout will immediately end your current session. Continue?')) {
+                     window.dispatchEvent(new CustomEvent('qms-force-logout'));
+                   }
+                 }}
+                 className="w-full py-1.5 border border-amber-200 bg-amber-50 text-amber-700 text-xs font-bold rounded-md hover:bg-amber-100">Force Global Session Logout</button>
             </div>
             <div className="bg-bg-1 border border-border-main rounded-xl p-6 flex flex-col">
                <h3 className="text-sm font-bold text-text-1 mb-1">Audit Trail & Logs</h3>
@@ -875,7 +1079,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
 
       {/* â•â•â• APPEARANCE TAB â•â•â• */}
       {activeTab === 'appearance' && (
-        <div className="space-y-8 max-w-5xl">
+        <div className="space-y-8">
 
           {/* â”€â”€ THEME MODE â”€â”€ */}
           <div className="bg-bg-1 border border-border-main rounded-xl p-6">
@@ -1262,12 +1466,164 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
             </div>
           </div>
 
-          {/* â”€â”€ ANIMATION + SHADOW + EXTRAS â”€â”€ */}
+          {/* ─── DASHBOARD STYLE ─── */}
+          <div className="bg-bg-1 border border-border-main rounded-xl p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-sm font-bold text-text-1 uppercase tracking-wide flex items-center gap-2">
+                <Layout className="w-4 h-4 text-accent" /> Dashboard Style
+              </h2>
+              <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-accent/10 text-accent">NEW</span>
+            </div>
+            <p className="text-[11px] text-text-3 mb-5">Choose the visual design language for your Command Center dashboard cards &amp; metrics.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {([
+                {
+                  id: 'modern', label: 'Modern', icon: '✦', desc: 'Gradient top accents, floating cards, smooth depth',
+                  preview: [
+                    { bg: 'linear-gradient(135deg,#7c3aed15,#2563eb08)', border: '#7c3aed40', accent: '#7c3aed', barW: '70%' },
+                    { bg: 'linear-gradient(135deg,#05966915,#0d948808)', border: '#05966940', accent: '#059669', barW: '90%' },
+                    { bg: 'linear-gradient(135deg,#d9770615,#92400e08)', border: '#d9770640', accent: '#d97706', barW: '45%' },
+                  ]
+                },
+                {
+                  id: 'corporate', label: 'Corporate', icon: '▐', desc: 'Clean left-border accent, formal enterprise layout',
+                  preview: [
+                    { bg: 'white', border: '#e2e8f0', accent: '#2563eb', barW: '70%', leftBar: true },
+                    { bg: 'white', border: '#e2e8f0', accent: '#059669', barW: '90%', leftBar: true },
+                    { bg: 'white', border: '#e2e8f0', accent: '#d97706', barW: '45%', leftBar: true },
+                  ]
+                },
+                {
+                  id: 'minimal', label: 'Minimal', icon: '─', desc: 'Ultra-clean borderless rows, maximum whitespace',
+                  preview: null
+                },
+                {
+                  id: 'glassmorphic', label: 'Glassmorphic', icon: '◈', desc: 'Frosted glass cards with translucent gradient fills',
+                  preview: [
+                    { bg: 'linear-gradient(135deg,rgba(124,58,237,0.12),rgba(124,58,237,0.05))', border: 'rgba(124,58,237,0.25)', accent: '#7c3aed', barW: '70%' },
+                    { bg: 'linear-gradient(135deg,rgba(5,150,105,0.12),rgba(5,150,105,0.05))', border: 'rgba(5,150,105,0.25)', accent: '#059669', barW: '90%' },
+                    { bg: 'linear-gradient(135deg,rgba(217,119,6,0.12),rgba(217,119,6,0.05))', border: 'rgba(217,119,6,0.25)', accent: '#d97706', barW: '45%' },
+                  ]
+                },
+                {
+                  id: 'neon', label: 'Neon', icon: '⬡', desc: 'Dark-mode glowing cards with neon border effects',
+                  preview: [
+                    { bg: '#0f172a', border: 'rgba(124,58,237,0.4)', accent: '#a78bfa', barW: '70%', glow: 'rgba(124,58,237,0.3)' },
+                    { bg: '#0f172a', border: 'rgba(16,185,129,0.4)', accent: '#34d399', barW: '90%', glow: 'rgba(16,185,129,0.3)' },
+                    { bg: '#0f172a', border: 'rgba(251,191,36,0.4)', accent: '#fbbf24', barW: '45%', glow: 'rgba(251,191,36,0.3)' },
+                  ]
+                },
+                {
+                  id: 'executive', label: 'Executive', icon: 'â—', desc: 'Navy and gold premium boardroom presentation style',
+                  preview: [
+                    { bg: 'linear-gradient(135deg,#0f1f3d,#1f3b68)', border: '#b78b2d55', accent: '#d6a63b', barW: '70%' },
+                    { bg: 'linear-gradient(135deg,#10294f,#183a71)', border: '#d6a63b33', accent: '#f0c96a', barW: '90%' },
+                    { bg: 'linear-gradient(135deg,#172554,#1e3a8a)', border: '#c59b3a44', accent: '#eab54e', barW: '45%' },
+                  ]
+                },
+                {
+                  id: 'sunset', label: 'Sunset', icon: 'â—', desc: 'Warm amber and coral dashboard with energetic contrast',
+                  preview: [
+                    { bg: 'linear-gradient(135deg,#7c2d12,#ea580c20)', border: '#ea580c55', accent: '#ea580c', barW: '70%' },
+                    { bg: 'linear-gradient(135deg,#9a3412,#fb718520)', border: '#fb718555', accent: '#fb7185', barW: '90%' },
+                    { bg: 'linear-gradient(135deg,#854d0e,#facc1520)', border: '#f59e0b55', accent: '#f59e0b', barW: '45%' },
+                  ]
+                },
+                {
+                  id: 'mono', label: 'Monochrome', icon: 'â–¡', desc: 'Slate and graphite analytical dashboard for dense review',
+                  preview: [
+                    { bg: 'linear-gradient(135deg,#0f172a,#1e293b)', border: '#64748b55', accent: '#cbd5e1', barW: '70%' },
+                    { bg: 'linear-gradient(135deg,#111827,#334155)', border: '#94a3b855', accent: '#e2e8f0', barW: '90%' },
+                    { bg: 'linear-gradient(135deg,#1f2937,#475569)', border: '#94a3b855', accent: '#f8fafc', barW: '45%' },
+                  ]
+                },
+                {
+                  id: 'cyberpunk', label: 'Cyberpunk', icon: '⚠', desc: 'Brutalist dark contrast with hot pink & cyan neon strips',
+                  preview: [
+                    { bg: '#000', border: '#ec4899', accent: '#ec4899', barW: '70%', leftBar: true, glow: '#ec489966' },
+                    { bg: '#000', border: '#06b6d4', accent: '#06b6d4', barW: '90%', leftBar: true, glow: '#06b6d466' },
+                    { bg: '#000', border: '#eab308', accent: '#eab308', barW: '45%', leftBar: true, glow: '#eab30866' },
+                  ]
+                },
+                {
+                  id: 'nature', label: 'Nature', icon: '⚘', desc: 'Organic earthly tones, soft green accents, calming UI',
+                  preview: [
+                    { bg: 'linear-gradient(135deg,#f0fdf4,#dcfce7)', border: '#86efac', accent: '#166534', barW: '70%' },
+                    { bg: 'linear-gradient(135deg,#fefce8,#fef08a)', border: '#fde047', accent: '#a16207', barW: '90%' },
+                    { bg: 'linear-gradient(135deg,#fdf4ff,#fae8ff)', border: '#f5d0fe', accent: '#86198f', barW: '45%' },
+                  ]
+                },
+                {
+                  id: 'holographic', label: 'Holographic', icon: '✧', desc: 'Iridescent, pastel blurred light leaks reflecting high tech',
+                  preview: [
+                    { bg: 'linear-gradient(135deg,rgba(167,139,250,0.15),rgba(244,114,182,0.15))', border: 'rgba(255,255,255,0.4)', accent: '#db2777', barW: '70%' },
+                    { bg: 'linear-gradient(135deg,rgba(52,211,153,0.15),rgba(56,189,248,0.15))', border: 'rgba(255,255,255,0.4)', accent: '#0ea5e9', barW: '90%' },
+                    { bg: 'linear-gradient(135deg,rgba(251,191,36,0.15),rgba(251,113,133,0.15))', border: 'rgba(255,255,255,0.4)', accent: '#ea580c', barW: '45%' },
+                  ]
+                },
+              ] as const).map(style => {
+                const active = (appearance as any).dashboardStyle === style.id ||
+                  (!appearance.dashboardStyle && style.id === 'modern');
+                return (
+                  <button
+                    key={style.id}
+                    onClick={() => updateAppearance({ ...appearance, dashboardStyle: style.id } as any)}
+                    className={`relative text-left rounded-xl border-2 overflow-hidden transition-all ${active ? 'border-accent ring-2 ring-accent/20' : 'border-border-main hover:border-border-bright'}`}
+                  >
+                    {/* Mini preview */}
+                    <div className="p-3 pb-0" style={{ background: style.id === 'neon' ? '#0f172a' : style.id === 'minimal' ? 'transparent' : 'var(--bg-2)' }}>
+                      {style.id === 'minimal' ? (
+                        <div className="space-y-1.5 py-2 px-1">
+                          {['72%', '1.2%', '8'].map((v, i) => (
+                            <div key={i} className="flex items-center gap-2 py-1 border-b border-border-main">
+                              <div className="w-6 h-6 rounded-lg flex-shrink-0" style={{ background: `${['#7c3aed','#059669','#d97706'][i]}12` }} />
+                              <span style={{ fontSize: 8, fontWeight: 700, color: 'var(--text-3)' }}>METRIC</span>
+                              <span style={{ fontSize: 10, fontWeight: 900, color: 'var(--text-1)', marginLeft: 'auto' }}>{v}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-1.5 pb-3">
+                          {(style.preview || []).map((p: any, i) => (
+                            <div key={i} style={{
+                              background: p.bg, border: `1px solid ${p.border}`,
+                              borderRadius: 8, padding: '6px 8px',
+                              borderLeft: p.leftBar ? `3px solid ${p.accent}` : undefined,
+                              boxShadow: p.glow ? `0 0 12px ${p.glow}` : undefined,
+                            }}>
+                              <div style={{ fontSize: 7, fontWeight: 700, color: p.accent, marginBottom: 2, textTransform: 'uppercase' }}>KPI</div>
+                              <div style={{ fontSize: 12, fontWeight: 900, color: style.id === 'neon' ? '#f1f5f9' : '#1e293b', lineHeight: 1 }}>{['72%','1.2%','8'][i]}</div>
+                              <div style={{ marginTop: 4, height: 2, background: `${p.accent}20`, borderRadius: 2 }}>
+                                <div style={{ height: '100%', width: p.barW, background: p.accent, borderRadius: 2 }} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Label */}
+                    <div className="px-3 py-2.5 flex items-center justify-between">
+                      <div>
+                        <div className={`text-xs font-bold flex items-center gap-1.5 ${active ? 'text-accent' : 'text-text-1'}`}>
+                          <span style={{ fontFamily: 'monospace' }}>{style.icon}</span>
+                          {style.label}
+                        </div>
+                        <div className="text-[9px] text-text-3 mt-0.5 leading-tight">{style.desc}</div>
+                      </div>
+                      {active && <CheckCircle2 className="w-4 h-4 text-accent flex-shrink-0" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ANIMATION + SHADOW + EXTRAS */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-bg-1 border border-border-main rounded-xl p-5">
               <h3 className="text-xs font-bold text-text-1 uppercase tracking-wide mb-3 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 text-accent" /> Animations</h3>
               <div className="flex flex-col gap-2">
-                {([{id:'none',label:'Disabled',desc:'No motion â€” max performance'},{id:'subtle',label:'Subtle',desc:'Micro-transitions (recommended)'},{id:'full',label:'Full',desc:'Rich animations & hover effects'}] as const).map(opt => {
+                {([{id:'none',label:'Disabled',desc:'No motion — max performance'},{id:'subtle',label:'Subtle',desc:'Micro-transitions (recommended)'},{id:'full',label:'Full',desc:'Rich animations & hover effects'}] as const).map(opt => {
                   const active = (appearance.animationLevel ?? 'subtle') === opt.id;
                   return (
                     <button key={opt.id} onClick={() => updateAppearance({ animationLevel: opt.id })}
@@ -1325,7 +1681,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
             </div>
           </div>
 
-          {/* â”€â”€ LIVE PREVIEW â”€â”€ */}
+          {/* LIVE PREVIEW */}
           <div className="bg-bg-1 border border-border-main rounded-xl p-6">
             <h2 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4 flex items-center gap-2">
               <Eye className="w-4 h-4 text-accent" /> Live Preview

@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, Save, Building, Users, ClipboardCheck, FileText, Link as LinkIcon, FileDown, Clock, Edit, CheckCircle, Trash2, AlertTriangle } from 'lucide-react';
 import { SOPRecord } from '../types';
@@ -105,36 +105,41 @@ export function SOPForm({ params, onNavigate }: SOPFormProps) {
 
   const handleDownloadPDF = async () => {
     const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
+      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
       proTable, addPageFooters, drawSignatureRow
     } = await import('../utils/pdfExport');
 
     const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Standard Operating Procedure', `${formData.sopId} • ${formData.department}`);
+    let y = drawPdfHeader(doc, 'Standard Operating Procedure', `${formData.sopId} \u2022 ${formData.title}`);
 
-    y = drawInfoGrid(doc, y, [
+    y = drawRecordTable(doc, y, 'SOP Identification & Status', [
       { label: 'SOP ID',         value: formData.sopId || '—' },
-      { label: 'Title',          value: formData.title || '—' },
-      { label: 'Department',     value: formData.department || '—' },
-      { label: 'Process',        value: formData.process || '—' },
       { label: 'Version',        value: formData.version || '—' },
-      { label: 'Status',         value: formData.status || '—' },
+      { label: 'Department',     value: formData.department || '—' },
+      { label: 'Process / Area', value: formData.process || '—' },
       { label: 'Effective Date', value: formData.effectiveDate || '—' },
-      { label: 'Review Date',    value: formData.reviewDate || '—' },
+      { label: 'Next Review',    value: formData.reviewDate || '—' },
+      { label: 'Current Status', value: formData.status || 'Draft', fullWidth: true },
     ]);
 
-    y = drawSectionLabel(doc, y, 'PURPOSE');
-    y = proTable(doc, y, [['Content']], [[formData.purpose || 'N/A']]) + 6;
+    y = drawRecordTable(doc, y, 'Procedural Scope & Intent', [
+      { label: 'Purpose',        value: formData.purpose || 'Objectives not defined.', fullWidth: true },
+      { label: 'Scope',          value: formData.scope || 'Scope of application not defined.', fullWidth: true },
+      { label: 'Responsibility', value: formData.responsibility || 'Responsible parties not defined.', fullWidth: true },
+    ]);
 
-    y = drawSectionLabel(doc, y, 'PROCEDURE STEPS');
-    y = proTable(doc, y, [['Steps']], [[formData.procedureSteps || 'N/A']]) + 6;
+    y = drawSectionLabel(doc, y, 'Operational Procedure Steps');
+    y = proTable(doc, y, [['Step Description / Technical Instructions']], [[formData.procedureSteps || 'Technical instructions pending...']]) + 12;
 
-    y = drawSectionLabel(doc, y, 'SAFETY GUIDELINES');
-    y = proTable(doc, y, [['Guidelines']], [[formData.safetyGuidelines || 'N/A']]) + 6;
+    y = drawRecordTable(doc, y, 'Safety & Quality Control', [
+      { label: 'Safety Guidelines', value: formData.safetyGuidelines || 'No specific safety requirements.', fullWidth: true },
+      { label: 'QC Checkpoints',   value: formData.qcPoints || 'No specific quality checkpoints.', fullWidth: true },
+      { label: 'Required Tools',   value: formData.requiredEquipment || 'N/A', fullWidth: true },
+    ]);
 
-    drawSignatureRow(doc, y, ['Prepared By', 'Reviewed By', 'Approved By']);
+    y = drawSignatureRow(doc, y, ['Author / Specialist', 'Quality Assurance', 'Management Approval']);
     addPageFooters(doc);
-    doc.save(`${formData.sopId}_${formData.title}.pdf`);
+    doc.save(`${formData.sopId}_${formData.title.replace(/\s+/g, '_')}.pdf`);
   };
 
 

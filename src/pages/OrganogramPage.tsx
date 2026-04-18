@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { db } from '../db/db';
+import { addPageFooters, drawPdfHeader } from '../utils/pdfExport';
 
 // ── Types ──────────────────────────────────────────────
 interface OrgNode {
@@ -90,6 +91,144 @@ const DEFAULT_ORGS: OrgRecord[] = [
           children: [
             { id: 'n14', title: 'Training Officer', name: 'Mr. Billah', department: 'HR', level: 'Middle Management', children: [] },
             { id: 'n15', title: 'Compliance Officer', name: 'Ms. Sultana', department: 'Compliance', level: 'Middle Management', children: [] },
+          ]
+        },
+      ]
+    }
+  },
+  {
+    id: 'org-2', code: 'ORG-002', chartTitle: 'Quality Department Organization',
+    department: 'Quality', version: 'v1.0', status: 'Active',
+    date: '2026-01-15', responsiblePerson: 'Quality Director', approvedBy: 'Managing Director',
+    createdAt: new Date().toISOString(),
+    tree: {
+      id: 'q1', title: 'Quality Director', name: 'Mr. Ahmed', department: 'Quality', level: 'Senior Management',
+      children: [
+        {
+          id: 'q2', title: 'QC Manager', name: 'Mr. Islam', department: 'QC', level: 'Middle Management',
+          children: [
+            {
+              id: 'q3', title: 'QC Supervisor - Cutting', name: 'Mr. Rafi', department: 'QC-Cutting', level: 'Supervisory',
+              children: [
+                { id: 'q4', title: 'Fabric Inspector', name: 'Mr. Sumon', department: 'QC-Cutting', level: 'Operational', children: [] },
+                { id: 'q5', title: 'Spreading QC', name: 'Ms. Rima', department: 'QC-Cutting', level: 'Operational', children: [] },
+                { id: 'q6', title: 'Cut Panel Checker', name: 'Mr. Nasir', department: 'QC-Cutting', level: 'Operational', children: [] },
+              ]
+            },
+            {
+              id: 'q7', title: 'QC Supervisor - Sewing', name: 'Ms. Nasrin', department: 'QC-Sewing', level: 'Supervisory',
+              children: [
+                { id: 'q8', title: 'Inline QC Inspector', name: 'Mr. Dipu', department: 'QC-Sewing', level: 'Operational', children: [] },
+                { id: 'q9', title: 'End Line Inspector', name: 'Ms. Moni', department: 'QC-Sewing', level: 'Operational', children: [] },
+                { id: 'q10', title: 'Roaming QC', name: 'Mr. Hashem', department: 'QC-Sewing', level: 'Operational', children: [] },
+              ]
+            },
+            {
+              id: 'q11', title: 'QC Supervisor - Finishing', name: 'Mr. Sohel', department: 'QC-Finishing', level: 'Supervisory',
+              children: [
+                { id: 'q12', title: 'Final Inspector', name: 'Ms. Tania', department: 'QC-Finishing', level: 'Operational', children: [] },
+                { id: 'q13', title: 'AQL Inspector', name: 'Mr. Robin', department: 'QC-Finishing', level: 'Operational', children: [] },
+              ]
+            },
+          ]
+        },
+        {
+          id: 'q14', title: 'QMS Manager', name: 'Mr. Faruk', department: 'QMS', level: 'Middle Management',
+          children: [
+            { id: 'q15', title: 'Document Controller', name: 'Ms. Laboni', department: 'QMS', level: 'Supervisory', children: [] },
+            { id: 'q16', title: 'Internal Auditor', name: 'Mr. Sajib', department: 'QMS', level: 'Supervisory', children: [] },
+            { id: 'q17', title: 'CAPA Coordinator', name: 'Ms. Jesmin', department: 'QMS', level: 'Supervisory', children: [] },
+          ]
+        },
+        {
+          id: 'q18', title: 'Lab Manager', name: 'Mr. Kabir', department: 'Lab', level: 'Middle Management',
+          children: [
+            { id: 'q19', title: 'Physical Test Technician', name: 'Mr. Milon', department: 'Lab', level: 'Operational', children: [] },
+            { id: 'q20', title: 'Color Matching Specialist', name: 'Ms. Sharmin', department: 'Lab', level: 'Operational', children: [] },
+          ]
+        },
+      ]
+    }
+  },
+  {
+    id: 'org-3', code: 'ORG-003', chartTitle: 'Production Floor Organization',
+    department: 'Production', version: 'v1.0', status: 'Active',
+    date: '2026-02-01', responsiblePerson: 'Production Manager', approvedBy: 'GM - Operations',
+    createdAt: new Date().toISOString(),
+    tree: {
+      id: 'p1', title: 'Production Manager', name: 'Mr. Hossain', department: 'Production', level: 'Middle Management',
+      children: [
+        {
+          id: 'p2', title: 'Cutting In-charge', name: 'Mr. Rahim', department: 'Cutting', level: 'Supervisory',
+          children: [
+            { id: 'p3', title: 'Cutting Operator', name: 'Mr. Bacchu', department: 'Cutting', level: 'Operational', children: [] },
+            { id: 'p4', title: 'Spreading Operator', name: 'Mr. Liton', department: 'Cutting', level: 'Operational', children: [] },
+            { id: 'p5', title: 'Pattern Master', name: 'Mr. Manik', department: 'Cutting', level: 'Operational', children: [] },
+            { id: 'p6', title: 'Bundling Operator', name: 'Ms. Rupa', department: 'Cutting', level: 'Operational', children: [] },
+          ]
+        },
+        {
+          id: 'p7', title: 'Sewing In-charge', name: 'Mr. Jamal', department: 'Sewing', level: 'Supervisory',
+          children: [
+            { id: 'p8', title: 'Line Chief - Line 1', name: 'Mr. Helal', department: 'Sewing', level: 'Operational', children: [] },
+            { id: 'p9', title: 'Line Chief - Line 2', name: 'Mr. Shamim', department: 'Sewing', level: 'Operational', children: [] },
+            { id: 'p10', title: 'Line Chief - Line 3', name: 'Ms. Rahima', department: 'Sewing', level: 'Operational', children: [] },
+            { id: 'p11', title: 'Sample Room Head', name: 'Mr. Babul', department: 'Sewing', level: 'Operational', children: [] },
+          ]
+        },
+        {
+          id: 'p12', title: 'Finishing In-charge', name: 'Ms. Fatima', department: 'Finishing', level: 'Supervisory',
+          children: [
+            { id: 'p13', title: 'Iron & Press Supervisor', name: 'Mr. Rajib', department: 'Finishing', level: 'Operational', children: [] },
+            { id: 'p14', title: 'Packing Supervisor', name: 'Ms. Shilpi', department: 'Finishing', level: 'Operational', children: [] },
+            { id: 'p15', title: 'Spot Cleaning Operator', name: 'Mr. Dulal', department: 'Finishing', level: 'Operational', children: [] },
+          ]
+        },
+        {
+          id: 'p16', title: 'Wash Manager', name: 'Mr. Asad', department: 'Washing', level: 'Supervisory',
+          children: [
+            { id: 'p17', title: 'Wash Operator', name: 'Mr. Jewel', department: 'Washing', level: 'Operational', children: [] },
+            { id: 'p18', title: 'Dryer Operator', name: 'Mr. Mamun', department: 'Washing', level: 'Operational', children: [] },
+          ]
+        },
+      ]
+    }
+  },
+  {
+    id: 'org-4', code: 'ORG-004', chartTitle: 'Compliance & Safety Department',
+    department: 'Compliance', version: 'v1.0', status: 'Active',
+    date: '2026-02-15', responsiblePerson: 'Compliance Manager', approvedBy: 'Managing Director',
+    createdAt: new Date().toISOString(),
+    tree: {
+      id: 'c1', title: 'Compliance Manager', name: 'Mr. Zahid', department: 'Compliance', level: 'Middle Management',
+      children: [
+        {
+          id: 'c2', title: 'Social Compliance Officer', name: 'Ms. Sultana', department: 'Social Compliance', level: 'Supervisory',
+          children: [
+            { id: 'c3', title: 'Welfare Officer', name: 'Ms. Nargis', department: 'Welfare', level: 'Operational', children: [] },
+            { id: 'c4', title: 'Grievance Handler', name: 'Mr. Belal', department: 'HR', level: 'Operational', children: [] },
+          ]
+        },
+        {
+          id: 'c5', title: 'EHS Officer', name: 'Mr. Ripon', department: 'Safety', level: 'Supervisory',
+          children: [
+            { id: 'c6', title: 'Fire Safety In-charge', name: 'Mr. Alamin', department: 'Safety', level: 'Operational', children: [] },
+            { id: 'c7', title: 'First Aid Coordinator', name: 'Ms. Poly', department: 'Safety', level: 'Operational', children: [] },
+            { id: 'c8', title: 'Building Safety Inspector', name: 'Mr. Toha', department: 'Safety', level: 'Operational', children: [] },
+          ]
+        },
+        {
+          id: 'c9', title: 'Environmental Officer', name: 'Ms. Ayesha', department: 'Environment', level: 'Supervisory',
+          children: [
+            { id: 'c10', title: 'ETP Operator', name: 'Mr. Kamrul', department: 'Environment', level: 'Operational', children: [] },
+            { id: 'c11', title: 'Waste Management Officer', name: 'Mr. Fazlu', department: 'Environment', level: 'Operational', children: [] },
+          ]
+        },
+        {
+          id: 'c12', title: 'Audit Coordinator', name: 'Mr. Shakil', department: 'Audit', level: 'Supervisory',
+          children: [
+            { id: 'c13', title: 'Internal Auditor', name: 'Mr. Tanvir', department: 'Audit', level: 'Operational', children: [] },
+            { id: 'c14', title: 'Documentation Assistant', name: 'Ms. Liza', department: 'Audit', level: 'Operational', children: [] },
           ]
         },
       ]
@@ -222,11 +361,17 @@ interface NodeEditorProps {
   node: OrgNode;
   onUpdate: (n: OrgNode) => void;
   onDelete?: () => void;
+  onAddSibling?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onDuplicate?: () => void;
   depth?: number;
   inputClass: string;
+  isFirst?: boolean;
+  isLast?: boolean;
 }
 
-const NodeEditor: React.FC<NodeEditorProps> = ({ node, onUpdate, onDelete, depth = 0, inputClass }) => {
+const NodeEditor: React.FC<NodeEditorProps> = ({ node, onUpdate, onDelete, onAddSibling, onMoveUp, onMoveDown, onDuplicate, depth = 0, inputClass, isFirst, isLast }) => {
   const [open, setOpen] = useState(depth < 2);
   const lvl = LEVELS[node.level] || LEVELS['Operational'];
 
@@ -236,6 +381,33 @@ const NodeEditor: React.FC<NodeEditorProps> = ({ node, onUpdate, onDelete, depth
   };
   const updateChild = (i: number, updated: OrgNode) => { const nc = [...(node.children || [])]; nc[i] = updated; onUpdate({ ...node, children: nc }); };
   const deleteChild = (i: number) => onUpdate({ ...node, children: (node.children || []).filter((_, idx) => idx !== i) });
+  const moveChildUp = (i: number) => {
+    if (i <= 0) return;
+    const nc = [...(node.children || [])];
+    [nc[i - 1], nc[i]] = [nc[i], nc[i - 1]];
+    onUpdate({ ...node, children: nc });
+  };
+  const moveChildDown = (i: number) => {
+    const nc = [...(node.children || [])];
+    if (i >= nc.length - 1) return;
+    [nc[i], nc[i + 1]] = [nc[i + 1], nc[i]];
+    onUpdate({ ...node, children: nc });
+  };
+  const duplicateChild = (i: number) => {
+    const nc = [...(node.children || [])];
+    const cloneNode = (n: OrgNode): OrgNode => ({
+      ...n, id: `n${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      children: (n.children || []).map(c => cloneNode(c)),
+    });
+    nc.splice(i + 1, 0, cloneNode(nc[i]));
+    onUpdate({ ...node, children: nc });
+  };
+  const addSiblingChild = (afterIndex: number) => {
+    const newSib: OrgNode = { id: `n${Date.now()}`, title: 'New Position', name: '', department: node.department, level: node.children?.[afterIndex]?.level || 'Operational', children: [] };
+    const nc = [...(node.children || [])];
+    nc.splice(afterIndex + 1, 0, newSib);
+    onUpdate({ ...node, children: nc });
+  };
 
   return (
     <div style={{ marginLeft: depth > 0 ? 16 : 0, borderLeft: depth > 0 ? `2px solid ${lvl.color}30` : 'none', paddingLeft: depth > 0 ? 12 : 0 }}>
@@ -244,12 +416,33 @@ const NodeEditor: React.FC<NodeEditorProps> = ({ node, onUpdate, onDelete, depth
           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: lvl.color }} />
           <span className="flex-1 text-xs font-semibold text-text-1 truncate">{node.title || 'Untitled'}</span>
           <span className="text-[9px] text-text-3 uppercase tracking-wide hidden group-hover:block">{node.level}</span>
-          {onDelete && (
-            <button className="p-1 rounded hover:bg-red-50 text-text-3 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
-              onClick={e => { e.stopPropagation(); onDelete(); }}>
-              <Trash2 className="w-3 h-3" />
-            </button>
-          )}
+          {/* Action buttons — visible on hover */}
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+            {onMoveUp && !isFirst && (
+              <button className="p-0.5 rounded hover:bg-accent/10 text-text-3 hover:text-accent transition-all" title="Move Up"
+                onClick={e => { e.stopPropagation(); onMoveUp(); }}>
+                <ChevronDown className="w-3 h-3 rotate-180" />
+              </button>
+            )}
+            {onMoveDown && !isLast && (
+              <button className="p-0.5 rounded hover:bg-accent/10 text-text-3 hover:text-accent transition-all" title="Move Down"
+                onClick={e => { e.stopPropagation(); onMoveDown(); }}>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            )}
+            {onDuplicate && (
+              <button className="p-0.5 rounded hover:bg-blue-50 text-text-3 hover:text-blue-500 transition-all" title="Duplicate"
+                onClick={e => { e.stopPropagation(); onDuplicate(); }}>
+                <Layers className="w-3 h-3" />
+              </button>
+            )}
+            {onDelete && (
+              <button className="p-0.5 rounded hover:bg-red-50 text-text-3 hover:text-red-500 transition-all" title="Delete"
+                onClick={e => { e.stopPropagation(); onDelete(); }}>
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
           {open ? <ChevronDown className="w-3.5 h-3.5 text-text-3 flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-text-3 flex-shrink-0" />}
         </div>
 
@@ -278,15 +471,34 @@ const NodeEditor: React.FC<NodeEditorProps> = ({ node, onUpdate, onDelete, depth
                 </select>
               </div>
             </div>
-            <button className="flex items-center gap-1 text-[10px] font-semibold text-accent hover:text-accent/80 mt-1 transition-colors"
-              onClick={addChild}>
-              <Plus className="w-3 h-3" /> Add Sub-position
-            </button>
+            <div className="flex items-center gap-3 flex-wrap pt-1">
+              <button className="flex items-center gap-1 text-[10px] font-semibold text-accent hover:text-accent/80 transition-colors"
+                onClick={addChild}>
+                <Plus className="w-3 h-3" /> Add Sub-position
+              </button>
+              {onAddSibling && (
+                <button className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 hover:text-emerald-500 transition-colors"
+                  onClick={e => { e.stopPropagation(); onAddSibling(); }}>
+                  <Users className="w-3 h-3" /> Add Same-Level
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
       {open && (node.children || []).map((child, i) => (
-        <NodeEditor key={child.id} node={child} onUpdate={n => updateChild(i, n)} onDelete={() => deleteChild(i)} depth={depth + 1} inputClass={inputClass} />
+        <NodeEditor key={child.id} node={child}
+          onUpdate={n => updateChild(i, n)}
+          onDelete={() => deleteChild(i)}
+          onAddSibling={() => addSiblingChild(i)}
+          onMoveUp={() => moveChildUp(i)}
+          onMoveDown={() => moveChildDown(i)}
+          onDuplicate={() => duplicateChild(i)}
+          depth={depth + 1}
+          inputClass={inputClass}
+          isFirst={i === 0}
+          isLast={i === (node.children || []).length - 1}
+        />
       ))}
     </div>
   );
@@ -498,16 +710,20 @@ async function exportOrgPDF(record: OrgRecord) {
   const pgW = doc.internal.pageSize.getWidth();
   const pgH = doc.internal.pageSize.getHeight();
 
-  const margin = 8;
-  const availW = pgW - margin * 2;
-  const availH = pgH - margin * 2;
+  const startY = drawPdfHeader(doc, record.chartTitle || 'Organogram', `Reference: ${record.code} | Version: ${record.version || '1.0'}`, 'organogram');
+  const sideMargin = 8;
+  const topMargin = startY + 2;
+  const footerReserve = 16;
+  const availW = pgW - sideMargin * 2;
+  const availH = pgH - topMargin - footerReserve;
   const ratio = Math.min(availW / (canvas.width / 2), availH / (canvas.height / 2));
   const imgW = (canvas.width / 2) * ratio;
   const imgH = (canvas.height / 2) * ratio;
-  const imgX = margin + (availW - imgW) / 2;
-  const imgY = margin + (availH - imgH) / 2;
+  const imgX = sideMargin + (availW - imgW) / 2;
+  const imgY = topMargin + Math.max(0, (availH - imgH) / 2);
 
   doc.addImage(imgData, 'PNG', imgX, imgY, imgW, imgH);
+  addPageFooters(doc);
   doc.save(`${record.code}_Organogram.pdf`);
 }
 
@@ -787,7 +1003,30 @@ export function OrganogramPage({ onNavigate }: { onNavigate: (page: string, para
 
             {/* Node tree editor */}
             <div className="bg-bg-1 rounded-2xl border border-border-main p-4">
-              <h3 className="text-xs font-bold text-text-1 uppercase tracking-widest border-b border-border-main pb-2 mb-3">Hierarchy Structure</h3>
+              <div className="flex items-center justify-between border-b border-border-main pb-2 mb-3">
+                <h3 className="text-xs font-bold text-text-1 uppercase tracking-widest">Hierarchy Structure</h3>
+                <button className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 hover:text-emerald-500 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 transition-all border border-emerald-200"
+                  onClick={() => {
+                    if (!formData.tree) return;
+                    const newSection: OrgNode = {
+                      id: `n${Date.now()}`, title: 'New Section',
+                      name: '', department: formData.department || 'Department',
+                      level: 'Senior Management', children: []
+                    };
+                    setFormData({
+                      ...formData,
+                      tree: { ...formData.tree, children: [...(formData.tree.children || []), newSection] }
+                    });
+                  }}>
+                  <Plus className="w-3 h-3" /> Add Main Section
+                </button>
+              </div>
+              <div className="text-[9px] text-text-3 flex items-center gap-4 mb-3 bg-bg-2/50 rounded-lg px-3 py-2">
+                <span className="flex items-center gap-1"><Plus className="w-2.5 h-2.5 text-accent" /> Sub-position</span>
+                <span className="flex items-center gap-1"><Users className="w-2.5 h-2.5 text-emerald-600" /> Same level</span>
+                <span className="flex items-center gap-1"><Layers className="w-2.5 h-2.5 text-blue-500" /> Duplicate</span>
+                <span className="flex items-center gap-1"><ChevronDown className="w-2.5 h-2.5 text-text-3 rotate-180" /> Reorder</span>
+              </div>
               {formData.tree && (
                 <NodeEditor node={formData.tree} onUpdate={n => setFormData({ ...formData, tree: n })} inputClass={inputClass} />
               )}

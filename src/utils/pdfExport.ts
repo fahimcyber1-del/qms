@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 export { autoTable };
-import { addPdfHeader, loadOrgSettings, loadPdfSettings, PdfModuleId } from './pdfHeader';
+import { ACCENT_PALETTES, addPdfHeader, loadOrgSettings, loadPdfSettings, PdfModuleId } from './pdfHeader';
 
 // ─── Colour palette ─────────────────────────────────────────────────────────
 export const PDF_COLORS = {
@@ -34,7 +34,6 @@ export function pageW(doc: jsPDF) {
 }
 
 // ─── Professional header bar ─────────────────────────────────────────────────
-// Returns the Y position where body content should start.
 export function drawPdfHeader(
   doc:      jsPDF,
   title:    string,
@@ -44,112 +43,180 @@ export function drawPdfHeader(
   return addPdfHeader(doc, title, subtitle, false, moduleId);
 }
 
+// ─── Utility to get current accent color ───
+export function getAccentColorArr(): [number, number, number] {
+  const { colorAccent } = loadPdfSettings();
+  return ACCENT_PALETTES[colorAccent]?.mid || [15, 30, 60];
+}
+
 // ─── Footer on every page ────────────────────────────────────────────────────
 export function addPageFooters(doc: jsPDF) {
   const pdfSettings = loadPdfSettings();
-
-  // Master switch — skip entirely if disabled in Settings
   if (!pdfSettings.globalEnableFooter) return;
 
   const { showPageNumber, showDate, showFooterOrgName } = pdfSettings;
-  // If all individual items are off, no footer bar is needed
   if (!showPageNumber && !showDate && !showFooterOrgName) return;
 
   const totalPages = (doc as any).internal.getNumberOfPages?.() ?? 1;
   const w = pageW(doc);
   const orgName = loadOrgSettings().name;
-  const accentColor = PDF_COLORS.accentBlue;
+  const accentColorArr = getAccentColorArr();
 
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     const pageH = doc.internal.pageSize.getHeight();
 
-    // Separator line
-    doc.setDrawColor(...accentColor);
-    doc.setLineWidth(0.4);
-    doc.line(12, pageH - 10, w - 12, pageH - 10);
+    // Subtle signature line
+    doc.setDrawColor(...accentColorArr);
+    doc.setLineWidth(0.3);
+    doc.setGState(new (doc as any).GState({ opacity: 0.4 }));
+    doc.line(12, pageH - 12, w - 12, pageH - 12);
+    doc.setGState(new (doc as any).GState({ opacity: 1 }));
 
-    doc.setFontSize(7);
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...PDF_COLORS.muted);
+    doc.setTextColor(110, 120, 140);
 
-    if (showFooterOrgName) {
-      doc.text(`${orgName}`, 12, pageH - 5);
-    }
-    if (showPageNumber) {
-      doc.text(`Page ${i} of ${totalPages}`, w / 2, pageH - 5, { align: 'center' });
-    }
-    if (showDate) {
-      doc.text(new Date().toLocaleDateString('en-GB'), w - 12, pageH - 5, { align: 'right' });
-    }
+    if (showFooterOrgName) doc.text(orgName, 12, pageH - 7.5);
+    if (showPageNumber) doc.text(`Page ${i} of ${totalPages}`, w / 2, pageH - 7.5, { align: 'center' });
+    if (showDate) doc.text(new Date().toLocaleDateString('en-GB'), w - 12, pageH - 7.5, { align: 'right' });
   }
 }
 
+// ─── Professional Record Detail (Individual) ──────────────────────────────────
+export function drawRecordTable(
+  doc:   jsPDF,
+  startY: number,
+  title:  string,
+  data:   { label: string; value: string; fullWidth?: boolean }[]
+): number {
+  const accent = getAccentColorArr();
+  
+  // Section separator
+  doc.setFillColor(...accent);
+  doc.rect(12, startY, 4, 7, 'F');
+  doc.setFontSize(10.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 41, 59);
+  doc.text(title.toUpperCase(), 18, startY + 5.5);
+  
+  const body: any[] = [];
+  for (let i = 0; i < data.length; i++) {
+    const item = data[i];
+    if (item.fullWidth) {
+      body.push([
+        { content: item.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: [248, 250, 255], cellWidth: 40 } }, 
+        { content: item.value || '—', colSpan: 3 }
+      ]);
+    } else {
+      const next = data[i+1];
+      if (next && !next.fullWidth) {
+        body.push([
+          { content: item.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: [248, 250, 255], cellWidth: 40 } }, 
+          { content: item.value || '—' },
+          { content: next.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: [248, 250, 255], cellWidth: 40 } },
+          { content: next.value || '—' }
+        ]);
+        i++; 
+      } else {
+        body.push([
+          { content: item.label.toUpperCase(), styles: { fontStyle: 'bold', fillColor: [248, 250, 255], cellWidth: 40 } }, 
+          { content: item.value || '—', colSpan: 3 }
+        ]);
+      }
+    }
+   body.push();
+  }
 
-// ─── Metadata info block (key-value pairs) ────────────────────────────────────
+  autoTable(doc, {
+    startY: startY + 11,
+    body,
+    theme: 'grid',
+    styles: { 
+      fontSize: 8.5, 
+      cellPadding: 4, 
+      lineColor: [226, 232, 240], 
+      lineWidth: 0.15, 
+      font: 'helvetica',
+      overflow: 'linebreak'
+    },
+    columnStyles: {
+      0: { cellWidth: 40 },
+      2: { cellWidth: 40 }
+    },
+    margin: { left: 12, right: 12 }
+  });
+
+  return (doc as any).lastAutoTable.finalY + 8;
+}
+
+// ─── Metadata info grid ───────────────────────────────────────────────────────
 export function drawInfoGrid(
   doc:   jsPDF,
   y:     number,
   items: { label: string; value: string }[],
-  cols?: number,             // how many columns side-by-side (default 2)
+  cols?: number,
 ): number {
+  const accent = getAccentColorArr();
   const w    = pageW(doc);
   const COLS = cols ?? 2;
   const colW = (w - 24) / COLS;
-  const ROW  = 9;
-  const PAD  = 4;
+  const ROW  = 11;
+  const PAD  = 4.5;
 
-  // Light background band
   const rows   = Math.ceil(items.length / COLS);
   const totalH = rows * ROW + PAD * 2;
 
-  doc.setFillColor(...PDF_COLORS.rowOdd);
-  doc.setDrawColor(...PDF_COLORS.border);
+  // Modern soft background
+  doc.setFillColor(250, 251, 253);
+  doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.3);
-  doc.roundedRect(12, y, w - 24, totalH, 2, 2, 'FD');
+  doc.roundedRect(12, y, w - 24, totalH, 1, 1, 'FD');
 
   items.forEach((item, idx) => {
     const col  = idx % COLS;
     const row  = Math.floor(idx / COLS);
     const x    = 12 + col * colW + PAD;
-    const cellY = y + PAD + row * ROW + 5.5;
+    const cellY = y + PAD + row * ROW + 6;
 
     doc.setFontSize(6.5);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...PDF_COLORS.muted);
-    doc.text(item.label.toUpperCase(), x, cellY - 3);
+    doc.setTextColor(...accent);
+    doc.text(item.label.toUpperCase(), x, cellY - 3.5);
 
-    doc.setFontSize(8.5);
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...PDF_COLORS.text);
+    doc.setTextColor(30, 41, 59);
     const maxW = colW - PAD * 2 - 2;
-    const lines = doc.splitTextToSize(item.value || '—', maxW);
-    doc.text(lines[0] ?? '—', x, cellY);
+    const lines = doc.splitTextToSize(String(item.value || '—'), maxW);
+    doc.text(lines[0] ?? '—', x, cellY + 0.8);
   });
 
-  return y + totalH + 6;
+  return y + totalH + 8;
 }
 
 // ─── Section label ────────────────────────────────────────────────────────────
 export function drawSectionLabel(doc: jsPDF, y: number, label: string): number {
+  const accent = getAccentColorArr();
   const w = pageW(doc);
 
-  doc.setFillColor(...PDF_COLORS.accentBlue);
-  doc.rect(12, y, 3, 7, 'F');
+  doc.setFillColor(...accent);
+  doc.rect(12, y, 4, 8, 'F');
 
-  doc.setFontSize(9);
+  doc.setFontSize(10.5);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...PDF_COLORS.headerBg);
-  doc.text(label.toUpperCase(), 18, y + 5.5);
+  doc.setTextColor(30, 41, 59);
+  doc.text(label.toUpperCase(), 19, y + 6);
 
-  doc.setDrawColor(...PDF_COLORS.border);
-  doc.setLineWidth(0.3);
-  doc.line(18 + doc.getTextWidth(label.toUpperCase()) + 3, y + 3.5, w - 12, y + 3.5);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.4);
+  const textW = doc.getTextWidth(label.toUpperCase());
+  doc.line(19 + textW + 5, y + 4.5, w - 12, y + 4.5);
 
-  return y + 12;
+  return y + 14;
 }
 
-// ─── Professional autoTable wrapper ──────────────────────────────────────────
+// ─── Professional autoTable wrapper (For Lists) ──────────────────────────────
 export function proTable(
   doc:    jsPDF,
   startY: number,
@@ -160,37 +227,34 @@ export function proTable(
     foot?:         string[][];
   },
 ): number {
+  const accent = getAccentColorArr();
+  
   autoTable(doc, {
     startY,
     head,
     body,
     foot: opts?.foot,
-    theme: 'grid',
+    theme: 'striped',
     margin: { left: 12, right: 12 },
     styles: {
-      fontSize:    8.5,
-      cellPadding: 3.5,
-      textColor:   PDF_COLORS.text,
-      lineColor:   PDF_COLORS.border,
-      lineWidth:   0.25,
+      fontSize:    8,
+      cellPadding: 4,
+      textColor:   [30, 41, 59],
+      lineColor:   [226, 232, 240],
+      lineWidth:   0.05,
       font:        'helvetica',
+      overflow:    'linebreak',
     },
     headStyles: {
-      fillColor:  PDF_COLORS.headerBg,
-      textColor:  PDF_COLORS.white,
-      fontSize:   8.5,
-      fontStyle:  'bold',
-      halign:     'center',
-      cellPadding: 4,
-    },
-    footStyles: {
-      fillColor: PDF_COLORS.rowOdd,
-      textColor: PDF_COLORS.text,
-      fontStyle: 'bold',
-      fontSize:  8.5,
+      fillColor:   accent,
+      textColor:   [255, 255, 255],
+      fontSize:    8.5,
+      fontStyle:   'bold',
+      halign:      'left',
+      cellPadding: 4.5,
     },
     alternateRowStyles: {
-      fillColor: PDF_COLORS.rowOdd,
+      fillColor: [251, 252, 254],
     },
     columnStyles: opts?.columnStyles,
   });
@@ -210,16 +274,18 @@ export async function embedAttachments(
   const w = pageW(doc);
   let y = 14;
 
+  const accent = getAccentColorArr();
+
   // Section header
-  doc.setFillColor(...PDF_COLORS.headerBg);
+  doc.setFillColor(...accent);
   doc.rect(0, 0, w, 18, 'F');
-  doc.setTextColor(...PDF_COLORS.white);
-  doc.setFontSize(10);
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(10.5);
   doc.setFont('helvetica', 'bold');
   doc.text(sectionTitle, w / 2, 12, { align: 'center' });
-  y = 26;
+  y = 28;
 
-  const IMG_W   = (w - 36) / 2; // two per row
+  const IMG_W   = (w - 36) / 2; 
   const IMG_H   = 70;
   const GAP_X   = 12;
   const GAP_Y   = 8;
@@ -229,38 +295,35 @@ export async function embedAttachments(
     const col = i % 2;
     const x   = 12 + col * (IMG_W + GAP_X);
 
-    // new row: check page space
     if (col === 0 && i > 0) {
       y += IMG_H + LABEL_H + GAP_Y;
     }
-    if (y + IMG_H + LABEL_H > doc.internal.pageSize.getHeight() - 16) {
+    if (y + IMG_H + LABEL_H > doc.internal.pageSize.getHeight() - 20) {
       doc.addPage();
       y = 16;
     }
 
     // Frame
-    doc.setFillColor(...PDF_COLORS.rowOdd);
-    doc.setDrawColor(...PDF_COLORS.border);
+    doc.setFillColor(251, 252, 254);
+    doc.setDrawColor(226, 232, 240);
     doc.setLineWidth(0.4);
-    doc.roundedRect(x, y, IMG_W, IMG_H, 2, 2, 'FD');
+    doc.roundedRect(x, y, IMG_W, IMG_H, 1, 1, 'FD');
 
     // Caption bar
-    doc.setFillColor(...PDF_COLORS.headerBg);
+    doc.setFillColor(30, 41, 59);
     doc.roundedRect(x, y + IMG_H, IMG_W, LABEL_H - 1, 0, 0, 'F');
-    doc.setTextColor(...PDF_COLORS.white);
-    doc.setFontSize(7);
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
     doc.text(`Figure ${i + 1} – Evidence Image`, x + IMG_W / 2, y + IMG_H + LABEL_H - 3, { align: 'center' });
 
     try {
-      // base64 or url
       const src = attachments[i];
       if (src) {
         doc.addImage(src, 'JPEG', x + 1, y + 1, IMG_W - 2, IMG_H - 2);
       }
     } catch {
-      // fallback placeholder text
-      doc.setTextColor(...PDF_COLORS.muted);
+      doc.setTextColor(150, 160, 180);
       doc.setFontSize(8);
       doc.text('[Image unavailable]', x + IMG_W / 2, y + IMG_H / 2, { align: 'center' });
     }
@@ -279,16 +342,16 @@ export function drawSignatureRow(
   labels.forEach((lbl, i) => {
     const x = 12 + i * colW;
 
-    doc.setDrawColor(...PDF_COLORS.border);
+    doc.setDrawColor(200, 210, 230);
     doc.setLineWidth(0.4);
-    doc.line(x + 4, y + 18, x + colW - 4, y + 18);
+    doc.line(x + 5, y + 18, x + colW - 5, y + 18);
 
-    doc.setFontSize(7);
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...PDF_COLORS.muted);
+    doc.setTextColor(100, 116, 139);
     doc.text(lbl.toUpperCase(), x + colW / 2, y + 24, { align: 'center' });
 
-    doc.setFontSize(6);
+    doc.setFontSize(6.5);
     doc.setFont('helvetica', 'normal');
     doc.text('Signature & Date', x + colW / 2, y + 29, { align: 'center' });
   });

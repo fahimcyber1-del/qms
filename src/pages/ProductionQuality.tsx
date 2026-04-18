@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ProductionQualityCharts } from '../components/ProductionQualityCharts';
 import { ExportModal } from '../components/ExportModal';
@@ -23,18 +23,37 @@ const itemVariants = {
 };
 
 export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, params?: any) => void }) {
-  const [activeTab, setActiveTab] = useState<'detailed' | 'quick' | 'manage'>('detailed');
+  const [activeTab, setActiveTab] = useState<'detailed' | 'manage'>('detailed');
   const [inspections, setInspections] = useState<InspectionRecord[]>([]);
-  
+  // Manage Options (Persisted in localStorage)
+  const [units, setUnits] = useState<string[]>([]);
+  const [sections, setSections] = useState<string[]>([]);
+  const [lines, setLines] = useState<string[]>([]);
+  const [newOption, setNewOption] = useState({ type: 'unit', value: '' });
+
   useEffect(() => {
+    const u = localStorage.getItem('garmentqms_config_units');
+    const s = localStorage.getItem('garmentqms_config_sections');
+    const l = localStorage.getItem('garmentqms_config_lines');
+    
+    if (u) setUnits(JSON.parse(u));
+    else setUnits(['Unit-1', 'Unit-2', 'Unit-3', 'Unit-4', 'Unit-5']);
+
+    if (s) setSections(JSON.parse(s));
+    else setSections(['Sewing', 'Finishing', 'Cutting', 'Packing']);
+
+    if (l) setLines(JSON.parse(l));
+    else setLines(['Line-1', 'Line-2', 'Line-3', 'Line-4', 'Line-5', 'Line-6', 'Line-7', 'Line-8', 'Line-9', 'Line-10']);
+
     setInspections(getProductionQualityRecords());
   }, []);
 
-  // Manage Options (Would typically be stored in a config context or DB)
-  const [units, setUnits] = useState(['Unit-1', 'Unit-2', 'Unit-3', 'Unit-4', 'Unit-5']);
-  const [sections, setSections] = useState(['Sewing', 'Finishing', 'Cutting', 'Packing']);
-  const [lines, setLines] = useState(['Line-1', 'Line-2', 'Line-3', 'Line-4', 'Line-5', 'Line-6', 'Line-7', 'Line-8', 'Line-9', 'Line-10']);
-  const [newOption, setNewOption] = useState({ type: 'unit', value: '' });
+  const saveConfig = (type: string, data: string[]) => {
+    localStorage.setItem(`garmentqms_config_${type}s`, JSON.stringify(data));
+    if (type === 'unit') setUnits(data);
+    if (type === 'section') setSections(data);
+    if (type === 'line') setLines(data);
+  };
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,8 +67,6 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
   const filteredInspections = useMemo(() => {
     return inspections.filter(i => {
       if (activeTab === 'manage') return true;
-      if (activeTab === 'detailed' && i.source !== 'detailed') return false;
-      if (activeTab === 'quick' && i.source !== 'quick') return false;
       
       const matchesSearch = 
         (i.lineNumber || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -225,15 +242,9 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
           <button className="btn btn-ghost flex items-center gap-2 border border-border-main text-text-2 shadow-sm" onClick={() => setIsExportModalOpen(true)}>
             <Download className="w-4 h-4" /> Global Export
           </button>
-          <div className="relative group">
-            <button className="btn btn-primary flex items-center gap-2 shadow-md">
-              <Plus className="w-4 h-4" /> Add Record
-            </button>
-            <div className="absolute right-0 mt-2 w-48 bg-bg-1 border border-border-main rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 overflow-hidden">
-              <button className="w-full text-left px-4 py-3 hover:bg-bg-2 text-sm font-medium" onClick={() => handleNavigateToForm('create', null, 'detailed')}>Detailed Record</button>
-              <button className="w-full text-left px-4 py-3 hover:bg-bg-2 text-sm font-medium border-t border-border-main" onClick={() => handleNavigateToForm('create', null, 'quick')}>Quick Entry</button>
-            </div>
-          </div>
+          <button className="btn btn-primary flex items-center gap-2 shadow-md" onClick={() => handleNavigateToForm('create', null, 'detailed')}>
+            <Plus className="w-4 h-4" /> Add Record
+          </button>
         </div>
       </div>
 
@@ -261,9 +272,8 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
       {/* Tabs */}
       <div className="flex gap-2 border-b border-border-main overflow-x-auto no-scrollbar">
         {[
-          { id: 'detailed', label: 'Detailed Inspections', icon: List },
-          { id: 'quick', label: 'Quick Entries', icon: Activity },
-          { id: 'manage', label: 'Manage Configuration', icon: Settings }
+          { id: 'detailed', label: 'Quality Logs', icon: List },
+          { id: 'manage', label: 'Operational Config', icon: Settings }
         ].map(tab => (
           <button
             key={tab.id}
@@ -284,7 +294,7 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
       {/* Tab Content */}
       <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-6">
         
-        {(activeTab === 'detailed' || activeTab === 'quick') && (
+        {(activeTab === 'detailed') && (
           <>
             {activeTab === 'detailed' && chartData?.length > 0 && (
               <motion.div variants={itemVariants}>
@@ -369,7 +379,7 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
                             <td className="p-4 text-sm text-text-1 whitespace-nowrap font-medium">{row.date}</td>
                             <td className="p-4">
                               <div className="font-bold text-text-1 group-hover:text-accent transition-colors">{row.lineNumber}</div>
-                              <div className="text-xs text-text-3 font-medium mt-0.5">{row.unit} â€¢ {row.section}</div>
+                              <div className="text-xs text-text-3 font-medium mt-0.5">{row.unit} • {row.section}</div>
                             </td>
                             <td className="p-4">
                               <div className="font-bold text-text-1">{row.style || '-'}</div>
@@ -442,10 +452,10 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
                       }
                     }}
                   />
-                  <button className="btn btn-primary px-4 shadow-sm" onClick={() => {
+                    <button className="btn btn-primary px-4 shadow-sm" onClick={() => {
                     if (!newOption.value) return;
-                    config.setter([...config.data, newOption.value]);
-                    setNewOption({ type: 'unit', value: '' });
+                    saveConfig(config.type, [...config.data, newOption.value]);
+                    setNewOption({ type: config.type, value: '' });
                   }}>Add</button>
                 </div>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 no-scrollbar">
@@ -454,7 +464,7 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
                       <span className="font-medium text-text-1 text-sm">{item}</span>
                       <button 
                         className="text-text-2 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-red-500/10 rounded-md"
-                        onClick={() => config.setter(config.data.filter(i => i !== item))}
+                        onClick={() => saveConfig(config.type, config.data.filter(i => i !== item))}
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>

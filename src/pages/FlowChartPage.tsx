@@ -17,6 +17,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { jsPDF } from 'jspdf';
 import { db } from '../db/db';
+import { addPageFooters, drawPdfHeader } from '../utils/pdfExport';
 
 // ── Types ───────────────────────────────────────────────
 export type FlowStatus = 'Draft' | 'Pending Review' | 'Approved' | 'Archived';
@@ -230,6 +231,154 @@ function buildTemplateFlow(steps: string[], types?: string[]): { nodes: Node[]; 
   return { nodes, edges };
 }
 
+// ── Complex garment flow chart builders (branching layouts) ──────
+function buildCuttingSectionFlow(): { nodes: Node[]; edges: Edge[] } {
+  const id = (s: string) => 'cs_' + s;
+  const nodes: Node[] = [
+    { id: id('1'), type: 'terminal', position: { x: 280, y: 0 }, data: { label: 'FABRIC RECEIVE FROM\nWEARHOUSE' } },
+    { id: id('2'), type: 'process', position: { x: 220, y: 140 }, data: { label: 'ROLL TO ROLL SHADE, GSM &\nALL LAB TEST REPORT CHECK' } },
+    { id: id('3'), type: 'record', position: { x: 560, y: 140 }, data: { label: 'KEEP RECORD' } },
+    { id: id('4'), type: 'process', position: { x: 280, y: 280 }, data: { label: 'PATTERN TEST\n(GMTS MAKE)' } },
+    { id: id('5'), type: 'qc', position: { x: 210, y: 410 }, data: { label: 'REVIEW FABRIC INSPECTION\n(4 POINT SYSTEM MIN 10%)\nIF FAIL 20% IF FAIL 100%\nINSPECTION' } },
+    { id: id('6'), type: 'record', position: { x: 560, y: 430 }, data: { label: 'MAKE REPORT' } },
+    { id: id('7'), type: 'decision_pass', position: { x: 130, y: 600 }, data: { label: 'PASS' } },
+    { id: id('8'), type: 'decision_fail', position: { x: 520, y: 600 }, data: { label: 'FAIL' } },
+    { id: id('9'), type: 'process', position: { x: 80, y: 730 }, data: { label: 'SENT RELAX ZONE' } },
+    { id: id('10'), type: 'process', position: { x: 55, y: 850 }, data: { label: 'DO PLAN COUNTRY & GROUP' } },
+    { id: id('11'), type: 'process', position: { x: 80, y: 970 }, data: { label: 'DELIVERY TO CUTTING' } },
+    { id: id('12'), type: 'process', position: { x: 55, y: 1090 }, data: { label: 'SPREADING & LAY HEIGHT' } },
+    { id: id('13'), type: 'process', position: { x: 40, y: 1210 }, data: { label: 'MARKER CHECK WITH RATIO' } },
+    { id: id('14'), type: 'qc', position: { x: 55, y: 1330 }, data: { label: 'RANDOM M-MENT CHECK' } },
+    { id: id('15'), type: 'qc', position: { x: 55, y: 1450 }, data: { label: 'CUT PANEL CHECK 100%' } },
+    { id: id('16'), type: 'decision', position: { x: 310, y: 1460 }, data: { label: 'IF PRINT /\nEMBO' } },
+    { id: id('17'), type: 'decision_pass', position: { x: 95, y: 1600 }, data: { label: 'PASS' } },
+    { id: id('18'), type: 'terminal', position: { x: 55, y: 1740 }, data: { label: 'SEND TO\nSEWING' } },
+    { id: id('19'), type: 'process', position: { x: 295, y: 1600 }, data: { label: 'SENT TO\nPRINT / EMBO' } },
+    { id: id('20'), type: 'qc', position: { x: 295, y: 1740 }, data: { label: '100% CHECK\nPRINT / EMBO' } },
+    { id: id('21'), type: 'decision_pass', position: { x: 240, y: 1890 }, data: { label: 'PASS' } },
+    { id: id('22'), type: 'decision_fail', position: { x: 420, y: 1890 }, data: { label: 'FAIL' } },
+    { id: id('23'), type: 'process', position: { x: 500, y: 730 }, data: { label: 'RETURN TO SUP' } },
+    { id: id('24'), type: 'process', position: { x: 500, y: 860 }, data: { label: 'RE-PROCESS' } },
+    { id: id('25'), type: 'qc', position: { x: 500, y: 990 }, data: { label: 'RE-INSPECTION' } },
+    { id: id('26'), type: 'decision_pass', position: { x: 440, y: 1140 }, data: { label: 'PASS' } },
+    { id: id('27'), type: 'decision_fail', position: { x: 590, y: 1140 }, data: { label: 'FAIL' } },
+    { id: id('28'), type: 'record', position: { x: 545, y: 1300 }, data: { label: 'Immediate corrective\naction / sorting' } },
+  ];
+  const edges: Edge[] = [
+    makeEdge(id('1'), id('2')), makeEdge(id('2'), id('3')), makeEdge(id('2'), id('4')),
+    makeEdge(id('4'), id('5')), makeEdge(id('5'), id('6')),
+    makeEdge(id('5'), id('7')), makeEdge(id('5'), id('8')),
+    makeEdge(id('7'), id('9')), makeEdge(id('8'), id('23')),
+    makeEdge(id('9'), id('10')), makeEdge(id('10'), id('11')),
+    makeEdge(id('11'), id('12')), makeEdge(id('12'), id('13')),
+    makeEdge(id('13'), id('14')), makeEdge(id('14'), id('15')),
+    makeEdge(id('15'), id('16')), makeEdge(id('15'), id('17')),
+    makeEdge(id('17'), id('18')), makeEdge(id('16'), id('19')),
+    makeEdge(id('19'), id('20')), makeEdge(id('20'), id('21')),
+    makeEdge(id('20'), id('22')), makeEdge(id('21'), id('18')),
+    makeEdge(id('22'), id('28')),
+    makeEdge(id('23'), id('24')), makeEdge(id('24'), id('25')),
+    makeEdge(id('25'), id('26')), makeEdge(id('25'), id('27')),
+    makeEdge(id('27'), id('28')),
+  ];
+  return { nodes, edges };
+}
+
+function buildSewingSectionFlow(): { nodes: Node[]; edges: Edge[] } {
+  const id = (s: string) => 'sw_' + s;
+  const nodes: Node[] = [
+    { id: id('1'), type: 'terminal', position: { x: 280, y: 0 }, data: { label: 'RECEIVE CUT PANELS\nFROM CUTTING' } },
+    { id: id('2'), type: 'process', position: { x: 220, y: 140 }, data: { label: 'BUNDLE CHECK &\nCOUNTING' } },
+    { id: id('3'), type: 'record', position: { x: 550, y: 140 }, data: { label: 'BUNDLE RECORD' } },
+    { id: id('4'), type: 'process', position: { x: 280, y: 280 }, data: { label: 'LINE LOADING &\nLAYOUT SETUP' } },
+    { id: id('5'), type: 'process', position: { x: 280, y: 400 }, data: { label: 'PILOT RUN\n(FIRST 5 PCS)' } },
+    { id: id('6'), type: 'qc', position: { x: 250, y: 530 }, data: { label: 'INLINE QC\nINSPECTION' } },
+    { id: id('7'), type: 'decision_pass', position: { x: 120, y: 690 }, data: { label: 'PASS' } },
+    { id: id('8'), type: 'decision_fail', position: { x: 470, y: 690 }, data: { label: 'FAIL' } },
+    { id: id('9'), type: 'qc', position: { x: 80, y: 830 }, data: { label: 'END LINE\nINSPECTION 100%' } },
+    { id: id('10'), type: 'process', position: { x: 470, y: 830 }, data: { label: 'REWORK /\nALTERATION' } },
+    { id: id('11'), type: 'decision_pass', position: { x: 60, y: 980 }, data: { label: 'PASS' } },
+    { id: id('12'), type: 'decision_fail', position: { x: 240, y: 980 }, data: { label: 'FAIL' } },
+    { id: id('13'), type: 'terminal', position: { x: 60, y: 1120 }, data: { label: 'SEND TO\nFINISHING' } },
+    { id: id('14'), type: 'record', position: { x: 470, y: 980 }, data: { label: 'DEFECT RECORD\n& ANALYSIS' } },
+  ];
+  const edges: Edge[] = [
+    makeEdge(id('1'), id('2')), makeEdge(id('2'), id('3')), makeEdge(id('2'), id('4')),
+    makeEdge(id('4'), id('5')), makeEdge(id('5'), id('6')),
+    makeEdge(id('6'), id('7')), makeEdge(id('6'), id('8')),
+    makeEdge(id('7'), id('9')), makeEdge(id('8'), id('10')),
+    makeEdge(id('10'), id('6')), makeEdge(id('8'), id('14')),
+    makeEdge(id('9'), id('11')), makeEdge(id('9'), id('12')),
+    makeEdge(id('11'), id('13')), makeEdge(id('12'), id('10')),
+  ];
+  return { nodes, edges };
+}
+
+function buildFinishingPackingFlow(): { nodes: Node[]; edges: Edge[] } {
+  const id = (s: string) => 'fp_' + s;
+  const nodes: Node[] = [
+    { id: id('1'), type: 'terminal', position: { x: 280, y: 0 }, data: { label: 'RECEIVE FROM\nSEWING' } },
+    { id: id('2'), type: 'process', position: { x: 280, y: 130 }, data: { label: 'THREAD CUTTING\n& TRIMMING' } },
+    { id: id('3'), type: 'process', position: { x: 280, y: 260 }, data: { label: 'SPOT CLEANING\n& STAIN REMOVAL' } },
+    { id: id('4'), type: 'process', position: { x: 280, y: 390 }, data: { label: 'IRONING /\nPRESSING' } },
+    { id: id('5'), type: 'qc', position: { x: 250, y: 520 }, data: { label: 'FINISHING QC\nINSPECTION' } },
+    { id: id('6'), type: 'decision_pass', position: { x: 120, y: 680 }, data: { label: 'PASS' } },
+    { id: id('7'), type: 'decision_fail', position: { x: 470, y: 680 }, data: { label: 'FAIL' } },
+    { id: id('8'), type: 'process', position: { x: 80, y: 810 }, data: { label: 'TAGGING &\nLABELLING' } },
+    { id: id('9'), type: 'process', position: { x: 80, y: 940 }, data: { label: 'POLY PACKING\n& ASSORTMENT' } },
+    { id: id('10'), type: 'process', position: { x: 80, y: 1070 }, data: { label: 'CARTON PACKING\n& MARKING' } },
+    { id: id('11'), type: 'qc', position: { x: 80, y: 1200 }, data: { label: 'FINAL INSPECTION\n(AQL 2.5)' } },
+    { id: id('12'), type: 'decision_pass', position: { x: 50, y: 1360 }, data: { label: 'PASS' } },
+    { id: id('13'), type: 'decision_fail', position: { x: 260, y: 1360 }, data: { label: 'FAIL' } },
+    { id: id('14'), type: 'terminal', position: { x: 50, y: 1500 }, data: { label: 'SHIPMENT\nRELEASE' } },
+    { id: id('15'), type: 'process', position: { x: 470, y: 810 }, data: { label: 'REWORK /\nRE-IRON' } },
+    { id: id('16'), type: 'process', position: { x: 260, y: 1500 }, data: { label: 'RE-INSPECTION\n& SORTING' } },
+  ];
+  const edges: Edge[] = [
+    makeEdge(id('1'), id('2')), makeEdge(id('2'), id('3')), makeEdge(id('3'), id('4')),
+    makeEdge(id('4'), id('5')), makeEdge(id('5'), id('6')), makeEdge(id('5'), id('7')),
+    makeEdge(id('6'), id('8')), makeEdge(id('7'), id('15')), makeEdge(id('15'), id('5')),
+    makeEdge(id('8'), id('9')), makeEdge(id('9'), id('10')), makeEdge(id('10'), id('11')),
+    makeEdge(id('11'), id('12')), makeEdge(id('11'), id('13')),
+    makeEdge(id('12'), id('14')), makeEdge(id('13'), id('16')), makeEdge(id('16'), id('11')),
+  ];
+  return { nodes, edges };
+}
+
+function buildWashingFlow(): { nodes: Node[]; edges: Edge[] } {
+  const id = (s: string) => 'ws_' + s;
+  const nodes: Node[] = [
+    { id: id('1'), type: 'terminal', position: { x: 280, y: 0 }, data: { label: 'RECEIVE GARMENTS\nFOR WASHING' } },
+    { id: id('2'), type: 'process', position: { x: 280, y: 140 }, data: { label: 'LOT WISE\nSORTING' } },
+    { id: id('3'), type: 'process', position: { x: 250, y: 270 }, data: { label: 'RECIPE SETUP &\nCHEMICAL MIXING' } },
+    { id: id('4'), type: 'record', position: { x: 550, y: 270 }, data: { label: 'RECIPE RECORD' } },
+    { id: id('5'), type: 'process', position: { x: 280, y: 400 }, data: { label: 'SAMPLE WASH\n(APPROVAL)' } },
+    { id: id('6'), type: 'decision_pass', position: { x: 120, y: 550 }, data: { label: 'APPROVED' } },
+    { id: id('7'), type: 'decision_fail', position: { x: 470, y: 550 }, data: { label: 'REJECTED' } },
+    { id: id('8'), type: 'process', position: { x: 80, y: 690 }, data: { label: 'BULK WASH\nPROCESS' } },
+    { id: id('9'), type: 'process', position: { x: 470, y: 690 }, data: { label: 'RE-ADJUST\nRECIPE' } },
+    { id: id('10'), type: 'process', position: { x: 80, y: 820 }, data: { label: 'HYDRO\nEXTRACTOR' } },
+    { id: id('11'), type: 'process', position: { x: 80, y: 950 }, data: { label: 'DRYING' } },
+    { id: id('12'), type: 'qc', position: { x: 80, y: 1080 }, data: { label: 'WASH QC CHECK\n(COLOR, HAND FEEL,\nSHRINKAGE)' } },
+    { id: id('13'), type: 'decision_pass', position: { x: 50, y: 1240 }, data: { label: 'PASS' } },
+    { id: id('14'), type: 'decision_fail', position: { x: 280, y: 1240 }, data: { label: 'FAIL' } },
+    { id: id('15'), type: 'terminal', position: { x: 50, y: 1380 }, data: { label: 'SEND TO\nFINISHING' } },
+    { id: id('16'), type: 'process', position: { x: 280, y: 1380 }, data: { label: 'RE-WASH /\nCORRECTION' } },
+  ];
+  const edges: Edge[] = [
+    makeEdge(id('1'), id('2')), makeEdge(id('2'), id('3')),
+    makeEdge(id('3'), id('4')), makeEdge(id('3'), id('5')),
+    makeEdge(id('5'), id('6')), makeEdge(id('5'), id('7')),
+    makeEdge(id('6'), id('8')), makeEdge(id('7'), id('9')),
+    makeEdge(id('9'), id('5')), makeEdge(id('8'), id('10')),
+    makeEdge(id('10'), id('11')), makeEdge(id('11'), id('12')),
+    makeEdge(id('12'), id('13')), makeEdge(id('12'), id('14')),
+    makeEdge(id('13'), id('15')), makeEdge(id('14'), id('16')),
+    makeEdge(id('16'), id('12')),
+  ];
+  return { nodes, edges };
+}
+
 const TEMPLATES_RAW = [
   { code: 'FC-001', title: 'Order Management Flow', department: 'Merchandising', processOwner: 'Merchandising Manager', description: 'End-to-end buyer order flow.',
     ...buildTemplateFlow(['Buyer Order Received','Order Review','Tech Pack Review','Costing Approval','Order Confirmation','Production Planning'], ['terminal','process','process','decision','process','terminal']) },
@@ -245,6 +394,18 @@ const TEMPLATES_RAW = [
     ...buildTemplateFlow(['Lot Selection','AQL Sampling','Visual Inspection','Measurement Inspection','Defect Classification','PASS','FAIL'], ['terminal','process','qc','qc','qc','decision_pass','decision_fail']) },
   { code: 'FC-007', title: 'Shipment Release Flow', department: 'Merchandising', processOwner: 'Shipment Coordinator', description: 'Post-final-inspection shipment release.',
     ...buildTemplateFlow(['Final Inspection Pass','Documentation Review','Buyer Approval','Shipment Booking','Shipment Release'], ['terminal','process','decision','process','terminal']) },
+  { code: 'FC-008', title: 'Cutting Section Flow Chart', department: 'Cutting', processOwner: 'Cutting Manager',
+    description: 'Complete cutting section workflow with fabric inspection, QC checkpoints, print/embroidery branching, and corrective action paths.',
+    ...buildCuttingSectionFlow() },
+  { code: 'FC-009', title: 'Sewing Section Flow Chart', department: 'Sewing', processOwner: 'Sewing Manager',
+    description: 'Comprehensive sewing line workflow with inline QC, end-line inspection, rework loops and defect analysis.',
+    ...buildSewingSectionFlow() },
+  { code: 'FC-010', title: 'Finishing & Packing Flow Chart', department: 'Finishing', processOwner: 'Finishing Manager',
+    description: 'Complete finishing workflow through AQL final inspection, carton packing and shipment release process.',
+    ...buildFinishingPackingFlow() },
+  { code: 'FC-011', title: 'Washing Process Flow Chart', department: 'Washing', processOwner: 'Wash Manager',
+    description: 'Garment washing workflow with recipe management, sample approval, QC validation and corrective loops.',
+    ...buildWashingFlow() },
 ];
 
 function buildDefaultTemplates(): FlowChartRecord[] {
@@ -271,6 +432,127 @@ function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
+}
+
+// ── Helper: render flowchart with proper shapes + edge connections on canvas ──
+function renderFlowchartCanvas(
+  ctx: CanvasRenderingContext2D,
+  record: { nodes: Node[]; edges: Edge[] },
+  areaX: number, areaY: number, areaW: number, areaH: number
+) {
+  // Area background
+  ctx.fillStyle = '#ffffff';
+  drawRoundRect(ctx, areaX, areaY, areaW, areaH, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 2;
+  drawRoundRect(ctx, areaX, areaY, areaW, areaH, 8);
+  ctx.stroke();
+
+  if (record.nodes.length === 0) {
+    ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 20px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Open in canvas editor to build the flowchart', areaX + areaW / 2, areaY + areaH / 2);
+    return;
+  }
+
+  const xs = record.nodes.map(n => n.position.x);
+  const ys = record.nodes.map(n => n.position.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs) + 200;
+  const minY = Math.min(...ys), maxY = Math.max(...ys) + 100;
+  const scaleX = (areaW - 100) / Math.max(maxX - minX, 1);
+  const scaleY = (areaH - 100) / Math.max(maxY - minY, 1);
+  const scale = Math.min(scaleX, scaleY, 1.2);
+  const nw = 170 * Math.min(scale, 1);
+  const nh = 56 * Math.min(scale, 1);
+  const padX = areaX + 50;
+  const padY = areaY + 30;
+
+  const nodeColors: Record<string, { bg: string; text: string }> = {
+    terminal:      { bg: '#1d4ed8', text: '#fff' },
+    process:       { bg: '#1565c0', text: '#fff' },
+    qc:            { bg: '#7c3aed', text: '#fff' },
+    decision:      { bg: '#f59e0b', text: '#1c1917' },
+    decision_pass: { bg: '#22c55e', text: '#fff' },
+    decision_fail: { bg: '#ef4444', text: '#fff' },
+    record:        { bg: '#f59e0b', text: '#1c1917' },
+  };
+
+  // Build position map
+  const posMap: Record<string, { x: number; y: number }> = {};
+  record.nodes.forEach(n => {
+    posMap[n.id] = {
+      x: padX + (n.position.x - minX) * scale,
+      y: padY + (n.position.y - minY) * scale,
+    };
+  });
+
+  // Draw edges with arrows
+  ctx.save();
+  record.edges.forEach(e => {
+    const sp = posMap[e.source];
+    const tp = posMap[e.target];
+    if (!sp || !tp) return;
+    const sx = sp.x + nw / 2, sy = sp.y + nh;
+    const tx = tp.x + nw / 2, ty = tp.y;
+    ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (Math.abs(sx - tx) < 5) {
+      ctx.moveTo(sx, sy); ctx.lineTo(tx, ty);
+    } else {
+      const midY = (sy + ty) / 2;
+      ctx.moveTo(sx, sy); ctx.lineTo(sx, midY);
+      ctx.lineTo(tx, midY); ctx.lineTo(tx, ty);
+    }
+    ctx.stroke();
+    // Arrowhead
+    ctx.fillStyle = '#475569'; ctx.beginPath();
+    ctx.moveTo(tx, ty); ctx.lineTo(tx - 4, ty - 7); ctx.lineTo(tx + 4, ty - 7);
+    ctx.closePath(); ctx.fill();
+  });
+  ctx.restore();
+
+  // Draw nodes with proper shapes
+  record.nodes.forEach(n => {
+    const pos = posMap[n.id];
+    const type = n.type || 'process';
+    const colors = nodeColors[type] || nodeColors.process;
+    const nx = pos.x, ny = pos.y;
+
+    ctx.save();
+    ctx.fillStyle = colors.bg;
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 2;
+
+    if (type === 'terminal') {
+      drawRoundRect(ctx, nx, ny, nw, nh, nh / 2);
+      ctx.fill(); ctx.stroke();
+    } else if (type.includes('decision')) {
+      const cx = nx + nw / 2, cy = ny + nh / 2;
+      const dw = nw * 0.42, dh = nh * 0.48;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - dh); ctx.lineTo(cx + dw, cy);
+      ctx.lineTo(cx, cy + dh); ctx.lineTo(cx - dw, cy);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else {
+      drawRoundRect(ctx, nx, ny, nw, nh, 6);
+      ctx.fill(); ctx.stroke();
+    }
+
+    // Label text
+    ctx.fillStyle = colors.text;
+    const fontSize = Math.max(8, Math.min(12, nh / 3.5));
+    ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const label = (n.data.label as string || '');
+    const lines = label.split('\n');
+    const lh = fontSize * 1.25;
+    const startTextY = ny + nh / 2 - (lines.length - 1) * lh / 2;
+    lines.forEach((line: string, i: number) => {
+      const t = line.length > 24 ? line.slice(0, 24) + '\u2026' : line;
+      ctx.fillText(t, nx + nw / 2, startTextY + i * lh);
+    });
+    ctx.restore();
+  });
 }
 
 async function renderFlowToImage(reactFlowElement: HTMLElement): Promise<string> {
@@ -575,10 +857,16 @@ function CanvasEditorInner({ record, onSave, onClose }: EditorProps) {
       const doc = new jsPDF({ orientation: landscape ? 'l' : 'p', unit: 'mm', format: 'a4' });
       const W = doc.internal.pageSize.getWidth();
       const H = doc.internal.pageSize.getHeight();
-      const ratio = Math.min(W / (canvas.width / 2), H / (canvas.height / 2));
+      const startY = drawPdfHeader(doc, meta.title || 'Flow Chart', `Reference: ${record.code} | Version: ${meta.version || '1.0'}`, 'flow_chart');
+      const footerReserve = 16;
+      const topMargin = startY + 2;
+      const availableW = W - 16;
+      const availableH = H - topMargin - footerReserve;
+      const ratio = Math.min(availableW / (canvas.width / 2), availableH / (canvas.height / 2));
       const iW = (canvas.width / 2) * ratio;
       const iH = (canvas.height / 2) * ratio;
-      doc.addImage(imgData, 'PNG', (W - iW) / 2, (H - iH) / 2, iW, iH);
+      doc.addImage(imgData, 'PNG', (W - iW) / 2, topMargin + Math.max(0, (availableH - iH) / 2), iW, iH);
+      addPageFooters(doc);
       doc.save(`${record.code}_Flowchart.pdf`);
     } catch (e) { console.error(e); alert('PDF export failed. Try again.'); }
     setExporting(false);
@@ -880,45 +1168,8 @@ export function FlowChartPage({ onNavigate }: { onNavigate: (page: string, param
     ctx.fillText(`${record.code}  ·  ${record.department}  ·  ${record.version}  ·  Status: ${record.status}`, 40, 66);
     ctx.fillText(`Process Owner: ${record.processOwner || '—'}  ·  ${record.nodes.length} nodes, ${record.edges.length} connections`, 40, 86);
 
-    // Flow diagram area placeholder with info
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(30, 140, 1340, 700);
-    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 2; ctx.strokeRect(30, 140, 1340, 700);
-
-    // Draw nodes as simple rectangles in their relative positions
-    if (record.nodes.length > 0) {
-      const xs = record.nodes.map(n => n.position.x);
-      const ys = record.nodes.map(n => n.position.y);
-      const minX = Math.min(...xs), maxX = Math.max(...xs) + 200;
-      const minY = Math.min(...ys), maxY = Math.max(...ys) + 80;
-      const scaleX = 1200 / Math.max(maxX - minX, 1);
-      const scaleY = 620 / Math.max(maxY - minY, 1);
-      const scale = Math.min(scaleX, scaleY, 1);
-
-      const nodeColors: Record<string, string> = {
-        terminal: '#1d4ed8', process: '#1565c0', qc: '#7c3aed', decision: '#d97706',
-        decision_pass: '#15803d', decision_fail: '#b91c1c', record: '#f59e0b',
-      };
-
-      record.nodes.forEach(n => {
-        const nx = 80 + (n.position.x - minX) * scale;
-        const ny = 160 + (n.position.y - minY) * scale;
-        const nw = 160 * Math.min(scale, 1);
-        const nh = 52 * Math.min(scale, 1);
-        const color = nodeColors[n.type || 'process'] || '#1565c0';
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.roundRect?.(nx, ny, nw, nh, 6);
-        ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = `bold ${Math.max(9, 11 * scale)}px Arial`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        const lbl = (n.data.label as string || '').length > 20 ? (n.data.label as string).slice(0, 20) + '…' : (n.data.label as string);
-        ctx.fillText(lbl, nx + nw / 2, ny + nh / 2);
-      });
-    } else {
-      ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 20px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('Open in canvas editor to build the flowchart', 700, 490);
-    }
+    // Draw flowchart with proper shapes and edge connections
+    renderFlowchartCanvas(ctx, record, 30, 140, 1340, 700);
 
     ctx.fillStyle = '#1e3a8a'; ctx.fillRect(0, 858, 1400, 32);
     ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Arial'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -949,42 +1200,8 @@ export function FlowChartPage({ onNavigate }: { onNavigate: (page: string, param
     ctx.fillText(`${record.code}  ·  ${record.department} Department  ·  Process Owner: ${record.processOwner || '—'}  ·  Version: ${record.version}`, 60, 110);
     ctx.fillText(`Description: ${record.description || 'No description.'}`, 60, 150);
 
-    // Content area
-    ctx.fillStyle = '#f8fafc'; ctx.fillRect(30, 220, 2420, 1440);
-    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 3; ctx.strokeRect(30, 220, 2420, 1440);
-
-    if (record.nodes.length > 0) {
-      const xs = record.nodes.map(n => n.position.x);
-      const ys = record.nodes.map(n => n.position.y);
-      const minX = Math.min(...xs), maxX = Math.max(...xs) + 220;
-      const minY = Math.min(...ys), maxY = Math.max(...ys) + 80;
-      const scaleX = 2340 / Math.max(maxX - minX, 1);
-      const scaleY = 1340 / Math.max(maxY - minY, 1);
-      const scale = Math.min(scaleX, scaleY, 1.4);
-
-      const nodeColors: Record<string, string> = {
-        terminal: '#1d4ed8', process: '#1565c0', qc: '#7c3aed', decision: '#d97706',
-        decision_pass: '#15803d', decision_fail: '#b91c1c', record: '#f59e0b',
-      };
-
-      record.nodes.forEach(n => {
-        const nx = 60 + (n.position.x - minX) * scale;
-        const ny = 240 + (n.position.y - minY) * scale;
-        const nw = 200 * scale;
-        const nh = 70 * scale;
-        const color = nodeColors[n.type || 'process'] || '#1565c0';
-        ctx.fillStyle = color;
-        ctx.beginPath(); ctx.roundRect?.(nx, ny, nw, nh, 10); ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = `bold ${Math.max(14, 16 * scale)}px Arial`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        const lbl = (n.data.label as string || '').length > 22 ? (n.data.label as string).slice(0, 22) + '…' : (n.data.label as string);
-        ctx.fillText(lbl, nx + nw / 2, ny + nh / 2);
-      });
-    } else {
-      ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 36px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('Open in Canvas Editor to build the flowchart', 1240, 940);
-    }
+    // Draw flowchart with proper shapes and edge connections
+    renderFlowchartCanvas(ctx, record, 30, 220, 2420, 1440);
 
     // Footer
     ctx.fillStyle = '#1e3a8a'; ctx.fillRect(0, 1700, 2480, 54);
@@ -997,7 +1214,16 @@ export function FlowChartPage({ onNavigate }: { onNavigate: (page: string, param
     const doc = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4' });
     const W = doc.internal.pageSize.getWidth();
     const H = doc.internal.pageSize.getHeight();
-    doc.addImage(imgData, 'PNG', 0, 0, W, H);
+    const startY = drawPdfHeader(doc, record.title || 'Flow Chart', `Reference: ${record.code} | Version: ${record.version || '1.0'}`, 'flow_chart');
+    const footerReserve = 16;
+    const topMargin = startY + 2;
+    const availableW = W - 16;
+    const availableH = H - topMargin - footerReserve;
+    const ratio = Math.min(availableW / 2480, availableH / 1754);
+    const imageW = 2480 * ratio;
+    const imageH = 1754 * ratio;
+    doc.addImage(imgData, 'PNG', (W - imageW) / 2, topMargin + Math.max(0, (availableH - imageH) / 2), imageW, imageH);
+    addPageFooters(doc);
     doc.save(`${record.code}_Flowchart.pdf`);
     setExportingId(null);
   };

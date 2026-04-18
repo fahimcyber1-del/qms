@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ExportModal } from '../components/ExportModal';
 import { autoGenerateCAPA } from '../utils/capaUtils';
 
@@ -308,27 +308,28 @@ export function Audit({ onNavigate }: AuditProps) {
 
   const downloadIndividualPDF = async (audit: AuditRecord) => {
     const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
+      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
       proTable, embedAttachments, addPageFooters, drawSignatureRow
     } = await import('../utils/pdfExport');
 
-    const doc = createDoc({ orientation: 'l', paperSize: 'a4' }); // landscape for wide checklist
-    let y = drawPdfHeader(doc, 'Audit Report', `Audit ID: ${audit.auditId}`);
+    const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
+    let y = drawPdfHeader(doc, 'Audit Compliance Report', `Audit Reference: ${audit.auditId}`);
 
-    y = drawInfoGrid(doc, y, [
+    y = drawRecordTable(doc, y, 'Audit Overview', [
       { label: 'Audit ID',       value: audit.auditId },
       { label: 'Audit Type',     value: audit.auditType },
       { label: 'Department',     value: audit.department },
-      { label: 'Auditor',        value: audit.auditorName },
+      { label: 'Lead Auditor',   value: audit.auditorName },
       { label: 'Auditees',       value: (audit.auditees || []).join(', ') || '—' },
       { label: 'Audit Date',     value: audit.auditDate },
-      { label: 'Overall Result', value: audit.result || '—' },
-      { label: 'Status',         value: audit.status },
+      { label: 'Overall Result', value: audit.result || 'PENDING' },
+      { label: 'Report Status',  value: audit.status },
     ]);
 
     if (audit.nonConformitySummary) {
-      y = drawSectionLabel(doc, y, 'Non-Conformity Summary');
-      y = proTable(doc, y, [['Summary']], [[audit.nonConformitySummary]]) + 6;
+      y = drawRecordTable(doc, y, 'Non-Conformity Summary', [
+        { label: 'Executive Summary', value: audit.nonConformitySummary, fullWidth: true }
+      ]);
     }
 
     if (audit.auditType === 'Internal Audit' && audit.checklist) {
@@ -340,27 +341,29 @@ export function Audit({ onNavigate }: AuditProps) {
             item.text,
             ans?.result || 'N/A',
             ans?.evidence || '—',
-            ans?.attachments?.length ? `${ans.attachments.length} image(s)` : '—',
+            ans?.attachments?.length ? `${ans.attachments.length} Ph.` : '—',
           ];
         });
+        
         y = drawSectionLabel(doc, y, group.group);
         y = proTable(doc, y,
-          [['Clause', 'Question', 'Result', 'Evidence / Findings', 'Photos']],
+          [['ID', 'Audit Checkpoint / Question', 'Finding', 'Evidence & Observations', 'Docs']],
           rows,
           {
             columnStyles: {
-              0: { cellWidth: 20, halign: 'center' },
-              2: { cellWidth: 30, halign: 'center', fontStyle: 'bold' },
-              4: { cellWidth: 22, halign: 'center' },
+              0: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
+              1: { cellWidth: 'auto' },
+              2: { cellWidth: 35, fontStyle: 'bold' },
+              3: { cellWidth: 60 },
+              4: { cellWidth: 15, halign: 'center' },
             }
           }
-        ) + 6;
+        ) + 10;
       }
     }
 
-    drawSignatureRow(doc, y, ['Lead Auditor', 'Management Rep.', 'Auditee', 'Approved By']);
+    y = drawSignatureRow(doc, y, ['Lead Auditor', 'Management Rep.', 'Auditee / Dept. Head', 'Authorized Signatory']);
 
-    // Collect all photo attachments from checklist items
     const photos: string[] = [];
     if (audit.attachments) photos.push(...audit.attachments);
     if (audit.checklist) {
@@ -369,11 +372,11 @@ export function Audit({ onNavigate }: AuditProps) {
       });
     }
     if (photos.length > 0) {
-      await embedAttachments(doc, photos, 'AUDIT EVIDENCE PHOTOS');
+      await embedAttachments(doc, photos, 'COMPLIANCE EVIDENCE ATTACHMENTS');
     }
 
     addPageFooters(doc);
-    doc.save(`Audit_${audit.auditId}.pdf`);
+    doc.save(`Audit_${audit.auditId}_Report.pdf`);
   };
 
   return (

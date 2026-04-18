@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, 
@@ -333,334 +333,53 @@ export function JDModule({ onNavigate }: JDModuleProps) {
   //  CLEAN PDF EXPORT — Professional AutoTable Design
   //  Layout: Doc Code & Rev at top-left | Company center bold | Address below
   // ═══════════════════════════════════════════════════════════════════
-  const exportToPDF = (record: JDRecord) => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 14;
-    const contentWidth = pageWidth - margin * 2;
+  const exportToPDF = async (record: JDRecord) => {
+    const {
+      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
+      proTable, addPageFooters, drawSignatureRow
+    } = await import('../utils/pdfExport');
 
-    // ── Color Palette ────────────────────────────────────────
-    const DARK      = [30, 41, 59] as [number, number, number];
-    const MEDIUM    = [71, 85, 105] as [number, number, number];
-    const LIGHT     = [148, 163, 184] as [number, number, number];
-    const LABEL_BG  = [241, 245, 249] as [number, number, number];
-    const BORDER    = [203, 213, 225] as [number, number, number];
-    const ALT_ROW   = [248, 250, 252] as [number, number, number];
-    const WHITE     = [255, 255, 255] as [number, number, number];
-    const BLACK     = [0, 0, 0] as [number, number, number];
+    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
+    let y = drawPdfHeader(doc, 'Job Description Specification', `Ref: ${record.jdRefNo} \u2022 Rev: ${record.revNo || '01'}`);
 
-    // ═══════════════════════════════════════════════════════════
-    //  PAGE HEADER — Clean 3‐column layout with outer border box
-    // ═══════════════════════════════════════════════════════════
-    const headerH = 28;
-    
-    // Outer border box for the entire header
-    doc.setDrawColor(...DARK);
-    doc.setLineWidth(0.6);
-    doc.rect(margin, 8, contentWidth, headerH, 'S');
+    y = drawRecordTable(doc, y, 'Employee & Organizational Mapping', [
+      { label: 'Employee Name',    value: record.employeeName, fullWidth: true },
+      { label: 'Designation',      value: record.designation },
+      { label: 'ERP ID',           value: record.erpId || '\u2014' },
+      { label: 'Department',       value: record.department },
+      { label: 'Section / Unit',   value: `${record.section || '\u2014'} / ${record.unit || '\u2014'}` },
+      { label: 'Joining Date',     value: record.doj || '\u2014' },
+      { label: 'Document Code',    value: record.documentCode || '\u2014' },
+    ]);
 
-    // ── Left column: Doc Code + Rev No ───────────────────────
-    const leftColW = 45;
-    // Vertical divider
-    doc.setDrawColor(...BORDER);
-    doc.setLineWidth(0.3);
-    doc.line(margin + leftColW, 8, margin + leftColW, 8 + headerH);
+    y = drawRecordTable(doc, y, 'Operational Reporting Workflow', [
+      { label: 'Reporting To',     value: record.reportToName || '\u2014' },
+      { label: 'Supervisor Designation', value: record.reportToDesignation || '\u2014' },
+      { label: 'Declaration',      value: 'You are and will remain directly reporting to undersigned regarding all your responsibility matter.', fullWidth: true },
+    ]);
 
-    if (record.documentCode) {
-      doc.setTextColor(...DARK);
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Doc Code:', margin + 3, 16);
-      doc.setFont('helvetica', 'normal');
-      doc.text(record.documentCode, margin + 3, 21);
-    }
-    if (record.revNo) {
-      doc.setTextColor(...DARK);
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'bold');
-      doc.text('Rev No:', margin + 3, 27);
-      doc.setFont('helvetica', 'normal');
-      doc.text(record.revNo, margin + 20, 27);
-    }
-
-    // ── Right column: Date + Ref No  ─────────────────────────
-    const rightColW = 45;
-    // Vertical divider
-    doc.line(margin + contentWidth - rightColW, 8, margin + contentWidth - rightColW, 8 + headerH);
-
-    doc.setTextColor(...DARK);
-    doc.setFontSize(7);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Ref No:', margin + contentWidth - rightColW + 3, 16);
-    doc.setFont('helvetica', 'normal');
-    doc.text(record.jdRefNo || '', margin + contentWidth - rightColW + 3, 21);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('Date:', margin + contentWidth - rightColW + 3, 27);
-    doc.setFont('helvetica', 'normal');
-    doc.text(record.preparedDate || '', margin + contentWidth - rightColW + 20, 27);
-
-    // ── Center column: Company Name (bold) + Address below ───
-    const centerX = pageWidth / 2;
-    doc.setTextColor(...BLACK);
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(record.companyName || 'Company Name', centerX, 19, { align: 'center' });
-
-    doc.setTextColor(...MEDIUM);
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(record.factoryLocation || '', centerX, 25, { align: 'center' });
-
-    // ── Title bar: JOB DESCRIPTION ───────────────────────────
-    const titleY = 8 + headerH + 2;
-    doc.setFillColor(...DARK);
-    doc.rect(margin, titleY, contentWidth, 9, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.text('JOB DESCRIPTION', centerX, titleY + 6.5, { align: 'center' });
-
-    let currentY = titleY + 14;
-
-    // ═══════════════════════════════════════════════════════════
-    //  JOB HOLDER INFORMATION TABLE
-    // ═══════════════════════════════════════════════════════════
-    autoTable(doc, {
-      startY: currentY,
-      margin: { left: margin, right: margin },
-      head: [
-        [{ content: 'JOB HOLDER INFORMATION', colSpan: 4, styles: { halign: 'left' as const, fillColor: LABEL_BG, textColor: DARK, fontSize: 8, fontStyle: 'bold' as const } }]
-      ],
-      body: [
-        ['Employee Name', record.employeeName || '—', 'ERP ID', record.erpId || '—'],
-        ['Designation', record.designation || '—', 'Employee Code', record.employeeCode || '—'],
-        ['Department', record.department || '—', 'Section', record.section || '—'],
-        ['Unit', record.unit || '—', 'Date of Joining', record.doj || '—']
-      ],
-      theme: 'grid',
-      styles: {
-        fontSize: 9,
-        cellPadding: { top: 3, bottom: 3, left: 5, right: 5 },
-        lineColor: BORDER,
-        lineWidth: 0.3,
-        textColor: DARK,
-        font: 'helvetica'
-      },
-      columnStyles: {
-        0: { fontStyle: 'bold', fillColor: LABEL_BG, cellWidth: 36, textColor: MEDIUM, fontSize: 8 },
-        1: { cellWidth: (contentWidth / 2) - 36 },
-        2: { fontStyle: 'bold', fillColor: LABEL_BG, cellWidth: 36, textColor: MEDIUM, fontSize: 8 },
-        3: { cellWidth: (contentWidth / 2) - 36 }
-      }
-    });
-
-    currentY = (doc as any).lastAutoTable.finalY + 4;
-
-    // ═══════════════════════════════════════════════════════════
-    //  REPORTING STRUCTURE TABLE
-    // ═══════════════════════════════════════════════════════════
-    autoTable(doc, {
-      startY: currentY,
-      margin: { left: margin, right: margin },
-      head: [
-        [{ content: 'REPORTING STRUCTURE', colSpan: 4, styles: { halign: 'left' as const, fillColor: LABEL_BG, textColor: DARK, fontSize: 8, fontStyle: 'bold' as const } }]
-      ],
-      body: [
-        ['Reports To', record.reportToName || '—', 'Designation', record.reportToDesignation || '—']
-      ],
-      theme: 'grid',
-      styles: {
-        fontSize: 9,
-        cellPadding: { top: 3, bottom: 3, left: 5, right: 5 },
-        lineColor: BORDER,
-        lineWidth: 0.3,
-        textColor: DARK,
-        font: 'helvetica'
-      },
-      columnStyles: {
-        0: { fontStyle: 'bold', fillColor: LABEL_BG, cellWidth: 36, textColor: MEDIUM, fontSize: 8 },
-        1: { cellWidth: (contentWidth / 2) - 36 },
-        2: { fontStyle: 'bold', fillColor: LABEL_BG, cellWidth: 36, textColor: MEDIUM, fontSize: 8 },
-        3: { cellWidth: (contentWidth / 2) - 36 }
-      }
-    });
-
-    currentY = (doc as any).lastAutoTable.finalY + 4;
-
-    // ═══════════════════════════════════════════════════════════
-    //  KEY RESPONSIBILITIES TABLE
-    // ═══════════════════════════════════════════════════════════
     const responsibilitiesBody = record.responsibilities
       .filter(r => r.description.trim())
-      .map((r, idx) => [
-        { content: String(idx + 1), styles: { halign: 'center' as const, fontStyle: 'bold' as const } },
-        r.description
-      ]);
+      .map((r, idx) => [String(idx + 1), r.description]);
 
     if (responsibilitiesBody.length > 0) {
-      autoTable(doc, {
-        startY: currentY,
-        margin: { left: margin, right: margin },
-        head: [
-          [
-            { content: 'SL', styles: { halign: 'center' as const, cellWidth: 14 } },
-            { content: 'KEY RESPONSIBILITIES' }
-          ]
-        ],
-        body: responsibilitiesBody,
-        theme: 'grid',
-        styles: {
-          fontSize: 9,
-          cellPadding: { top: 3, bottom: 3, left: 5, right: 5 },
-          lineColor: BORDER,
-          lineWidth: 0.3,
-          textColor: DARK,
-          font: 'helvetica',
-          overflow: 'linebreak'
-        },
-        headStyles: {
-          fillColor: LABEL_BG,
-          textColor: DARK,
-          fontStyle: 'bold',
-          fontSize: 8
-        },
-        columnStyles: {
-          0: { cellWidth: 14, halign: 'center' },
-          1: { cellWidth: contentWidth - 14 }
-        },
-        alternateRowStyles: {
-          fillColor: ALT_ROW
-        }
-      });
-      currentY = (doc as any).lastAutoTable.finalY + 4;
+      y = drawSectionLabel(doc, y, 'Key Performance Areas & Responsibilities');
+      y = proTable(doc, y, 
+        [['#', 'Key Responsibility / Operational Task Description']], 
+        responsibilitiesBody,
+        { columnStyles: { 0: { cellWidth: 15, halign: 'center' } } }
+      ) + 12;
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  DELEGATION CLAUSE (if enabled)
-    // ═══════════════════════════════════════════════════════════
     if (record.delegationClause) {
-      if (currentY > pageHeight - 55) { doc.addPage(); currentY = 20; }
-
-      autoTable(doc, {
-        startY: currentY,
-        margin: { left: margin, right: margin },
-        head: [
-          [{ content: 'DELEGATION CLAUSE', styles: { fillColor: LABEL_BG, textColor: DARK, fontSize: 8, fontStyle: 'bold' as const } }]
-        ],
-        body: [
-          ["Authorized to delegate his authority to his subordinate with responsibility and continuous monitoring."]
-        ],
-        theme: 'grid',
-        styles: {
-          fontSize: 9,
-          cellPadding: { top: 3, bottom: 3, left: 5, right: 5 },
-          lineColor: BORDER,
-          lineWidth: 0.3,
-          textColor: MEDIUM,
-          font: 'helvetica',
-          fontStyle: 'italic'
-        }
-      });
-      currentY = (doc as any).lastAutoTable.finalY + 4;
+      y = drawRecordTable(doc, y, 'Authority & Delegation', [
+        { label: 'Delegation Clause', value: 'Authorized to delegate his authority to his subordinate with responsibility and continuous monitoring.', fullWidth: true }
+      ]);
     }
 
-    // ═══════════════════════════════════════════════════════════
-    //  REPORTING DECLARATION
-    // ═══════════════════════════════════════════════════════════
-    if (currentY > pageHeight - 55) { doc.addPage(); currentY = 20; }
-
-    autoTable(doc, {
-      startY: currentY,
-      margin: { left: margin, right: margin },
-      head: [
-        [{ content: 'REPORTING DECLARATION', styles: { fillColor: LABEL_BG, textColor: DARK, fontSize: 8, fontStyle: 'bold' as const } }]
-      ],
-      body: [
-        ["You are and will remain directly reporting to undersigned regarding all your responsibility matter."]
-      ],
-      theme: 'grid',
-      styles: {
-        fontSize: 9,
-        cellPadding: { top: 3, bottom: 3, left: 5, right: 5 },
-        lineColor: BORDER,
-        lineWidth: 0.3,
-        textColor: DARK,
-        font: 'helvetica'
-      }
-    });
-    currentY = (doc as any).lastAutoTable.finalY + 6;
-
-    // ═══════════════════════════════════════════════════════════
-    //  SIGNATURE TABLE
-    // ═══════════════════════════════════════════════════════════
-    if (currentY > pageHeight - 55) { doc.addPage(); currentY = 20; }
-
-    autoTable(doc, {
-      startY: currentY,
-      margin: { left: margin, right: margin },
-      head: [
-        [
-          { content: 'Prepared By', styles: { halign: 'center' as const } },
-          { content: "Supervisor's Signature", styles: { halign: 'center' as const } },
-          { content: "Employee's Acknowledgement", styles: { halign: 'center' as const } }
-        ]
-      ],
-      body: [
-        [
-          { content: `\n\n\n\n${record.preparedBy || '_______________'}\n\nDate: ${record.preparedDate || '___/___/______'}`, styles: { halign: 'center' as const } },
-          { content: `\n\n\n\n${record.reportToName || '_______________'}\n${record.reportToDesignation || ''}\n\nSign: _______________`, styles: { halign: 'center' as const } },
-          { content: `\n\n\n\n${record.employeeName || '_______________'}\n\nSign: _______________\nDate: ___/___/______`, styles: { halign: 'center' as const } }
-        ]
-      ],
-      theme: 'grid',
-      styles: {
-        fontSize: 8,
-        cellPadding: { top: 4, bottom: 4, left: 5, right: 5 },
-        lineColor: BORDER,
-        lineWidth: 0.3,
-        textColor: DARK,
-        font: 'helvetica',
-        minCellHeight: 40,
-        valign: 'top'
-      },
-      headStyles: {
-        fillColor: LABEL_BG,
-        textColor: DARK,
-        fontStyle: 'bold',
-        fontSize: 8,
-        halign: 'center'
-      },
-      columnStyles: {
-        0: { cellWidth: contentWidth / 3 },
-        1: { cellWidth: contentWidth / 3 },
-        2: { cellWidth: contentWidth / 3 }
-      }
-    });
-
-    // ═══════════════════════════════════════════════════════════
-    //  PAGE FOOTER — on every page
-    // ═══════════════════════════════════════════════════════════
-    const totalPages = (doc as any).internal.getNumberOfPages();
-    for (let i = 1; i <= totalPages; i++) {
-      doc.setPage(i);
-      const pH = doc.internal.pageSize.getHeight();
-      const pW = doc.internal.pageSize.getWidth();
-
-      doc.setDrawColor(...BORDER);
-      doc.setLineWidth(0.3);
-      doc.line(margin, pH - 12, pW - margin, pH - 12);
-
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...LIGHT);
-      doc.text(record.companyName || '', margin, pH - 7);
-      doc.text(`Page ${i} of ${totalPages}`, pW / 2, pH - 7, { align: 'center' });
-      doc.text(`Ref: ${record.jdRefNo}`, pW - margin, pH - 7, { align: 'right' });
-    }
-
-    doc.save(`JD_${record.employeeName || 'Employee'}_${record.jdRefNo}.pdf`);
+    y = drawSignatureRow(doc, y, ['Prepared By', "Supervisor's Signature", "Employee's Acknowledgement"]);
+    addPageFooters(doc);
+    doc.save(`JD_${record.employeeName.replace(/\s+/g, '_')}_${record.jdRefNo}.pdf`);
   };
 
   // ═══════════════════════════════════════════════════════════════════

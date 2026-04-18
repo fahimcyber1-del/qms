@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ExportModal } from '../components/ExportModal';
 import { CertificateRecord } from '../types';
 import { getCertificates, saveCertificates, checkCertificateStatus, getDaysUntilExpiry } from '../utils/certificateUtils';
@@ -68,41 +68,51 @@ export function Certification() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const files = Array.from(e.target.files).map((f: File) => f.name);
-      setFormData({ ...formData, documentUrls: [...(formData.documentUrls || []), ...files] });
+      const files = Array.from(e.target.files);
+      const newDocs: any[] = [];
+      for (const file of files) {
+        const data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+        newDocs.push({ name: file.name, data });
+      }
+      setFormData({ ...formData, documentUrls: [...(formData.documentUrls || []), ...newDocs] });
     }
   };
 
   const handleDownload = async (cert: CertificateRecord) => {
     const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
+      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
       proTable, addPageFooters, drawSignatureRow
     } = await import('../utils/pdfExport');
 
     const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Compliance Certificate Report', `Cert No: ${cert.number}`);
+    let y = drawPdfHeader(doc, 'Compliance Certification Report', `Serial No: ${cert.number}`);
 
-    y = drawInfoGrid(doc, y, [
-      { label: 'Certificate Name',   value: cert.name },
-      { label: 'Certificate Number', value: cert.number },
-      { label: 'Type',               value: cert.type },
-      { label: 'Issued By',          value: cert.issuedBy },
+    y = drawRecordTable(doc, y, 'Certificate Details', [
+      { label: 'Certificate Name',   value: cert.name, fullWidth: true },
+      { label: 'Document Number',    value: cert.number },
+      { label: 'Certification Type', value: cert.type },
+      { label: 'Issuing Authority',  value: cert.issuedBy },
       { label: 'Department',         value: cert.department },
       { label: 'Issue Date',         value: cert.issueDate },
       { label: 'Expiry Date',        value: cert.expiryDate },
-      { label: 'Status',             value: cert.status },
+      { label: 'Current Status',     value: cert.status },
     ]);
 
     if (cert.documentUrls && cert.documentUrls.length > 0) {
-      y = drawSectionLabel(doc, y, 'Attached Documents');
-      y = proTable(doc, y, [['#', 'Document Name']], cert.documentUrls.map((d, i) => [String(i + 1), d])) + 6;
+      const { embedAttachments } = await import('../utils/pdfExport');
+      const rawData = cert.documentUrls.map((d: any) => typeof d === 'string' ? d : d.data);
+      await embedAttachments(doc, rawData, 'CERTIFICATE DOCUMENTS & EVIDENCE');
     }
 
-    drawSignatureRow(doc, y, ['QA Manager', 'Compliance Officer', 'Director']);
+    y = drawSignatureRow(doc, y, ['Compliance Lead', 'Authorized Signatory', 'Director Operations']);
     addPageFooters(doc);
-    doc.save(`${cert.name.replace(/ /g, '_')}_Certificate.pdf`);
+    doc.save(`${cert.name.replace(/\s+/g, '_')}_Compliance_Report.pdf`);
   };
 
 
@@ -270,9 +280,9 @@ export function Certification() {
                   <div className="mt-3">
                     <span className="text-xs text-text-3 block mb-1">Attached files:</span>
                     <div className="flex flex-wrap gap-2">
-                      {formData.documentUrls.map((url, i) => (
+                      {formData.documentUrls.map((doc: any, i: number) => (
                         <span key={i} className="text-xs bg-bg-2 px-2 py-1 rounded text-text-1 border border-border-1 inline-flex items-center gap-1">
-                          <FileDown className="w-3 h-3 text-accent" /> {url}
+                          <FileDown className="w-3 h-3 text-accent" /> {typeof doc === 'string' ? doc : doc.name}
                         </span>
                       ))}
                     </div>
@@ -330,9 +340,9 @@ export function Certification() {
                 <div className="text-text-3 text-xs mb-2">Attached Documents</div>
                 <div className="flex flex-col gap-2 bg-bg-2/30 p-3 rounded-lg border border-border-1">
                   {selectedCert.documentUrls && selectedCert.documentUrls.length > 0 ? (
-                    selectedCert.documentUrls.map((doc, i) => (
+                    selectedCert.documentUrls.map((doc: any, i) => (
                       <div key={i} className="flex justify-between items-center group">
-                         <span className="text-blue-400 hover:text-blue-300 underline cursor-pointer truncate max-w-[80%]" title={doc}>{doc}</span>
+                         <span className="text-blue-400 hover:text-blue-300 underline cursor-pointer truncate max-w-[80%]" title={typeof doc === 'string' ? doc : doc.name}>{typeof doc === 'string' ? doc : doc.name}</span>
                          <button className="text-text-3 hover:text-accent p-1" title="Download Document"><FileDown className="w-4 h-4" /></button>
                       </div>
                     ))

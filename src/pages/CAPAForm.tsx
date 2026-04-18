@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, Check, X, Plus, Trash2, FileText, AlertCircle, Save, Building, User, Users, Award, ClipboardCheck, Clock, ShieldCheck, HelpCircle, Camera, Image } from 'lucide-react';
 import { CAPARecord } from '../types';
@@ -115,7 +115,7 @@ export function CAPAForm({ params, onNavigate }: CAPAFormProps) {
             </h1>
             <div className="flex items-center gap-3 mt-0.5">
               <span className="text-xs font-bold text-gray-400 font-mono tracking-tighter">{formData.id}</span>
-              <span className="text-[10px] text-gray-300">•</span>
+              <span className="text-[10px] text-gray-300">�</span>
               <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${
                 formData.status === 'Open' ? 'bg-amber-50 text-amber-600 border-amber-200' : 
                 formData.status === 'Closed' ? 'bg-green-50 text-green-600 border-green-200' : 'bg-red-50 text-red-600 border-red-200'

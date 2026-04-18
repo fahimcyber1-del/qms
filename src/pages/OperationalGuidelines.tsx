@@ -1,9 +1,12 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Clock, Tag, History, Users, QrCode, Link, Check, Plus, X, Edit, Trash2, Download as DownloadIcon, ChevronLeft, FileText, CheckCircle2, AlertCircle, Filter } from 'lucide-react';
 import { OperationalGuideline } from '../types';
 import { getGuidelineRecords, saveGuidelineRecords } from '../utils/guidelineUtils';
-import { createDoc, drawPdfHeader, drawInfoGrid, addPageFooters } from '../utils/pdfExport';
+import { 
+  createDoc, drawPdfHeader, drawRecordTable, addPageFooters, 
+  drawSectionLabel, proTable, drawSignatureRow 
+} from '../utils/pdfExport';
 
 const containerVariants = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
 const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } };
@@ -105,32 +108,60 @@ export function OperationalGuidelines() {
   };
 
   const handleDownload = async (g: OperationalGuideline) => {
-    const doc = createDoc();
+    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
     
-    let y = drawPdfHeader(doc, 'OPERATIONAL GUIDELINE', `${g.id}  ·  v${g.version}`);
+    let y = drawPdfHeader(doc, 'OPERATIONAL GUIDELINE', `Ref: ${g.id}  ·  v${g.version}`);
 
-    y = drawInfoGrid(doc, y, [
-      { label: 'Guideline Title', value: g.title },
-      { label: 'Department', value: g.department },
-      { label: 'Category', value: g.category },
-      { label: 'Status', value: g.status },
-      { label: 'Issue Date', value: g.issueDate },
-      { label: 'Next Review', value: g.nextReviewDate },
-    ], 2);
+    // High-level metadata
+    y = drawRecordTable(doc, y, 'Protocol Information', [
+      { label: 'Guideline Title', value: g.title, fullWidth: true },
+      { label: 'Department',      value: g.department },
+      { label: 'Category',        value: g.category },
+      { label: 'Current Version', value: g.version },
+      { label: 'Guideline Status',value: g.status },
+      { label: 'Effective Date',  value: g.issueDate },
+      { label: 'Review Due Date', value: g.nextReviewDate },
+      { label: 'Approved By',     value: g.approvedBy || 'AUTHORIZED QMS PERSONNEL' },
+    ]);
 
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(15, 23, 42);
-    doc.text('Guideline Protocol:', 14, y + 10);
-
-    doc.setFontSize(9);
+    // Main Content Section
+    y = drawSectionLabel(doc, y, 'Guideline Protocol & Procedures');
+    
+    doc.setFontSize(9.5);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(50, 50, 50);
-    const splitContent = doc.splitTextToSize(g.content, 180);
-    doc.text(splitContent, 14, y + 16);
+    doc.setTextColor(50, 60, 80);
+    const splitContent = doc.splitTextToSize(g.content, 185);
+    doc.text(splitContent, 12, y + 5);
+    
+    y += (splitContent.length * 5) + 20;
+
+    // History Table
+    if (g.versionHistory && g.versionHistory.length > 0) {
+      if (y > 240) { doc.addPage(); y = 20; }
+      y = drawSectionLabel(doc, y, 'Version Control History');
+      y = proTable(doc, y,
+        [['Ver.', 'Date', 'Changes / Remarks', 'Approved By']],
+        g.versionHistory.map(h => [h.version, h.date, h.changes, h.approvedBy || '—']),
+        { columnStyles: { 0: { cellWidth: 15 }, 1: { cellWidth: 25 }, 3: { cellWidth: 35 } } }
+      ) + 12;
+    }
+
+    // Acknowledgements
+    if (g.acknowledgements && g.acknowledgements.length > 0) {
+       if (y > 240) { doc.addPage(); y = 20; }
+       y = drawSectionLabel(doc, y, 'Staff Acknowledgements');
+       y = proTable(doc, y,
+         [['Name / Designation', 'Department', 'Date Signed']],
+         g.acknowledgements.map(a => [a.userName, g.department, a.date]),
+         { columnStyles: { 2: { halign: 'center', cellWidth: 40 } } }
+       ) + 12;
+    }
+
+    if (y > 250) { doc.addPage(); y = 20; }
+    drawSignatureRow(doc, y, ['Prepared By', 'QA Head', 'Factory Manager']);
 
     addPageFooters(doc);
-    doc.save(`${g.id}_Guideline.pdf`);
+    doc.save(`${g.id}_${g.title.replace(/\s+/g, '_')}.pdf`);
   };
 
   if (viewMode !== 'list') {

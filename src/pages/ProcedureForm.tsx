@@ -103,37 +103,37 @@ export function ProcedureForm({ params, onNavigate }: ProcedureFormProps) {
   const handleDownloadPDF = async () => {
     if (!formData) return;
     const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
+      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
       proTable, addPageFooters, drawSignatureRow
     } = await import('../utils/pdfExport');
 
     const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, formData.title || 'Standard Operating Procedure', `Code: ${formData.code || ''}`);
+    let y = drawPdfHeader(doc, formData.title || 'Standard Operating Procedure', `Document Ref: ${formData.code || 'UNCODED'}`, 'procedure');
 
-    y = drawInfoGrid(doc, y, [
-      { label: 'Department',     value: formData.dept || 'N/A' },
-      { label: 'Document Type',  value: formData.cat || 'N/A' },
-      { label: 'ISO Clause',     value: formData.clause || 'N/A' },
-      { label: 'Version',        value: formData.ver || 'N/A' },
-      { label: 'Issue No',       value: formData.issueNo || 'N/A' },
-      { label: 'Status',         value: formData.status || 'N/A' },
-      { label: 'Approval Date',  value: formData.issueDate || 'N/A' },
-      { label: 'Review Date',    value: formData.reviewDate || 'N/A' },
-      { label: 'Author',         value: formData.author || 'N/A' },
-      { label: 'Approved By',    value: formData.approvedBy || 'N/A' },
+    y = drawRecordTable(doc, y, 'Document Control & Compliance Metadata', [
+      { label: 'Primary Dept',    value: formData.dept || '\u2014' },
+      { label: 'Category',        value: formData.cat || '\u2014' },
+      { label: 'ISO Reference',   value: formData.clause || '\u2014' },
+      { label: 'Version / Rev',   value: `${formData.ver || '1.0'} / ${formData.issueNo || '01'}` },
+      { label: 'Current Status',  value: formData.status || 'Draft' },
+      { label: 'Effective Date',  value: formData.issueDate || '\u2014' },
+      { label: 'Next Review',     value: formData.reviewDate || '\u2014' },
+      { label: 'Author / Owner',  value: formData.author || '\u2014' },
     ]);
 
     if (formData.purpose) {
-      y = drawSectionLabel(doc, y, '1. Purpose & Scope');
-      y = proTable(doc, y, [['Content']], [[formData.purpose]]) + 6;
+      y = drawRecordTable(doc, y, 'Procedure Intent & Objectives', [
+        { label: 'Purpose / Scope', value: formData.purpose, fullWidth: true }
+      ]);
     }
 
     if (formData.responsibilities && formData.responsibilities.length > 0) {
-      y = drawSectionLabel(doc, y, '2. Responsibilities & Authorities');
+      y = drawSectionLabel(doc, y, 'Roles, Responsibilities & Authorities');
       y = proTable(doc, y,
-        [['Role', 'Responsibility']],
-        formData.responsibilities.map((r: any) => [r.role, r.responsibility])
-      ) + 6;
+        [['Designated Role / Functional Title', 'Primary Responsibility & Accountability Mapping']],
+        formData.responsibilities.map((r: any) => [r.role, r.responsibility]),
+        { columnStyles: { 0: { cellWidth: 60, fontStyle: 'bold' } } }
+      ) + 12;
     }
 
     if (formData.sections && formData.sections.length > 0) {

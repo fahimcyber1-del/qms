@@ -1,3 +1,4 @@
+redirectsOrigin = "config"
 plugins = []
 headers = []
 
@@ -6,9 +7,9 @@ headers = []
 [functions."*"]
 
 [build]
-publish = "C:\\Users\\Alia Fahim\\Desktop\\qms\\dist"
-publishOrigin = "ui"
-commandOrigin = "ui"
+publish = "C:\\Users\\Alia Fahim\\Desktop\\qms 2\\qms-main\\dist"
+publishOrigin = "config"
+commandOrigin = "config"
 command = "npm run build"
 
 [build.environment]

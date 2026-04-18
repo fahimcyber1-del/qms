@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import { ALL_MODULE_KEYS, MODULE_CONFIGS } from '../config/moduleConfigs';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -24,17 +25,7 @@ export type PdfColorAccent =
   | 'red'  | 'orange' | 'purple' | 'slate';
 
 // Known module IDs used across the app
-export type PdfModuleId =
-  | 'defect_library'
-  | 'sop'
-  | 'risk'
-  | 'production_quality'
-  | 'traceability'
-  | 'inspection'
-  | 'audit'
-  | 'capa'
-  | 'certification'
-  | 'jd';
+export type PdfModuleId = string;
 
 export interface PdfModuleOverride {
   enabled: boolean;          // false = skip header/footer entirely for this module
@@ -93,18 +84,142 @@ export const HEADER_STYLE_META: Record<PdfHeaderStyle, { label: string; desc: st
   gradient_wave:{ label: 'Gradient Wave',  desc: 'Bold gradient across full header width'             },
 };
 
-export const MODULE_META: Record<PdfModuleId, { label: string; icon: string }> = {
-  defect_library:     { label: 'Defect Library',      icon: '🔴' },
-  sop:                { label: 'SOP Management',       icon: '📄' },
-  risk:               { label: 'Risk Management',      icon: '⚠️' },
-  production_quality: { label: 'Production Quality',   icon: '📊' },
-  traceability:       { label: 'Product Traceability', icon: '🔗' },
-  inspection:         { label: 'Inspection',           icon: '🔍' },
-  audit:              { label: 'Audit Management',     icon: '✅' },
-  capa:               { label: 'CAPA',                 icon: '🛠️' },
-  certification:      { label: 'Certification',        icon: '🏆' },
-  jd:                 { label: 'Job Descriptions',     icon: '👤' },
+interface PdfModuleMeta {
+  label: string;
+  icon: string;
+  aliases?: string[];
+}
+
+const CORE_MODULE_META: Record<string, PdfModuleMeta> = {
+  production_quality: {
+    label: 'Production Quality',
+    icon: 'PQ',
+    aliases: ['Production Quality Report', 'Production Quality Data Dump'],
+  },
+  inspection: {
+    label: 'Inspection',
+    icon: 'IN',
+    aliases: ['AQL Inspection Certificate', 'AQL Inspection Report', 'Global Inspection Data'],
+  },
+  defect_library: {
+    label: 'Defect Library',
+    icon: 'DL',
+    aliases: ['Defect Specification Report', 'Defect Library'],
+  },
+  audit: {
+    label: 'Audit Management',
+    icon: 'AU',
+    aliases: ['Audit Compliance Report', 'Audit Report'],
+  },
+  capa: {
+    label: 'CAPA',
+    icon: 'CA',
+    aliases: ['CAPA Compliance Report'],
+  },
+  follow_up_audit: {
+    label: 'Follow-Up Audit',
+    icon: 'FU',
+    aliases: ['Follow-Up Audit Report', 'Follow-up Audit Verification Data'],
+  },
+  certification: {
+    label: 'Certification',
+    icon: 'CF',
+    aliases: ['Compliance Certification Report', 'Certification Report'],
+  },
+  risk: {
+    label: 'Risk Management',
+    icon: 'RK',
+    aliases: ['Risk Assessment Report', 'Risk Assessment & Hazard Analysis', 'Risk Management Register'],
+  },
+  traceability: {
+    label: 'Product Traceability',
+    icon: 'TR',
+    aliases: ['Traceability Report', 'Traceability Register'],
+  },
+  sop: {
+    label: 'SOP Management',
+    icon: 'SO',
+    aliases: ['Standard Operating Procedure', 'SOP Register'],
+  },
+  operational_guidelines: {
+    label: 'Operational Guidelines',
+    icon: 'OG',
+    aliases: ['OPERATIONAL GUIDELINE', 'Operational Guideline'],
+  },
+  procedure: {
+    label: 'Procedure Management',
+    icon: 'PR',
+    aliases: ['Procedure Management'],
+  },
+  jd: {
+    label: 'Job Descriptions',
+    icon: 'JD',
+    aliases: ['Job Description Specification'],
+  },
+  flow_chart: {
+    label: 'Flow Chart',
+    icon: 'FC',
+    aliases: ['Flow Chart', 'Process Flow Chart'],
+  },
+  organogram: {
+    label: 'Organogram',
+    icon: 'OGM',
+    aliases: ['Organogram'],
+  },
+  kpi: {
+    label: 'KPI Management',
+    icon: 'KP',
+    aliases: ['KPI Management Report', 'KPI Management'],
+  },
+  reports: {
+    label: 'Reports & Analytics',
+    icon: 'RP',
+    aliases: ['Quality Performance Report'],
+  },
+  calibration: {
+    label: 'Calibration',
+    icon: 'CL',
+    aliases: ['Calibration Report'],
+  },
+  training: {
+    label: 'Training Management',
+    icon: 'TN',
+    aliases: ['Master Training Schedule'],
+  },
+  subSupplierManagement: {
+    label: 'Sub Supplier Masterlist',
+    icon: 'SS',
+    aliases: ['Sub-Supplier Evaluation Report'],
+  },
 };
+
+function buildModuleMeta(): Record<PdfModuleId, PdfModuleMeta> {
+  const fromConfigs: Record<PdfModuleId, PdfModuleMeta> = {};
+
+  for (const key of ALL_MODULE_KEYS) {
+    const config = MODULE_CONFIGS[key];
+    if (!config) continue;
+
+    fromConfigs[key] = {
+      label: config.title,
+      icon: (config.idPrefix || key).slice(0, 3).toUpperCase(),
+      aliases: [config.title],
+    };
+  }
+
+  for (const [key, meta] of Object.entries(CORE_MODULE_META)) {
+    const existing = fromConfigs[key];
+    fromConfigs[key] = {
+      label: meta.label,
+      icon: meta.icon,
+      aliases: Array.from(new Set([...(existing?.aliases || []), ...(meta.aliases || []), meta.label])),
+    };
+  }
+
+  return fromConfigs;
+}
+
+export const MODULE_META: Record<PdfModuleId, PdfModuleMeta> = buildModuleMeta();
 
 const DEFAULT_MODULE_OVERRIDE: PdfModuleOverride = {
   enabled: true,
@@ -115,22 +230,9 @@ const DEFAULT_MODULE_OVERRIDE: PdfModuleOverride = {
 };
 
 function buildDefaultModules(): Record<PdfModuleId, PdfModuleOverride> {
-  // Give each module a unique default style so they look distinct out of the box
-  const styles: Record<PdfModuleId, Partial<PdfModuleOverride>> = {
-    defect_library:     { headerStyle: 'dark_banner',   colorAccent: 'red'    },
-    sop:                { headerStyle: 'corporate_box',  colorAccent: 'blue'   },
-    risk:               { headerStyle: 'gradient_wave',  colorAccent: 'orange' },
-    production_quality: { headerStyle: 'modern_split',   colorAccent: 'teal'   },
-    traceability:       { headerStyle: 'corporate_box',  colorAccent: 'indigo' },
-    inspection:         { headerStyle: 'minimal_line',   colorAccent: 'green'  },
-    audit:              { headerStyle: 'dark_banner',    colorAccent: 'slate'  },
-    capa:               { headerStyle: 'modern_split',   colorAccent: 'purple' },
-    certification:      { headerStyle: 'gradient_wave',  colorAccent: 'teal'   },
-    jd:                 { headerStyle: 'minimal_line',   colorAccent: 'indigo' },
-  };
   const result = {} as Record<PdfModuleId, PdfModuleOverride>;
-  for (const id of Object.keys(styles) as PdfModuleId[]) {
-    result[id] = { ...DEFAULT_MODULE_OVERRIDE, useCustomStyle: true, ...styles[id] };
+  for (const id of Object.keys(MODULE_META) as PdfModuleId[]) {
+    result[id] = { ...DEFAULT_MODULE_OVERRIDE };
   }
   return result;
 }
@@ -184,9 +286,18 @@ export function loadPdfSettings(): PdfExportSettings {
     const raw = localStorage.getItem(PDF_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      const validModuleIds = Object.keys(MODULE_META) as PdfModuleId[];
+      const enabledModules = Array.isArray(parsed.enabledModules)
+        ? Array.from(new Set([
+            ...parsed.enabledModules.filter((id: string) => validModuleIds.includes(id)),
+            ...validModuleIds.filter((id) => !(parsed.modules && id in parsed.modules)),
+          ]))
+        : validModuleIds;
+
       return {
         ...DEFAULT_PDF_SETTINGS,
         ...parsed,
+        enabledModules,
         modules: { ...buildDefaultModules(), ...(parsed.modules || {}) },
       };
     }
@@ -218,9 +329,36 @@ interface EffectiveSettings {
   palette: { dark:[number,number,number]; mid:[number,number,number]; light:[number,number,number] };
 }
 
-function resolveSettings(moduleId?: PdfModuleId): EffectiveSettings {
+function normalizePdfModuleKey(value?: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+export function resolvePdfModuleId(moduleIdOrAlias?: string): PdfModuleId | undefined {
+  if (!moduleIdOrAlias) return undefined;
+
+  const direct = moduleIdOrAlias as PdfModuleId;
+  if (MODULE_META[direct]) return direct;
+
+  const normalizedTarget = normalizePdfModuleKey(moduleIdOrAlias);
+
+  for (const [id, meta] of Object.entries(MODULE_META)) {
+    const candidates = [id, meta.label, ...(meta.aliases || [])];
+    if (candidates.some(candidate => normalizePdfModuleKey(candidate) === normalizedTarget)) {
+      return id;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveSettings(moduleId?: PdfModuleId | string): EffectiveSettings {
+  const resolvedModuleId = resolvePdfModuleId(moduleId);
   const global = loadPdfSettings();
-  const mod = moduleId ? global.modules[moduleId] : null;
+  const mod = resolvedModuleId ? global.modules[resolvedModuleId] : null;
 
   const enabled     = mod ? mod.enabled : true;
   const useCustom   = mod ? mod.useCustomStyle : false;
@@ -404,9 +542,11 @@ export function addPdfHeader(
   title: string,
   subtitle?: string,
   isLandscape?: boolean,
-  moduleId?: PdfModuleId
+  moduleId?: PdfModuleId | string
 ): number {
-  if (!isPdfHeaderEnabled(moduleId)) {
+  const resolvedModuleId = resolvePdfModuleId(moduleId || title);
+
+  if (!isPdfHeaderEnabled(resolvedModuleId)) {
     doc.setFontSize(16);
     doc.setTextColor(0, 0, 0);
     doc.setFont('helvetica', 'bold');
@@ -421,7 +561,7 @@ export function addPdfHeader(
     return 28;
   }
 
-  const s = resolveSettings(moduleId);
+  const s = resolveSettings(resolvedModuleId);
   const org = loadOrgSettings();
   const pageW = doc.internal.pageSize.getWidth();
 
@@ -444,9 +584,10 @@ export function addPdfHeader(
 /**
  * Convenience – returns whether headers are enabled for a given module.
  */
-export function isPdfHeaderEnabled(moduleId?: PdfModuleId): boolean {
+export function isPdfHeaderEnabled(moduleId?: PdfModuleId | string): boolean {
+  const resolvedModuleId = resolvePdfModuleId(moduleId);
   const global = loadPdfSettings();
   if (!global.globalEnableHeader) return false;
-  if (moduleId && !global.enabledModules.includes(moduleId)) return false;
+  if (resolvedModuleId && !global.enabledModules.includes(resolvedModuleId)) return false;
   return true;
 }

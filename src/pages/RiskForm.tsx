@@ -23,7 +23,8 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
 
   const [formData, setFormData] = useState<Partial<RiskAssessmentRecord>>(data || {
     productName: '', styleNumber: '', buyer: '', orderNumber: '', productCategory: 'Knit',
-    risks: [{ ...initialRiskItem, id: `RITEM-${Date.now()}` }]
+    risks: [{ ...initialRiskItem, id: `RITEM-${Date.now()}` }],
+    attachments: []
   });
 
   const isReadOnly = mode === 'view';
@@ -48,6 +49,24 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
     
     updatedRisks[index] = updatedItem;
     setFormData({ ...formData, risks: updatedRisks });
+  };
+
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const newAtts: any[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const data = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      newAtts.push({ name: file.name, data });
+    }
+    
+    setFormData(prev => ({ ...prev, attachments: [...(prev.attachments || []), ...newAtts] }));
   };
 
   const addRiskItem = () => {
@@ -100,6 +119,64 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
     }
   };
 
+  const handleExportPDF = async () => {
+    const { 
+      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel, 
+      proTable, addPageFooters, drawSignatureRow 
+    } = await import('../utils/pdfExport');
+
+    const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
+    let y = drawPdfHeader(doc, 'Risk Assessment & Hazard Analysis', `ID: ${formData.id || 'Draft'} \u2022 ${formData.styleNumber || '01'}`);
+
+    y = drawRecordTable(doc, y, 'Assessment Metadata & Context', [
+      { label: 'Product Name',     value: formData.productName || '\u2014', fullWidth: true },
+      { label: 'Style / Model No', value: formData.styleNumber || '\u2014' },
+      { label: 'Major Client',     value: formData.buyer || '\u2014' },
+      { label: 'Order / Job No',   value: formData.orderNumber || '\u2014' },
+      { label: 'Product Category', value: formData.productCategory || '\u2014' },
+      { label: 'Assessment Date',  value: formData.createdAt ? new Date(formData.createdAt).toLocaleDateString('en-GB') : '\u2014' },
+    ]);
+
+    if (formData.risks && formData.risks.length > 0) {
+      y = drawSectionLabel(doc, y, 'Risk Identification & Mitigation Matrix');
+      y = proTable(doc, y,
+        [['Process / Operation', 'Hazard Identified', 'Risk Desc.', 'L', 'S', 'Score', 'Level', 'Status']],
+        formData.risks.map(r => [
+          r.processName || '\u2014',
+          r.hazard || '\u2014',
+          r.riskDescription || '\u2014',
+          String(r.likelihood),
+          String(r.severity),
+          String(r.riskScore),
+          r.riskLevel || 'Low',
+          r.status || 'Open'
+        ]),
+        {
+          columnStyles: {
+            0: { cellWidth: 35, fontStyle: 'bold' },
+            1: { cellWidth: 40 },
+            2: { cellWidth: 50 },
+            3: { cellWidth: 10, halign: 'center' },
+            4: { cellWidth: 10, halign: 'center' },
+            5: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
+            6: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+            7: { cellWidth: 20, halign: 'center' },
+          }
+        }
+      ) + 12;
+    }
+
+    if (formData.attachments && formData.attachments.length > 0) {
+       const { embedAttachments } = await import('../utils/pdfExport');
+       const rawData = formData.attachments.map((a: any) => typeof a === 'string' ? a : a.data);
+       await embedAttachments(doc, rawData, 'RISK ASSESSMENT EVIDENCE PHOTOS');
+    }
+
+    y = drawSignatureRow(doc, y, ['Prepared By (QE)', 'HOD Manufacturing', 'Compliance Lead', 'Certified Risk Officer']);
+    addPageFooters(doc);
+    doc.save(`Risk_Assessment_${formData.styleNumber || 'Report'}.pdf`);
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
@@ -120,6 +197,11 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
           </div>
         </div>
         <div className="flex gap-2">
+          {mode === 'view' && (
+            <button className="btn btn-primary" onClick={handleExportPDF}>
+              <FileDown className="w-4 h-4 mr-2" /> Download Report
+            </button>
+          )}
           {!isReadOnly && (
             <button className="btn btn-primary" onClick={handleSave}>
               <Save className="w-4 h-4 mr-2" /> Save Assessment
@@ -403,6 +485,45 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Attachments Section */}
+            <div className="card p-6">
+              <div className="flex justify-between items-center mb-6 border-b border-border-main pb-4">
+                <h4 className="font-bold text-primary-main flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-accent" /> Photographic Evidence & Supporting Documents
+                </h4>
+                {!isReadOnly && (
+                  <label className="btn btn-ghost btn-sm cursor-pointer">
+                    <Plus className="w-4 h-4 mr-1" /> Add Evidence
+                    <input type="file" multiple className="hidden" onChange={handleFileAttach} />
+                  </label>
+                )}
+              </div>
+              
+              {!formData.attachments || formData.attachments.length === 0 ? (
+                <div className="py-8 text-center bg-bg-2 rounded-xl border border-dashed border-border-main">
+                   <p className="text-text-3 italic text-sm">No evidence files attached to this assessment.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                   {formData.attachments.map((file: any, i: number) => (
+                     <div key={i} className="flex items-center justify-between bg-bg-2 p-3 rounded-xl border border-border-main group">
+                       <div className="flex items-center gap-3 overflow-hidden">
+                         <div className="w-8 h-8 bg-accent/10 rounded flex items-center justify-center text-accent">
+                           <Shield className="w-4 h-4" />
+                         </div>
+                         <span className="text-sm font-semibold text-text-1 truncate">{typeof file === 'string' ? file : file.name}</span>
+                       </div>
+                       {!isReadOnly && (
+                         <button type="button" onClick={() => setFormData(p => ({ ...p, attachments: p.attachments?.filter((_, idx) => idx !== i) }))} className="p-1.5 text-red-500 hover:bg-red-500/10 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                           <Trash2 className="w-4 h-4" />
+                         </button>
+                       )}
+                     </div>
+                   ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

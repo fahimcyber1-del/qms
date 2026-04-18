@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   GraduationCap, Calendar, Users, Award, FileText, Download,
@@ -153,13 +153,42 @@ function OverviewTab() {
 }
 
 function PlanTab() {
+  const handleExportPDF = async () => {
+    const { 
+      createDoc, drawPdfHeader, proTable, addPageFooters, drawSignatureRow 
+    } = await import('../utils/pdfExport');
+
+    const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
+    let y = drawPdfHeader(doc, 'Master Training Schedule', 'Corporate Quality & Compliance Support');
+
+    y = proTable(doc, y,
+      [['Training Title / Subject', 'Category', 'Target Department', 'Lead Trainer / Facilitator', 'Scheduled Date', 'Status']],
+      [
+        ['Quality Check Refresher', 'Quality Training', 'Quality Assurance', 'John QC Manager', 'Oct 15, 2026', 'Completed'],
+        ['Chemical Handling SOP', 'Compliance Training', 'Washing / Laundry', 'EHS Head', 'Oct 18, 2026', 'Ongoing'],
+        ['Advanced Sewing Techniques', 'Technical Training', 'Sewing Production', 'Plant Technical Head', 'Oct 22, 2026', 'Planned'],
+        ['Fire Safety Drill (Q4)', 'Safety / Compliance', 'All Factory Personnel', 'Maintenance Lead', 'Nov 05, 2026', 'Planned'],
+      ],
+      {
+        columnStyles: {
+          0: { cellWidth: 50, fontStyle: 'bold' },
+          5: { halign: 'center', fontStyle: 'bold' }
+        }
+      }
+    ) + 12;
+
+    y = drawSignatureRow(doc, y, ['Prepared By', 'Training Coordinator', 'Department Head', 'Authorized By']);
+    addPageFooters(doc);
+    doc.save('Master_Training_Plan.pdf');
+  };
+
   return (
     <div className="p-6 h-full flex flex-col">
        <div className="flex justify-between items-center mb-6">
          <h2 className="text-lg font-bold text-text-1">Master Training Plan</h2>
          <div className="flex gap-2">
             <button className="btn btn-primary flex gap-2 items-center"><Plus className="w-4 h-4"/> Add Plan</button>
-            <button className="btn btn-ghost flex gap-2 items-center"><Download className="w-4 h-4"/> Export PDF</button>
+            <button className="btn btn-ghost flex gap-2 items-center" onClick={handleExportPDF}><Download className="w-4 h-4"/> Export PDF</button>
          </div>
        </div>
 

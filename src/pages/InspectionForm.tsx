@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, Check, X, Plus, Trash2, AlertTriangle, Save, Download, FileText, Activity, User, Layers, FileDown, Camera, Image } from 'lucide-react';
 import { getSamplingPlan } from '../utils/inspectionUtils';
@@ -121,51 +121,46 @@ export function InspectionForm({ params, onNavigate }: InspectionFormProps) {
   };
 
   const exportPDF = async () => {
-    const { createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel, proTable, embedAttachments, addPageFooters, drawSignatureRow, autoTable } = await import('../utils/pdfExport');
+    const { 
+      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel, 
+      proTable, embedAttachments, addPageFooters, drawSignatureRow 
+    } = await import('../utils/pdfExport');
     const r   = formData;
     const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
 
-    let y = drawPdfHeader(doc, 'AQL Inspection Report', `Record ID: ${r.id}`);
+    let y = drawPdfHeader(doc, 'AQL Inspection Report', `Record ID: ${r.id} \u2022 ${r.type}`);
 
-    // Info grid
-    y = drawInfoGrid(doc, y, [
-      { label: 'Buyer',             value: r.buyer       || '—' },
-      { label: 'Style Number',      value: r.style       || '—' },
-      { label: 'PO / Order No',     value: r.order       || '—' },
-      { label: 'Production Line',   value: r.line        || '—' },
-      { label: 'Inspector ID',      value: r.inspector   || '—' },
-      { label: 'Inspection Type',   value: r.type        || '—' },
-      { label: 'CRD Date',          value: r.crdDate     || '—' },
-      { label: 'Inspection Date',   value: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-GB') : '—' },
+    y = drawRecordTable(doc, y, 'Inspection Context & Identification', [
+      { label: 'Client / Buyer',    value: r.buyer || '\u2014' },
+      { label: 'Style / Style No',  value: r.style || '\u2014' },
+      { label: 'Purchase Order',    value: r.order || '\u2014' },
+      { label: 'Production Line',   value: r.line || '\u2014' },
+      { label: 'Inspector Name',    value: r.inspector || '\u2014' },
+      { label: 'CRD Date',          value: r.crdDate || '\u2014' },
+      { label: 'Audit Date',        value: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-GB') : '\u2014' },
+      { label: 'Report Status',     value: r.result, fullWidth: true },
     ]);
 
-    // AQL Configuration
-    y = drawSectionLabel(doc, y, 'AQL Statistical Configuration');
-    y = proTable(doc, y,
-      [['Parameter', 'Value']],
-      [
-        ['Total Order Quantity',     String(r.orderQty)],
-        ['Inspection Quantity',      String(r.inspectionQty)],
-        ['AQL Level',                String(r.aqlLevel)],
-        ['Inspection Level',         String(r.inspectionLevel)],
-        ['Sample Size (Auto-Mapped)',String(r.sampleSize)],
-        ['Acceptance Number (AC)',   samplingPlan ? String(samplingPlan.ac) : '—'],
-        ['Rejection Number (RE)',    samplingPlan ? String(samplingPlan.re) : '—'],
-      ],
-      { columnStyles: { 0: { cellWidth: 80, fontStyle: 'bold' } } }
-    ) + 6;
+    y = drawRecordTable(doc, y, 'Statistical Sampling Configuration (AQL)', [
+      { label: 'Lot / Order Qty',   value: String(r.orderQty) },
+      { label: 'Inspection Qty',    value: String(r.inspectionQty) },
+      { label: 'AQL Level',         value: String(r.aqlLevel) },
+      { label: 'Sampling Level',    value: String(r.inspectionLevel) },
+      { label: 'Sample Size (N)',   value: String(r.sampleSize) },
+      { label: 'Acceptance (AC)',   value: samplingPlan ? String(samplingPlan.ac) : '\u2014' },
+      { label: 'Rejection (RE)',    value: samplingPlan ? String(samplingPlan.re) : '\u2014' },
+    ]);
 
-    // Defect Analysis
-    y = drawSectionLabel(doc, y, 'Defect Analysis & Final Verdict');
+    y = drawSectionLabel(doc, y, 'Defect Classification & Statistical Outcome');
     y = proTable(doc, y,
-      [['Defect Category', 'Count', 'Status']],
+      [['Defect Classification', 'Count / Frequency', 'Threshold Status']],
       [
-        ['Critical Defects', String(r.criticalDefect), r.criticalDefect > 0 ? 'FAILURE TRIGGER' : 'Clear'],
-        ['Major Defects',    String(r.majorDefect),    '—'],
-        ['Minor Defects',    String(r.minorDefect),    '—'],
-        ['Pass Quantity',    String(r.passQty),        '—'],
-        ['Fail Quantity',    String(r.failQty),        '—'],
-        ['FINAL RESULT',     r.result,                r.result],
+        ['Critical Defects (Class A)', String(r.criticalDefect), r.criticalDefect > 0 ? 'CRITICAL FAILURE' : 'Pass'],
+        ['Major Defects (Class B)',    String(r.majorDefect),    'Monitoring Required'],
+        ['Minor Defects (Class C)',    String(r.minorDefect),    'Monitoring Required'],
+        ['Total Defected Samples',     String(r.failQty),        '—'],
+        ['Acceptable Samples',         String(r.passQty),        '—'],
+        ['INSPECTION VERDICT',         r.result,                 r.result],
       ],
       {
         columnStyles: {
@@ -174,31 +169,22 @@ export function InspectionForm({ params, onNavigate }: InspectionFormProps) {
           2: { halign: 'center', fontStyle: 'bold' },
         }
       }
-    ) + 6;
+    ) + 12;
 
-    // Remarks
     if (r.remarks) {
-      y = drawSectionLabel(doc, y, 'Auditor Remarks');
-      autoTable(doc, {
-        startY: y,
-        body:   [[r.remarks]],
-        theme:  'grid',
-        margin: { left: 12, right: 12 },
-        styles: { fontSize: 8.5, cellPadding: 4, textColor: [15, 23, 42] },
-      });
-      y = (doc as any).lastAutoTable?.finalY + 8;
+      y = drawRecordTable(doc, y, 'Professional Auditor Observations', [
+        { label: 'Auditor Remarks', value: r.remarks, fullWidth: true },
+      ]);
     }
 
-    // Signature row
-    drawSignatureRow(doc, y, ['Prepared By', 'QC Inspector', 'QA Manager', 'Approved By']);
+    y = drawSignatureRow(doc, y, ['QC Inspector', 'Prepared By', 'QA Manager', 'Plant Head']);
 
-    // Attachments (photos)
     if (r.attachments && r.attachments.length > 0) {
-      await embedAttachments(doc, r.attachments, 'INSPECTION EVIDENCE PHOTOS');
+      await embedAttachments(doc, r.attachments, 'INSPECTION GALLERY / TECHNICAL EVIDENCE');
     }
 
     addPageFooters(doc);
-    doc.save(`AQL_Report_${r.id}.pdf`);
+    doc.save(`AQL_Audit_Report_${r.id}.pdf`);
   };
 
 

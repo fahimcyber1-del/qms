@@ -205,6 +205,37 @@ export async function seedUniversalModules() {
   ]);
 
   // ── 16. Calibration Records ──
+  await seedTable('qualityGoals', [
+    {
+      id: 'GOAL-001',
+      goalTitle: 'Reduce Sewing DHU by 15%',
+      category: 'Product Quality',
+      department: 'Sewing',
+      responsiblePerson: 'Sewing Manager',
+      targetValue: 15,
+      actualValue: 9,
+      uom: '%',
+      startDate: '2024-01-01',
+      endDate: '2024-12-31',
+      status: 'In Progress',
+      description: 'Line-wise defect monitoring, operator retraining, and in-line quality checkpoints.'
+    },
+    {
+      id: 'GOAL-002',
+      goalTitle: 'Improve On-Time CAPA Closure',
+      category: 'Process Efficiency',
+      department: 'Quality',
+      responsiblePerson: 'QMS Manager',
+      targetValue: 95,
+      actualValue: 97,
+      uom: '%',
+      startDate: '2024-01-01',
+      endDate: '2024-12-31',
+      status: 'Achieved',
+      description: 'Weekly CAPA follow-up and overdue escalation review.'
+    }
+  ]);
+
   await seedTable('calibrationRecords', [
     {
       id: 'CAL-001', equipmentName: 'Digital Weighing Scale', equipmentId: 'SC-L-01',
