@@ -1025,84 +1025,39 @@ function DefectLibrary() {
   };
 
   const downloadIndividualPDF = async (defect: Defect) => {
-    const {
-      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
-      proTable, embedAttachments, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
-
-    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
     const categoryName = categories.find(c => c.id === defect.categoryId)?.name || 'General';
-    let y = drawPdfHeader(doc, 'Defect Specification Report', `Code: ${defect.code} \u2022 ${defect.severity}`);
 
-    y = drawRecordTable(doc, y, 'Defect Classification', [
-      { label: 'Defect Code',        value: defect.code },
-      { label: 'Defect Name',        value: defect.name },
-      { label: 'Local Name',         value: defect.localName || '\u2014' },
-      { label: 'Category',           value: categoryName },
-      { label: 'Severity Level',     value: defect.severity },
-      { label: 'Department',         value: defect.department || '\u2014' },
-      { label: 'Process / Stage',    value: defect.process || '\u2014' },
-      { label: 'Standard Ref.',      value: defect.standardReference || '\u2014' },
-    ]);
+    const attachments: { name: string; data: string }[] = [];
+    if (defect.imageUrl) attachments.push({ name: 'Standard Reference', data: defect.imageUrl });
+    if (defect.severityImages?.Minor) attachments.push({ name: 'Minor Case', data: defect.severityImages.Minor });
+    if (defect.severityImages?.Major) attachments.push({ name: 'Major Case', data: defect.severityImages.Major });
+    if (defect.severityImages?.Critical) attachments.push({ name: 'Critical Case', data: defect.severityImages.Critical });
 
-    y = drawRecordTable(doc, y, 'Technical Analysis & Mitigation', [
-      { label: 'Issue Description',  value: defect.description, fullWidth: true },
-      { label: 'Root Cause Analysis',value: defect.rootCause || 'Analysis pending...', fullWidth: true },
-      { label: 'Corrective Action',  value: defect.correctiveAction || 'Immediate action required', fullWidth: true },
-      { label: 'Preventive Action',  value: defect.preventiveAction || 'Long-term mitigation required', fullWidth: true },
-    ]);
-
-    if (defect.zoningImpact) {
-      y = drawSectionLabel(doc, y, 'Impact Zoning (A/B/C)');
-      y = proTable(doc, y,
-        [['Zone A - Critical', 'Zone B - Minor', 'Zone C - Hidden']],
-        [[defect.zoningImpact.zoneA || '\u2014', defect.zoningImpact.zoneB || '\u2014', defect.zoningImpact.zoneC || '\u2014']],
-        { 
-          columnStyles: { 
-            0: { halign: 'center', fontStyle: 'bold' }, 
-            1: { halign: 'center', fontStyle: 'bold' }, 
-            2: { halign: 'center', fontStyle: 'bold' } 
-          } 
-        }
-      ) + 12;
-    }
-
-    y = drawSignatureRow(doc, y, ['Quality Specialist', 'Production Manager', 'Compliance Auditor']);
-
-    // Collect and embed reference images
-    const loadToBase64 = (src: string): Promise<string> => new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width; canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { reject(new Error('No ctx')); return; }
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
-        resolve(canvas.toDataURL('image/jpeg', 0.9));
-      };
-      img.onerror = () => reject(new Error('Failed'));
-      img.src = src;
+    await exportDetailToPDF({
+      moduleName: 'Defect Specification Report',
+      moduleId: 'defect-library',
+      recordId: defect.code,
+      fileName: `Defect_${defect.code}`,
+      fields: [
+        { label: 'Defect Code', value: defect.code },
+        { label: 'Defect Name', value: defect.name },
+        { label: 'Local Name', value: defect.localName || '—' },
+        { label: 'Category', value: categoryName },
+        { label: 'Severity Level', value: defect.severity },
+        { label: 'Department', value: defect.department || '—' },
+        { label: 'Process / Stage', value: defect.process || '—' },
+        { label: 'Revision', value: defect.revision || 'v1.0' },
+        { label: 'Description', value: defect.description || '—' },
+        { label: 'Root Cause Analysis', value: defect.rootCause || 'Analysis pending...' },
+        { label: 'Corrective Action', value: defect.correctiveAction || 'Immediate action required' },
+        { label: 'Preventive Action', value: defect.preventiveAction || 'Long-term mitigation required' },
+        { label: 'Impact Zone A', value: defect.zoningImpact?.zoneA || '—' },
+        { label: 'Impact Zone B', value: defect.zoningImpact?.zoneB || '—' },
+        { label: 'Impact Zone C', value: defect.zoningImpact?.zoneC || '—' },
+      ],
+      attachments
     });
-
-    const imageUrls: string[] = [];
-    if (defect.imageUrl) imageUrls.push(defect.imageUrl);
-    if (defect.severityImages) {
-      Object.values(defect.severityImages).forEach(url => { if (url) imageUrls.push(url as string); });
-    }
-
-    const base64Imgs: string[] = [];
-    for (const url of imageUrls) {
-      try { base64Imgs.push(await loadToBase64(url)); } catch { /* skip failed */ }
-    }
-    if (base64Imgs.length > 0) {
-      await embedAttachments(doc, base64Imgs, 'DEFECT PHOTOGRAPHIC REFERENCE');
-    }
-
-    addPageFooters(doc);
-    doc.save(`Defect_${defect.code}.pdf`);
   };
 
   const handleSaveDefect = (e: React.FormEvent<HTMLFormElement>) => {

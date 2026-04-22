@@ -157,7 +157,7 @@ export interface CertificateRecord {
   expiryDate: string;
   status: 'Active' | 'Expired' | 'Pending';
   department: 'Quality' | 'Compliance' | 'Lab' | 'Production';
-  documentUrls: string[];
+  documentUrls: (string | { name: string, data: string })[];
   uid?: string;
   createdAt?: string;
 }

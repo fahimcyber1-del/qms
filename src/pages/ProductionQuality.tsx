@@ -139,60 +139,37 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
 
   const exportPDF = async (record: InspectionRecord, e: React.MouseEvent) => {
     e.stopPropagation();
-    const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
-      proTable, embedAttachments, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
     const rft = record.checkedQuantity > 0 ? ((record.goodsQuantity / record.checkedQuantity) * 100).toFixed(1) : '0';
     const dhu = record.checkedQuantity > 0 ? ((record.totalDefects / record.checkedQuantity) * 100).toFixed(1) : '0';
 
-    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Production Quality Report', `Line: ${record.lineNumber} | ${record.date}`);
-
-    y = drawInfoGrid(doc, y, [
-      { label: 'Date',    value: record.date },
-      { label: 'Shift',   value: record.shift },
-      { label: 'Unit',    value: record.unit },
-      { label: 'Section', value: record.section },
-      { label: 'Line',    value: record.lineNumber },
-      { label: 'Style',   value: record.style || '—' },
-      { label: 'Buyer',   value: record.buyer || '—' },
-      { label: 'Operator',value: record.operatorId || '—' },
-    ]);
-
-    y = drawSectionLabel(doc, y, 'Quality Metrics');
-    y = proTable(doc, y,
-      [['Metric', 'Value']],
-      [
-        ['Checked Quantity', String(record.checkedQuantity)],
-        ['Goods Passed',     String(record.goodsQuantity)],
-        ['Total Defects',    String(record.totalDefects)],
-        ['RFT %',           `${rft}%`],
-        ['DHU %',           `${dhu}%`],
-        ['Standard DHU',    `${record.standardDhu || 5}%`],
-        ['Status', Number(dhu) > (record.standardDhu || 5) ? 'TARGET MISSED' : 'ON TARGET'],
+    await exportDetailToPDF({
+      moduleName: 'Production Quality Report',
+      moduleId: 'production-quality',
+      recordId: record.id,
+      fileName: `PQ_${record.lineNumber}_${record.date}`,
+      fields: [
+        { label: 'Date',          value: record.date },
+        { label: 'Shift',         value: record.shift },
+        { label: 'Unit',          value: record.unit },
+        { label: 'Section',       value: record.section },
+        { label: 'Line',          value: record.lineNumber },
+        { label: 'Style',         value: record.style || '—' },
+        { label: 'Buyer',         value: record.buyer || '—' },
+        { label: 'Checked Qty',   value: String(record.checkedQuantity) },
+        { label: 'Goods Passed',  value: String(record.goodsQuantity) },
+        { label: 'Total Defects', value: String(record.totalDefects) },
+        { label: 'RFT %',         value: `${rft}%` },
+        { label: 'DHU %',         value: `${dhu}%` },
+        { label: 'Target DHU %',  value: `${record.standardDhu || 5}%` },
+        { label: 'Defect Summary',value: (record.topDefects || []).filter(d => d.name).map(d => `${d.name} (${d.count})`).join(', ') || 'No defects recorded' }
       ],
-      { columnStyles: { 0: { cellWidth: 80, fontStyle: 'bold' } } }
-    ) + 6;
-
-    if (record.topDefects && record.topDefects.length > 0) {
-      y = drawSectionLabel(doc, y, 'Top Defects');
-      y = proTable(doc, y,
-        [['#', 'Defect Name', 'Count']],
-        record.topDefects.map((d: any, i: number) => [String(i + 1), d.name || d, String(d.count || '')])
-      ) + 6;
-    }
-
-    drawSignatureRow(doc, y, ['Line Supervisor', 'QC Inspector', 'QA Manager']);
-
-    if (record.attachments && record.attachments.length > 0) {
-      await embedAttachments(doc, record.attachments, 'QUALITY EVIDENCE PHOTOS');
-    }
-
-    addPageFooters(doc);
-    doc.save(`Quality_${record.lineNumber}_${record.date}.pdf`);
+      comments: record.remark ? [{ user: record.qcInspector || 'Inspector', date: record.date, text: record.remark }] : [],
+    });
   };
+
+
 
 
   const handleBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

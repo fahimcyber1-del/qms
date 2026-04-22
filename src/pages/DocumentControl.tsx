@@ -44,11 +44,22 @@ export function DocumentControl({ onNavigate }: Props) {
 
   useEffect(() => {
     const load = async () => {
-      const data = await getTable('documentControl').toArray();
+      let data = await getTable('documents').toArray();
+      
+      // Auto-seed if empty to populate the 100+ required documents
+      if (data.length === 0) {
+        const { MOCK_DOCS } = await import('../utils/docUtils');
+        await getTable('documents').bulkAdd(MOCK_DOCS);
+        data = await getTable('documents').toArray();
+      }
+      
       setRecords(data as any);
     };
     load();
   }, []);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
@@ -64,6 +75,16 @@ export function DocumentControl({ onNavigate }: Props) {
     });
   }, [records, searchQuery, filterCategory, filterStatus]);
 
+  const totalPages = Math.ceil(filteredRecords.length / itemsPerPage);
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredRecords.slice(start, start + itemsPerPage);
+  }, [filteredRecords, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterCategory, filterStatus]);
+
   const stats = useMemo(() => {
     return {
       total: records.length,
@@ -75,7 +96,7 @@ export function DocumentControl({ onNavigate }: Props) {
 
   const handleDelete = async (id: string) => {
     if (window.confirm("Are you sure?")) {
-      await getTable('documentControl').delete(id);
+      await getTable('documents').delete(id);
       setRecords(records.filter(r => r.id !== id));
     }
   };
@@ -93,6 +114,26 @@ export function DocumentControl({ onNavigate }: Props) {
       columns: ['Doc #', 'Title', 'Category', 'Rev', 'Date', 'Status'],
       rows: filteredRecords.map(r => [r.docNumber, r.docTitle, r.category, r.revision, r.releaseDate, r.status]),
       fileName: 'Document_Control_Report'
+    });
+  };
+
+  const exportSinglePDF = async (record: DocRecord) => {
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    await exportDetailToPDF({
+      moduleName: 'Document Registration Record',
+      moduleId: 'doc-control',
+      recordId: record.docNumber,
+      fileName: `Doc_${record.docNumber}`,
+      fields: [
+        { label: 'Document Title',     value: record.docTitle },
+        { label: 'Document Number',    value: record.docNumber },
+        { label: 'Category',           value: record.category },
+        { label: 'Current Revision',   value: record.revision },
+        { label: 'Department',         value: record.department },
+        { label: 'Custodian Officer',  value: record.responsiblePerson },
+        { label: 'Release Date',       value: record.releaseDate },
+        { label: 'Control Status',     value: record.status },
+      ]
     });
   };
 
@@ -152,10 +193,17 @@ export function DocumentControl({ onNavigate }: Props) {
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
         <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
           <option value="All">All Categories</option>
-          <option value="SOP">Standard Ops (SOP)</option>
-          <option value="Policy">Policy / Manual</option>
-          <option value="Form">Form / Checklist</option>
-          <option value="Guideline">Guideline</option>
+          <option value="Cutting">Cutting</option>
+          <option value="Sewing">Sewing</option>
+          <option value="Finishing">Finishing</option>
+          <option value="Audit">Audit</option>
+          <option value="Training">Training</option>
+          <option value="Maintenance">Maintenance</option>
+          <option value="IE">IE Section</option>
+          <option value="GPQ">GPQ Section</option>
+          <option value="Safety">Safety</option>
+          <option value="Supplier">Supplier</option>
+          <option value="General">General</option>
         </select>
         <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
           <option value="All">All Statuses</option>
@@ -180,7 +228,7 @@ export function DocumentControl({ onNavigate }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-main">
-              {filteredRecords.map(r => (
+              {paginatedRecords.map(r => (
                 <tr key={r.id} className="hover:bg-bg-2/60 transition-all duration-200 group">
                   <td className="p-4 pl-6">
                     <div className="font-bold text-text-1 text-sm">{r.docTitle}</div>
@@ -217,6 +265,9 @@ export function DocumentControl({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('document-control-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
+                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
+                        <Download className="w-4 h-4" />
+                      </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -229,6 +280,55 @@ export function DocumentControl({ onNavigate }: Props) {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Controls */}
+        <div className="bg-bg-2/50 border-t border-border-main p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-xs font-bold text-text-3 uppercase tracking-widest">
+            Showing <span className="text-text-1">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="text-text-1">{Math.min(currentPage * itemsPerPage, filteredRecords.length)}</span> of <span className="text-text-1">{filteredRecords.length}</span> documents
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              className="p-2 rounded-xl bg-bg-1 border border-border-main hover:bg-bg-3 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronRight className="w-4 h-4 rotate-180" />
+            </button>
+            
+            <div className="flex items-center gap-1">
+              {[...Array(totalPages)].map((_, i) => {
+                const page = i + 1;
+                // Only show a few page numbers around current page
+                if (page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1)) {
+                  return (
+                    <button
+                      key={page}
+                      className={`w-8 h-8 rounded-xl text-xs font-black transition-all ${
+                        currentPage === page 
+                          ? 'bg-accent text-white shadow-lg shadow-accent/20' 
+                          : 'bg-bg-1 border border-border-main text-text-2 hover:bg-bg-3'
+                      }`}
+                      onClick={() => setCurrentPage(page)}
+                    >
+                      {page}
+                    </button>
+                  );
+                } else if (page === currentPage - 2 || page === currentPage + 2) {
+                  return <span key={page} className="text-text-3 px-1">...</span>;
+                }
+                return null;
+              })}
+            </div>
+
+            <button 
+              className="p-2 rounded-xl bg-bg-1 border border-border-main hover:bg-bg-3 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </motion.div>
     </motion.div>

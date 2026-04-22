@@ -94,6 +94,24 @@ export function ContinuousImprovement({ onNavigate }: Props) {
     });
   };
 
+  const exportSinglePDF = async (record: CIRecord) => {
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    await exportDetailToPDF({
+      moduleName: 'Continuous Improvement Report',
+      moduleId: 'continuous-improvement',
+      recordId: record.id,
+      fileName: `CI_${record.id}`,
+      fields: [
+        { label: 'Title', value: record.improvementTitle },
+        { label: 'Category', value: record.category },
+        { label: 'Department', value: record.department },
+        { label: 'Responsible', value: record.responsiblePerson },
+        { label: 'Target Date', value: record.targetDate },
+        { label: 'Status', value: record.status },
+      ]
+    });
+  };
+
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -216,6 +234,9 @@ export function ContinuousImprovement({ onNavigate }: Props) {
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('continuous-improvement-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
+                        <Download className="w-4 h-4" />
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />

@@ -94,6 +94,7 @@ export function ProcedureForm({ params, onNavigate }: ProcedureFormProps) {
       return p;
     });
     
+
     saveProcedureRecords(updated);
     setRevData({ rev: '', date: new Date().toISOString().split('T')[0], by: '', change: '', approved: '' });
     const updatedProc = updated.find(p => p.id === data.id);
@@ -102,85 +103,84 @@ export function ProcedureForm({ params, onNavigate }: ProcedureFormProps) {
 
   const handleDownloadPDF = async () => {
     if (!formData) return;
-    const {
-      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
-      proTable, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
-    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, formData.title || 'Standard Operating Procedure', `Document Ref: ${formData.code || 'UNCODED'}`, 'procedure');
-
-    y = drawRecordTable(doc, y, 'Document Control & Compliance Metadata', [
-      { label: 'Primary Dept',    value: formData.dept || '\u2014' },
-      { label: 'Category',        value: formData.cat || '\u2014' },
-      { label: 'ISO Reference',   value: formData.clause || '\u2014' },
-      { label: 'Version / Rev',   value: `${formData.ver || '1.0'} / ${formData.issueNo || '01'}` },
-      { label: 'Current Status',  value: formData.status || 'Draft' },
-      { label: 'Effective Date',  value: formData.issueDate || '\u2014' },
-      { label: 'Next Review',     value: formData.reviewDate || '\u2014' },
-      { label: 'Author / Owner',  value: formData.author || '\u2014' },
-    ]);
-
-    if (formData.purpose) {
-      y = drawRecordTable(doc, y, 'Procedure Intent & Objectives', [
-        { label: 'Purpose / Scope', value: formData.purpose, fullWidth: true }
-      ]);
-    }
+    const tables: any[] = [];
 
     if (formData.responsibilities && formData.responsibilities.length > 0) {
-      y = drawSectionLabel(doc, y, 'Roles, Responsibilities & Authorities');
-      y = proTable(doc, y,
-        [['Designated Role / Functional Title', 'Primary Responsibility & Accountability Mapping']],
-        formData.responsibilities.map((r: any) => [r.role, r.responsibility]),
-        { columnStyles: { 0: { cellWidth: 60, fontStyle: 'bold' } } }
-      ) + 12;
+      tables.push({
+        title: 'Roles, Responsibilities & Authorities',
+        columns: ['Designated Role / Functional Title', 'Primary Responsibility & Accountability Mapping'],
+        rows: formData.responsibilities.map((r: any) => [r.role, r.responsibility]),
+        columnStyles: { 0: { cellWidth: 60, fontStyle: 'bold' } }
+      });
     }
 
     if (formData.sections && formData.sections.length > 0) {
-      y = drawSectionLabel(doc, y, '4. Process Control Details');
-      const tableBody: (string | number)[][] = [];
+      const rows: string[][] = [];
       formData.sections.forEach((s: any) => {
-        tableBody.push([{ content: `${s.id} ${s.title}`, styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } } as any]);
+        rows.push([`${s.id} ${s.title}`]);
         if (s.subSections) {
           s.subSections.forEach((sub: any) => {
-            tableBody.push([`${sub.id} ${sub.title}${sub.content ? ': ' + sub.content : ''}`]);
+            rows.push([`${sub.id} ${sub.title}${sub.content ? ': ' + sub.content : ''}`]);
           });
         }
       });
-      y = proTable(doc, y, [['Details']], tableBody) + 6;
+      tables.push({
+        title: 'Process Control Details',
+        columns: ['Details'],
+        rows
+      });
     }
 
     if (formData.relatedDocuments && formData.relatedDocuments.length > 0) {
-      y = drawSectionLabel(doc, y, '5. Related Documents');
-      y = proTable(doc, y,
-        [['Document Name', 'Reference']],
-        formData.relatedDocuments.map((d: any) => [d.name, d.ref])
-      ) + 6;
+      tables.push({
+        title: 'Related Documents',
+        columns: ['Document Name', 'Reference'],
+        rows: formData.relatedDocuments.map((d: any) => [d.name, d.ref])
+      });
     }
 
     if (formData.distribution && formData.distribution.length > 0) {
-      y = drawSectionLabel(doc, y, '6. Distribution List');
-      y = proTable(doc, y,
-        [['Recipient']],
-        formData.distribution.map((d: string) => [d])
-      ) + 6;
+      tables.push({
+        title: 'Distribution List',
+        columns: ['Recipient'],
+        rows: formData.distribution.map((d: string) => [d])
+      });
     }
 
     if (formData.revHistory && formData.revHistory.length > 0) {
-      y = drawSectionLabel(doc, y, '7. Revision History');
-      y = proTable(doc, y,
-        [['Rev', 'Date', 'By', 'Change Description', 'Approved']],
-        formData.revHistory.map((h: any) => [
+      tables.push({
+        title: 'Revision History',
+        columns: ['Rev', 'Date', 'By', 'Change Description', 'Approved'],
+        rows: formData.revHistory.map((h: any) => [
           h.rev || '-', h.date || '-',
           typeof h.by === 'object' ? Object.values(h.by).join('') : (h.by || '-'),
           h.change || '-', h.approved || '-'
         ])
-      ) + 6;
+      });
     }
 
-    drawSignatureRow(doc, y, ['Author (MR)', 'Reviewed By', 'Approved By (MD)']);
-    addPageFooters(doc);
-    doc.save(`Procedure_${formData.code || 'Doc'}.pdf`);
+    await exportDetailToPDF({
+      moduleName: formData.title || 'Standard Operating Procedure',
+      moduleId: `Document Ref: ${formData.code || 'UNCODED'}`,
+      recordId: formData.code || 'UNCODED',
+      fileName: `Procedure_${formData.code || 'Doc'}`,
+      fields: [
+        { label: 'Document Control & Compliance Metadata', value: 'Overview', fullWidth: true },
+        { label: 'Primary Dept',    value: formData.dept || '\u2014' },
+        { label: 'Category',        value: formData.cat || '\u2014' },
+        { label: 'ISO Reference',   value: formData.clause || '\u2014' },
+        { label: 'Version / Rev',   value: `${formData.ver || '1.0'} / ${formData.issueNo || '01'}` },
+        { label: 'Current Status',  value: formData.status || 'Draft' },
+        { label: 'Effective Date',  value: formData.issueDate || '\u2014' },
+        { label: 'Next Review',     value: formData.reviewDate || '\u2014' },
+        { label: 'Author / Owner',  value: formData.author || '\u2014' },
+      ],
+      summary: formData.purpose ? ['Procedure Intent & Objectives (Purpose / Scope):', formData.purpose] : undefined,
+      tables: tables.length > 0 ? tables : undefined,
+      signatureLabels: ['Author (MR)', 'Reviewed By', 'Approved By (MD)']
+    });
   };
 
   const inputClass = "w-full px-4 py-2.5 bg-bg-2 border border-border-main rounded-xl text-sm text-text-1 placeholder:text-text-3 focus:ring-2 focus:ring-accent/30 focus:border-accent outline-none transition-all";

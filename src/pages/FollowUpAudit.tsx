@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ExportModal } from '../components/ExportModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -156,37 +156,39 @@ export function FollowUpAudit() {
   };
 
   const downloadPDF = async (f: FollowUpRecord) => {
-    const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
-      proTable, embedAttachments, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
-    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Follow-Up Audit Report', `Ref: ${f.id}`);
-
-    y = drawInfoGrid(doc, y, [
-      { label: 'Follow-Up ID',      value: f.id },
-      { label: 'CAPA Reference',    value: f.capaId },
-      { label: 'Department',        value: f.department },
-      { label: 'Verification Date', value: f.verificationDate },
-      { label: 'Lead Verifier',     value: f.verifier },
-      { label: 'Outcome Status',    value: f.status },
-    ]);
-
-    y = drawSectionLabel(doc, y, 'Issue Description');
-    y = proTable(doc, y, [['CAPA Finding']], [[f.capaDescription]]) + 6;
-
-    y = drawSectionLabel(doc, y, 'Verification Observations');
-    y = proTable(doc, y, [['Remarks']], [[f.remarks || '—']]) + 6;
-
-    drawSignatureRow(doc, y, ['Lead Verifier', 'QA Manager', 'Authorized By']);
-
-    if (f.evidenceUrls && f.evidenceUrls.length > 0) {
-      await embedAttachments(doc, f.evidenceUrls, 'VERIFICATION EVIDENCE');
-    }
-
-    addPageFooters(doc);
-    doc.save(`FollowUp_${f.id}.pdf`);
+    await exportDetailToPDF({
+      moduleName: 'Follow-Up Audit Report',
+      moduleId: `Ref: ${f.id}`,
+      recordId: f.id || 'Unknown',
+      fileName: `FollowUp_${f.id}`,
+      fields: [
+        { label: 'Follow-Up ID',      value: f.id },
+        { label: 'CAPA Reference',    value: f.capaId },
+        { label: 'Department',        value: f.department || '\u2014' },
+        { label: 'Verification Date', value: f.verificationDate },
+        { label: 'Lead Verifier',     value: f.verifier },
+        { label: 'Outcome Status',    value: f.status },
+      ],
+      tables: [
+        {
+          title: 'Issue Description',
+          columns: ['CAPA Finding'],
+          rows: [[f.capaDescription]]
+        },
+        {
+          title: 'Verification Observations',
+          columns: ['Remarks'],
+          rows: [[f.remarks || '\u2014']]
+        }
+      ],
+      attachments: f.evidenceUrls && f.evidenceUrls.length > 0 ? f.evidenceUrls.map(url => ({
+        url,
+        caption: 'VERIFICATION EVIDENCE'
+      })) : undefined,
+      signatureLabels: ['Lead Verifier', 'QA Manager', 'Authorized By']
+    });
   };
 
 

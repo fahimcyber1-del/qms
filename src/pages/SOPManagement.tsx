@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Plus, Edit, Trash2, FileText, FileDown, AlertTriangle, CheckCircle, Clock, BookOpen, CheckCircle2 } from 'lucide-react';
 import { SOPRecord } from '../types';
@@ -72,34 +72,27 @@ export function SOPManagement({ onNavigate }: { onNavigate: (page: string, param
 
   const handleDownloadPDF = async (sop: SOPRecord, e: React.MouseEvent) => {
     e.stopPropagation();
-    const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
-      proTable, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
-    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Standard Operating Procedure', `${sop.sopId} • ${sop.department}`);
-
-    y = drawInfoGrid(doc, y, [
-      { label: 'SOP ID',         value: sop.sopId },
-      { label: 'Title',          value: sop.title },
-      { label: 'Department',     value: sop.department },
-      { label: 'Process',        value: sop.process },
-      { label: 'Version',        value: sop.version },
-      { label: 'Status',         value: sop.status },
-      { label: 'Effective Date', value: sop.effectiveDate },
-      { label: 'Prepared By',    value: sop.createdBy || '—' },
-    ]);
-
-    y = drawSectionLabel(doc, y, 'Purpose & Scope');
-    y = proTable(doc, y, [['Content']], [[sop.purpose || 'N/A']]) + 6;
-
-    y = drawSectionLabel(doc, y, 'Procedure Steps');
-    y = proTable(doc, y, [['Steps']], [[sop.procedureSteps || 'N/A']]) + 6;
-
-    drawSignatureRow(doc, y, ['Prepared By', 'Reviewed By', 'Approved By']);
-    addPageFooters(doc);
-    doc.save(`${sop.sopId}_${sop.title}.pdf`);
+    await exportDetailToPDF({
+      moduleName: 'Standard Operating Procedure',
+      moduleId: 'sop',
+      recordId: sop.sopId,
+      fileName: `${sop.sopId}_${sop.title.replace(/\s+/g, '_')}`,
+      fields: [
+        { label: 'SOP ID',         value: sop.sopId },
+        { label: 'Title',          value: sop.title },
+        { label: 'Department',     value: sop.department },
+        { label: 'Process',        value: sop.process },
+        { label: 'Version',        value: sop.version },
+        { label: 'Status',         value: sop.status },
+        { label: 'Effective Date', value: sop.effectiveDate },
+        { label: 'Prepared By',    value: sop.createdBy || '—' },
+        { label: 'Purpose & Scope', value: sop.purpose || '—' },
+        { label: 'Procedure Steps', value: sop.procedureSteps || '—' },
+      ],
+      attachments: sop.attachments?.map(a => typeof a === 'string' ? { name: 'SOP Document', data: a } : a)
+    });
   };
 
 

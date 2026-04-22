@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ClipboardList, ChevronDown, ChevronRight, CheckCircle2,
@@ -570,75 +570,91 @@ function RecordDetail({ record, onBack }: { record: EvaluationRecord; onBack: ()
   const resultInfo = getResult(record.percentage);
 
   const handleExportPDF = async () => {
-    const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
-      proTable, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
-    // Landscape – 150 questions need width
-    const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Sub-Supplier Evaluation Report', `Record ID: ${record.id}`);
-
-    y = drawInfoGrid(doc, y, [
-      { label: 'Supplier / Sub-Supplier', value: record.supplierName },
-      { label: 'Evaluated By',            value: record.evaluatorName },
-      { label: 'Evaluation Date',         value: record.date },
-      { label: 'Total Score',             value: `${record.totalScore} / ${record.maxScore}` },
-      { label: 'Percentage',              value: `${record.percentage}%` },
-      { label: 'Final Result',            value: record.result },
-    ]);
-
-    // Per-section table
-    for (const section of SECTIONS) {
-      y = drawSectionLabel(doc, y, section.title);
-      y = proTable(
-        doc, y,
-        [['#', 'Evaluation Criteria', 'Response']],
-        section.questions.map((q, idx) => [
-          String(idx + 1),
-          q.text,
-          record.answers[q.id] || 'Not Answered',
-        ]),
-        {
-          columnStyles: {
-            0: { cellWidth: 14, halign: 'center' },
-            2: { cellWidth: 38, halign: 'center', fontStyle: 'bold' },
-          },
-        }
-      ) + 6;
-    }
-
-    // Score summary table
-    const sectionSummary = SECTIONS.map(s => {
+    // Compute per-section scores
+    const sectionSummaryRows = SECTIONS.map(s => {
       let t = 0, m = 0;
       for (const q of s.questions) {
         const a = record.answers[q.id] ?? '';
         if (a !== 'N/A') { t += SCORE_MAP[a as Answer] ?? 0; m += 2; }
       }
       const pct = m > 0 ? Math.round((t / m) * 100) : 0;
-      return [s.title, String(t), String(m), `${pct}%`,
-        pct > 80 ? 'SELECTED' : pct > 60 ? 'ON-PROGRESS' : 'REJECTED'];
+      const bars = Math.round(pct / 5);
+      const bar = '█'.repeat(bars) + '░'.repeat(20 - bars);
+      const status = pct > 80 ? 'SELECTED' : pct > 60 ? 'ON-PROGRESS' : 'REJECTED';
+      return [s.title.replace('Section ', '').split(':')[0].trim(), String(t), String(m), `${pct}%`, bar, status];
     });
 
-    y = drawSectionLabel(doc, y, 'Section Score Summary');
-    y = proTable(doc, y,
-      [['Section', 'Score', 'Max', '%', 'Status']],
-      sectionSummary,
-      {
-        columnStyles: {
-          1: { halign: 'center' },
-          2: { halign: 'center' },
-          3: { halign: 'center', fontStyle: 'bold' },
-          4: { halign: 'center', fontStyle: 'bold' },
+    // Total row
+    sectionSummaryRows.push([
+      'TOTAL SCORE',
+      String(record.totalScore),
+      String(record.maxScore),
+      `${record.percentage}%`,
+      '█'.repeat(Math.round(record.percentage / 5)) + '░'.repeat(20 - Math.round(record.percentage / 5)),
+      record.result
+    ]);
+
+    const resultColor = record.result === 'SELECTED' ? '#10b981'
+      : record.result === 'ON-PROGRESS' ? '#f59e0b' : '#ef4444';
+
+    await exportDetailToPDF({
+      moduleName: 'Sub-Supplier Evaluation Report',
+      moduleId: 'sub-supplier',
+      recordId: record.id,
+      fileName: `Evaluation_${record.supplierName.replace(/\s+/g, '_')}_${record.date}`,
+      orientation: 'landscape',
+      sections: [
+        {
+          title: '1. Evaluation Overview',
+          fields: [
+            { label: 'Supplier / Sub-Supplier Name', value: record.supplierName, fullWidth: true },
+            { label: 'Evaluated By', value: record.evaluatorName },
+            { label: 'Evaluation Date', value: record.date },
+            { label: 'Total Score', value: `${record.totalScore} / ${record.maxScore} points` },
+            { label: 'Overall Percentage', value: `${record.percentage}%` },
+            { label: 'Final Verdict', value: record.result },
+          ]
         },
-        foot: [['TOTAL', String(record.totalScore), String(record.maxScore), `${record.percentage}%`, record.result]],
-      }
-    ) + 6;
-
-    drawSignatureRow(doc, y, ['Evaluator', 'QA Manager', 'Procurement Head', 'Authorized By']);
-
-    addPageFooters(doc);
-    doc.save(`Evaluation_${record.supplierName.replace(/\s+/g, '_')}_${record.date}.pdf`);
+        {
+          title: '2. Evaluation Scope & Standards',
+          fields: [
+            { label: 'Evaluation Standard', value: 'NFFL Supplier Code of Conduct' },
+            { label: 'Scoring: YES', value: '2 points' },
+            { label: 'Scoring: PARTIAL', value: '1 point' },
+            { label: 'Scoring: NO', value: '0 points' },
+            { label: 'SELECTED threshold', value: '> 80%' },
+            { label: 'ON-PROGRESS threshold', value: '60–80%' },
+          ]
+        }
+      ],
+      tables: [
+        {
+          title: '3. Section-wise Scorecard',
+          columns: ['Section', 'Score', 'Max', '%', 'Progress Bar', 'Verdict'],
+          rows: sectionSummaryRows,
+          columnStyles: {
+            0: { cellWidth: 22, fontStyle: 'bold' },
+            1: { cellWidth: 18, halign: 'center' },
+            2: { cellWidth: 18, halign: 'center' },
+            3: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
+            4: { cellWidth: 60, font: 'courier', fontSize: 7 },
+            5: { cellWidth: 30, halign: 'center', fontStyle: 'bold' },
+          }
+        }
+      ],
+      summary: [
+        `Overall Evaluation Result: ${record.result}`,
+        record.result === 'SELECTED'
+          ? `${record.supplierName} has passed the evaluation with ${record.percentage}% compliance. Approved for procurement.`
+          : record.result === 'ON-PROGRESS'
+          ? `${record.supplierName} scored ${record.percentage}%. Improvement plan required within 90 days.`
+          : `${record.supplierName} scored ${record.percentage}%. Supplier is not approved. Corrective action required.`
+      ],
+      signatureLabels: ['Evaluator', 'QA Manager', 'Procurement Head', 'Authorized By'],
+      styleOverrides: { accentColor: resultColor }
+    });
   };
 
   return (

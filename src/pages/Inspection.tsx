@@ -1,6 +1,7 @@
-﻿import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ExportModal } from '../components/ExportModal';
+import { Pagination } from '../components/Pagination';
 import { 
   Search, Plus, Trash2, Edit2, Download, Filter, 
   BarChart3, CheckCircle2, XCircle, AlertTriangle, 
@@ -80,6 +81,10 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [inspections, setInspections] = useState<AQLInspectionRecord[]>([]);
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   useEffect(() => {
     // Universal Sync: Read from LS, which migrator ported to Dexie.
     const stored = localStorage.getItem('garmentqms_inspections');
@@ -103,6 +108,13 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
       return matchesType && matchesSearch && matchesDate;
     });
   }, [inspections, activeType, searchQuery, startDate, endDate]);
+
+  const paginatedInspections = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredInspections.slice(startIndex, startIndex + pageSize);
+  }, [filteredInspections, currentPage, pageSize]);
+
+  const totalPages = Math.ceil(filteredInspections.length / pageSize);
 
   const metrics = useMemo(() => {
     const total = filteredInspections.length;
@@ -130,49 +142,33 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
 
   const exportPDF = async (record: AQLInspectionRecord, e: React.MouseEvent) => {
     e.stopPropagation();
-    const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
-      proTable, embedAttachments, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    const { getSamplingPlan } = await import('../utils/inspectionUtils');
+    
+    const plan = getSamplingPlan(record.inspectionQty || 0, record.aqlLevel || '2.5');
 
-    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'AQL Inspection Certificate', `Record: ${record.id}`);
-
-    y = drawInfoGrid(doc, y, [
-      { label: 'Buyer',           value: record.buyer   || '—' },
-      { label: 'Style',           value: record.style   || '—' },
-      { label: 'Order No.',       value: record.order   || '—' },
-      { label: 'Line',            value: record.line    || '—' },
-      { label: 'Inspector',       value: record.inspector || '—' },
-      { label: 'Inspection Type', value: record.type    || '—' },
-      { label: 'AQL Level',       value: String(record.aqlLevel) },
-      { label: 'Sample Size',     value: String(record.sampleSize) },
-    ]);
-
-    y = drawSectionLabel(doc, y, 'Inspection Results');
-    y = proTable(doc, y,
-      [['Metric', 'Value']],
-      [
-        ['Order Quantity',    String(record.orderQty)],
-        ['Inspection Qty',   String(record.inspectionQty)],
-        ['Pass Quantity',    String(record.passQty)],
-        ['Fail Quantity',    String(record.failQty)],
-        ['Critical Defects', String(record.criticalDefect || 0)],
-        ['Major Defects',    String(record.majorDefect || 0)],
-        ['Minor Defects',    String(record.minorDefect || 0)],
-        ['FINAL RESULT',     record.result],
+    await exportDetailToPDF({
+      moduleName: 'AQL Inspection Certificate',
+      moduleId: 'inspection',
+      recordId: record.id,
+      fileName: `AQL_${record.id}`,
+      fields: [
+        { label: 'Inspection Type', value: record.type },
+        { label: 'Date',            value: record.updatedAt?.split('T')[0] || '—' },
+        { label: 'Style/Order',      value: `${record.style || ''} ${record.order ? '/ ' + record.order : ''}` },
+        { label: 'Buyer',           value: record.buyer || '—' },
+        { label: 'Lot Size',        value: String(record.orderQty) },
+        { label: 'Sample Size',     value: String(record.sampleSize) },
+        { label: 'Result',          value: record.result },
+        { label: 'Insp. Qty',       value: String(record.inspectionQty) },
+        { label: 'Fail Qty',        value: String(record.failQty) },
+        { label: 'DHU%',            value: `${((record.failQty || 0) / (record.inspectionQty || 1) * 100).toFixed(2)}%` },
+        { label: 'Critical Defects', value: String(record.criticalDefect || 0) },
+        { label: 'Major/Minor AC',  value: String(plan.ac) },
+        { label: 'Major/Minor RE',  value: String(plan.re) },
       ],
-      { columnStyles: { 0: { cellWidth: 80, fontStyle: 'bold' }, 1: { fontStyle: 'bold' } } }
-    ) + 6;
-
-    drawSignatureRow(doc, y, ['QC Inspector', 'QA Manager', 'Approved By']);
-
-    if (record.attachments && record.attachments.length > 0) {
-      await embedAttachments(doc, record.attachments, 'INSPECTION EVIDENCE PHOTOS');
-    }
-
-    addPageFooters(doc);
-    doc.save(`AQL_${record.id}_Report.pdf`);
+      attachments: record.attachments?.map(a => typeof a === 'string' ? { name: 'Photo', data: a } : a),
+    });
   };
 
   return (
@@ -226,7 +222,10 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
             placeholder="Filter via System ID, Buyer, or Garment Style..." 
             className="w-full bg-bg-2 border-none rounded-xl pl-11 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none transition-all text-text-1 placeholder:text-text-2"
             value={searchQuery} 
-            onChange={(e) => setSearchQuery(e.target.value)} 
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }} 
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
@@ -236,7 +235,10 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
             <select 
               className="w-full md:w-40 bg-bg-2 border-none rounded-xl pl-9 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none appearance-none text-text-1" 
               value={activeType} 
-              onChange={(e) => setActiveType(e.target.value)}
+              onChange={(e) => {
+                setActiveType(e.target.value);
+                setCurrentPage(1);
+              }}
             >
               <option value="All">All Tiers</option>
               <option value="Inline">Inline</option>
@@ -248,9 +250,9 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
           </div>
           <div className="flex items-center gap-2 bg-bg-2 px-3 py-1.5 rounded-xl flex-1 md:flex-none">
             <Calendar className="w-4 h-4 text-text-2" />
-            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => {setStartDate(e.target.value); setCurrentPage(1);}} />
             <span className="text-text-2 text-sm px-1">-</span>
-            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => {setEndDate(e.target.value); setCurrentPage(1);}} />
           </div>
         </div>
       </motion.div>
@@ -272,16 +274,16 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
             </thead>
             <tbody className="divide-y divide-border-main">
               <AnimatePresence>
-                {filteredInspections.length === 0 ? (
+                {paginatedInspections.length === 0 ? (
                   <motion.tr>
-                    <td colSpan={6} className="p-16 text-center text-text-2 bg-bg-1">
+                    <td colSpan={7} className="p-16 text-center text-text-2 bg-bg-1">
                       <div className="flex flex-col items-center justify-center gap-3">
                         <Search className="w-10 h-10 opacity-20" />
                         <p className="font-bold text-lg text-text-1">No AQL packets found matching query.</p>
                       </div>
                     </td>
                   </motion.tr>
-                ) : filteredInspections.map(row => (
+                ) : paginatedInspections.map(row => (
                   <motion.tr 
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} layout
                     key={row.id} 
@@ -355,6 +357,15 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
             </tbody>
           </table>
         </div>
+
+        <Pagination 
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          pageSize={pageSize}
+          onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
+          totalRecords={filteredInspections.length}
+        />
       </motion.div>
 
       <ExportModal 
@@ -372,3 +383,4 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
     </motion.div>
   );
 }
+

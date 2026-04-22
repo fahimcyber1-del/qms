@@ -6,9 +6,9 @@ import {
   Download, FileDown, ZoomIn, ZoomOut, Maximize2,
   ChevronDown, ChevronRight, GripVertical, UserCheck, Layers
 } from 'lucide-react';
-import { jsPDF } from 'jspdf';
+
 import { db } from '../db/db';
-import { addPageFooters, drawPdfHeader } from '../utils/pdfExport';
+
 
 // ── Types ──────────────────────────────────────────────
 interface OrgNode {
@@ -18,7 +18,6 @@ interface OrgNode {
   department: string;
   level: string;
   children: OrgNode[];
-  collapsed?: boolean;
 }
 
 interface OrgRecord {
@@ -239,118 +238,75 @@ const DEFAULT_ORGS: OrgRecord[] = [
 // ── Count nodes ────────────────────────────────────────
 const countNodes = (n: OrgNode): number => 1 + (n.children || []).reduce((s, c) => s + countNodes(c), 0);
 
-// ═══════════════════════════════════════════════════════
-// SVG ORG TREE RENDERER — pure, crisp, no DOM quirks
-// ═══════════════════════════════════════════════════════
-const NODE_W = 180;
-const NODE_H = 70;
-const H_GAP = 24;
-const V_GAP = 60;
+import mermaid from 'mermaid';
 
-interface LayoutNode {
-  node: OrgNode;
-  x: number;
-  y: number;
-  width: number;
+// ── Mermaid Conversion ──────────────────────────────────
+const MERMAID_THEME = `%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryTextColor': '#1e293b', 'primaryBorderColor': '#e2e8f0', 'lineColor': '#94a3b8', 'secondaryColor': '#f8fafc', 'tertiaryColor': '#ffffff' }}}%%`;
+
+function orgToMermaid(node: OrgNode): string {
+  let lines: string[] = ['graph TD'];
+  
+  // Style definitions
+  lines.push('  classDef top fill:#7c3aed,color:#fff,stroke:#7c3aed,stroke-width:2px');
+  lines.push('  classDef senior fill:#1d4ed8,color:#fff,stroke:#1d4ed8,stroke-width:2px');
+  lines.push('  classDef middle fill:#0891b2,color:#fff,stroke:#0891b2,stroke-width:2px');
+  lines.push('  classDef supervisor fill:#059669,color:#fff,stroke:#059669,stroke-width:2px');
+  lines.push('  classDef operational fill:#d97706,color:#fff,stroke:#d97706,stroke-width:2px');
+
+  function traverse(n: OrgNode) {
+    const safeLabel = (n.title || '').replace(/"/g, "'");
+    const safeName = (n.name || '').replace(/"/g, "'") || '—';
+    const safeDept = (n.department || '').replace(/"/g, "'");
+    
+    const label = `"${safeLabel}<br/><b>${safeName}</b><br/><small>${safeDept}</small>"`;
+    const classMap: Record<string, string> = {
+      'Top Management': 'top',
+      'Senior Management': 'senior',
+      'Middle Management': 'middle',
+      'Supervisory': 'supervisor',
+      'Operational': 'operational'
+    };
+    const cls = classMap[n.level] || 'operational';
+    lines.push(`  ${n.id}[${label}]`);
+    lines.push(`  class ${n.id} ${cls}`);
+
+    (n.children || []).forEach(child => {
+      lines.push(`  ${n.id} --> ${child.id}`);
+      traverse(child);
+    });
+  }
+
+  traverse(node);
+  return lines.join('\n');
 }
 
-function layoutTree(node: OrgNode, depth: number = 0): { layouts: LayoutNode[]; width: number } {
-  if (!node.children || node.children.length === 0 || node.collapsed) {
-    return { layouts: [{ node, x: 0, y: depth * (NODE_H + V_GAP), width: NODE_W }], width: NODE_W };
-  }
-  const childResults = node.children.map(c => layoutTree(c, depth + 1));
-  const totalChildWidth = childResults.reduce((s, r) => s + r.width, 0) + H_GAP * (childResults.length - 1);
-  const myWidth = Math.max(NODE_W, totalChildWidth);
-  const myX = myWidth / 2 - NODE_W / 2;
-  const layouts: LayoutNode[] = [{ node, x: myX, y: depth * (NODE_H + V_GAP), width: NODE_W }];
-  let cx = (myWidth - totalChildWidth) / 2;
-  childResults.forEach(r => {
-    r.layouts.forEach(l => layouts.push({ ...l, x: l.x + cx, y: l.y }));
-    cx += r.width + H_GAP;
-  });
-  return { layouts, width: myWidth };
-}
+function MermaidOrgPreview({ chartCode }: { chartCode: string }) {
+  const [svg, setSvg] = useState<string>('');
 
-function OrgSvgTree({ tree, onNodeClick }: { tree: OrgNode; onNodeClick?: (id: string) => void }) {
-  const { layouts, width } = layoutTree(tree);
-  const totalLevels = Math.max(...layouts.map(l => Math.floor(l.y / (NODE_H + V_GAP))));
-  const svgH = (totalLevels + 1) * (NODE_H + V_GAP) + 20;
-  const svgW = width + 40;
+  useEffect(() => {
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'base' });
+  }, []);
 
-  // Build parent map
-  const parentOf: Record<string, LayoutNode> = {};
-  const nodeMap: Record<string, LayoutNode> = {};
-  layouts.forEach(l => { nodeMap[l.node.id] = l; });
-  function buildParent(n: OrgNode) {
-    (n.children || []).forEach(c => { parentOf[c.id] = nodeMap[n.id]; buildParent(c); });
-  }
-  buildParent(tree);
+  useEffect(() => {
+    let isCancelled = false;
+    const render = async () => {
+      if (!chartCode) return;
+      try {
+        const id = `mermaid-org-${Math.random().toString(36).substring(2, 11)}`;
+        const { svg: renderedSvg } = await mermaid.render(id, MERMAID_THEME + '\n' + chartCode);
+        if (!isCancelled) setSvg(renderedSvg);
+      } catch (err) {
+        console.error('Mermaid render error:', err);
+      }
+    };
+    render();
+    return () => { isCancelled = true; };
+  }, [chartCode]);
 
   return (
-    <svg width={svgW} height={svgH} style={{ overflow: 'visible' }}>
-      <g transform="translate(20, 10)">
-        {/* Draw connector lines first */}
-        {layouts.map(l => {
-          const parent = parentOf[l.node.id];
-          if (!parent) return null;
-          const px = parent.x + NODE_W / 2;
-          const py = parent.y + NODE_H;
-          const cx = l.x + NODE_W / 2;
-          const cy = l.y;
-          const midY = (py + cy) / 2;
-          return (
-            <path key={`edge-${l.node.id}`}
-              d={`M ${px} ${py} C ${px} ${midY}, ${cx} ${midY}, ${cx} ${cy}`}
-              fill="none" stroke="#cbd5e1" strokeWidth={2} strokeDasharray="none"
-            />
-          );
-        })}
-
-        {/* Draw nodes */}
-        {layouts.map(l => {
-          const lvl = LEVELS[l.node.level] || LEVELS['Operational'];
-          const hasChildren = l.node.children && l.node.children.length > 0;
-          return (
-            <g key={l.node.id} transform={`translate(${l.x}, ${l.y})`}
-              onClick={() => onNodeClick?.(l.node.id)}
-              style={{ cursor: onNodeClick ? 'pointer' : 'default' }}>
-              {/* Card shadow */}
-              <rect x={3} y={3} width={NODE_W} height={NODE_H} rx={10} fill="rgba(0,0,0,0.08)" />
-              {/* Card body */}
-              <rect x={0} y={0} width={NODE_W} height={NODE_H} rx={10}
-                fill="white" stroke={lvl.border} strokeWidth={2} />
-              {/* Left accent bar */}
-              <rect x={0} y={0} width={6} height={NODE_H} rx={4} fill={lvl.color} />
-              {/* Top level badge */}
-              <rect x={16} y={8} width={NODE_W - 32} height={16} rx={4} fill={lvl.bg} />
-              <text x={NODE_W / 2} y={19} textAnchor="middle" fontSize={9} fontWeight="700"
-                fill={lvl.text} fontFamily="Inter, Arial, sans-serif" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {l.node.level}
-              </text>
-              {/* Title */}
-              <text x={16} y={38} fontSize={11} fontWeight="700" fill="#1e293b"
-                fontFamily="Inter, Arial, sans-serif" clipPath={undefined}>
-                {l.node.title.length > 22 ? l.node.title.slice(0, 22) + '…' : l.node.title}
-              </text>
-              {/* Name */}
-              <text x={16} y={53} fontSize={9.5} fill="#64748b" fontFamily="Inter, Arial, sans-serif">
-                {l.node.name || '—'}
-              </text>
-              {/* Dept */}
-              {l.node.department && (
-                <text x={16} y={65} fontSize={8} fill="#94a3b8" fontFamily="Inter, Arial, sans-serif">
-                  {l.node.department}
-                </text>
-              )}
-              {/* Collapse indicator */}
-              {hasChildren && !l.node.collapsed && (
-                <circle cx={NODE_W / 2} cy={NODE_H + 2} r={5} fill={lvl.color} />
-              )}
-            </g>
-          );
-        })}
-      </g>
-    </svg>
+    <div className="w-full h-full flex items-center justify-center p-8 bg-white rounded-2xl overflow-auto select-none shadow-inner mermaid-render"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
   );
 }
 
@@ -411,38 +367,10 @@ const NodeEditor: React.FC<NodeEditorProps> = ({ node, onUpdate, onDelete, onAdd
 
   return (
     <div style={{ marginLeft: depth > 0 ? 16 : 0, borderLeft: depth > 0 ? `2px solid ${lvl.color}30` : 'none', paddingLeft: depth > 0 ? 12 : 0 }}>
-      <div className="bg-bg-1 border border-border-main rounded-xl mb-2 overflow-hidden group">
+      <div className="bg-bg-1 border border-border-main rounded-xl mb-2 overflow-hidden group shadow-sm">
         <div className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none" onClick={() => setOpen(o => !o)}>
           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: lvl.color }} />
           <span className="flex-1 text-xs font-semibold text-text-1 truncate">{node.title || 'Untitled'}</span>
-          <span className="text-[9px] text-text-3 uppercase tracking-wide hidden group-hover:block">{node.level}</span>
-          {/* Action buttons — visible on hover */}
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-            {onMoveUp && !isFirst && (
-              <button className="p-0.5 rounded hover:bg-accent/10 text-text-3 hover:text-accent transition-all" title="Move Up"
-                onClick={e => { e.stopPropagation(); onMoveUp(); }}>
-                <ChevronDown className="w-3 h-3 rotate-180" />
-              </button>
-            )}
-            {onMoveDown && !isLast && (
-              <button className="p-0.5 rounded hover:bg-accent/10 text-text-3 hover:text-accent transition-all" title="Move Down"
-                onClick={e => { e.stopPropagation(); onMoveDown(); }}>
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            )}
-            {onDuplicate && (
-              <button className="p-0.5 rounded hover:bg-blue-50 text-text-3 hover:text-blue-500 transition-all" title="Duplicate"
-                onClick={e => { e.stopPropagation(); onDuplicate(); }}>
-                <Layers className="w-3 h-3" />
-              </button>
-            )}
-            {onDelete && (
-              <button className="p-0.5 rounded hover:bg-red-50 text-text-3 hover:text-red-500 transition-all" title="Delete"
-                onClick={e => { e.stopPropagation(); onDelete(); }}>
-                <Trash2 className="w-3 h-3" />
-              </button>
-            )}
-          </div>
           {open ? <ChevronDown className="w-3.5 h-3.5 text-text-3 flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-text-3 flex-shrink-0" />}
         </div>
 
@@ -460,21 +388,21 @@ const NodeEditor: React.FC<NodeEditorProps> = ({ node, onUpdate, onDelete, onAdd
                   onChange={e => onUpdate({ ...node, name: e.target.value })} />
               </div>
               <div>
-                <label className="text-[9px] font-bold text-text-3 uppercase tracking-wide block mb-1">Department</label>
-                <input className={`${inputClass} text-xs`} value={node.department} placeholder="Dept."
-                  onChange={e => onUpdate({ ...node, department: e.target.value })} />
-              </div>
-              <div>
                 <label className="text-[9px] font-bold text-text-3 uppercase tracking-wide block mb-1">Level</label>
                 <select className={`${inputClass} text-xs`} value={node.level} onChange={e => onUpdate({ ...node, level: e.target.value })}>
                   {Object.keys(LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
                 </select>
               </div>
+              <div className="flex items-end justify-end gap-1">
+                 {onDelete && (
+                    <button className="p-2 rounded-lg hover:bg-red-50 text-red-500 transition-all shadow-sm border border-red-100" title="Delete" onClick={onDelete}><Trash2 className="w-4 h-4" /></button>
+                 )}
+              </div>
             </div>
-            <div className="flex items-center gap-3 flex-wrap pt-1">
-              <button className="flex items-center gap-1 text-[10px] font-semibold text-accent hover:text-accent/80 transition-colors"
+            <div className="flex items-center gap-3 pt-2">
+              <button className="flex items-center gap-1.5 text-[10px] font-bold text-accent px-3 py-1.5 bg-accent/5 rounded-lg border border-accent/10 hover:bg-accent/10 transition-all"
                 onClick={addChild}>
-                <Plus className="w-3 h-3" /> Add Sub-position
+                <Plus className="w-3 h-3" /> Sub-position
               </button>
               {onAddSibling && (
                 <button className="flex items-center gap-1 text-[10px] font-semibold text-emerald-600 hover:text-emerald-500 transition-colors"
@@ -504,227 +432,75 @@ const NodeEditor: React.FC<NodeEditorProps> = ({ node, onUpdate, onDelete, onAdd
   );
 };
 
-// ═══════════════════════════════════════════════════════
-// HIGH-QUALITY EXPORT FUNCTIONS (Canvas-based)
-// ═══════════════════════════════════════════════════════
-
-function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function renderOrgToCanvas(record: OrgRecord, scale: number = 2): HTMLCanvasElement {
-  const { layouts, width } = layoutTree(record.tree);
-  const maxY = Math.max(...layouts.map(l => l.y));
-  const svgW = width + 80;
-  const svgH = maxY + NODE_H + 60;
-
-  const HEADER = 120;
-  const FOOTER = 90;
-  const PAD = 40;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = (svgW + PAD * 2) * scale;
-  canvas.height = (svgH + HEADER + FOOTER) * scale;
-  const ctx = canvas.getContext('2d')!;
-  ctx.scale(scale, scale);
-
-  const W = svgW + PAD * 2;
-  const H = svgH + HEADER + FOOTER;
-
-  // Background
-  ctx.fillStyle = '#f8fafc';
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#ffffff';
-  drawRoundRect(ctx, 16, 16, W - 32, H - 32, 12);
-  ctx.fill();
-
-  // ── Header ──
-  const headerGrad = ctx.createLinearGradient(0, 0, W, 0);
-  headerGrad.addColorStop(0, '#1e3a8a');
-  headerGrad.addColorStop(1, '#1d4ed8');
-  ctx.fillStyle = headerGrad;
-  drawRoundRect(ctx, 16, 16, W - 32, HEADER - 10, 12);
-  ctx.fill();
-
-  // Header text
-  ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.fillRect(16, HEADER - 10, W - 32, 4);
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${20}px "Arial", sans-serif`;
-  ctx.textBaseline = 'top';
-  ctx.fillText(record.chartTitle.toUpperCase(), 36, 30);
-
-  ctx.font = `${11}px "Arial", sans-serif`;
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillText(`${record.code}  ·  ${record.department}  ·  Version ${record.version}  ·  Status: ${record.status}`, 36, 56);
-  ctx.fillText(`Responsible: ${record.responsiblePerson || '—'}  ·  Approved By: ${record.approvedBy || '—'}`, 36, 74);
-  ctx.fillText(`Positions: ${countNodes(record.tree)}  ·  Generated: ${new Date().toLocaleDateString('en-GB')}`, 36, 92);
-
-  // ── Connector lines ──
-  const nodeMap: Record<string, LayoutNode> = {};
-  layouts.forEach(l => { nodeMap[l.node.id] = l; });
-  const parentOf: Record<string, LayoutNode> = {};
-  function buildParentMap(n: OrgNode) {
-    (n.children || []).forEach(c => { parentOf[c.id] = nodeMap[n.id]; buildParentMap(c); });
-  }
-  buildParentMap(record.tree);
-
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 2;
-  layouts.forEach(l => {
-    const parent = parentOf[l.node.id];
-    if (!parent) return;
-    const px = parent.x + PAD + NODE_W / 2;
-    const py = parent.y + HEADER + NODE_H;
-    const cx = l.x + PAD + NODE_W / 2;
-    const cy = l.y + HEADER;
-    const midY = (py + cy) / 2;
-    ctx.beginPath();
-    ctx.moveTo(px, py);
-    ctx.bezierCurveTo(px, midY, cx, midY, cx, cy);
-    ctx.stroke();
-  });
-
-  // ── Nodes ──
-  layouts.forEach(l => {
-    const lvl = LEVELS[l.node.level] || LEVELS['Operational'];
-    const nx = l.x + PAD;
-    const ny = l.y + HEADER;
-
-    // Shadow
-    ctx.shadowColor = 'rgba(0,0,0,0.10)';
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 4;
-    ctx.fillStyle = '#ffffff';
-    drawRoundRect(ctx, nx, ny, NODE_W, NODE_H, 10);
-    ctx.fill();
-    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-
-    // Border
-    ctx.strokeStyle = lvl.border;
-    ctx.lineWidth = 2;
-    drawRoundRect(ctx, nx, ny, NODE_W, NODE_H, 10);
-    ctx.stroke();
-
-    // Left accent bar
-    ctx.fillStyle = lvl.color;
-    drawRoundRect(ctx, nx, ny, 6, NODE_H, 4);
-    ctx.fill();
-
-    // Level badge bg
-    ctx.fillStyle = lvl.bg;
-    drawRoundRect(ctx, nx + 14, ny + 6, NODE_W - 28, 15, 4);
-    ctx.fill();
-
-    // Level text
-    ctx.fillStyle = lvl.text;
-    ctx.font = `bold 8px "Arial", sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(l.node.level.toUpperCase(), nx + NODE_W / 2, ny + 13.5);
-
-    // Title
-    ctx.fillStyle = '#1e293b';
-    ctx.font = `bold 11px "Arial", sans-serif`;
-    ctx.textAlign = 'left';
-    const titleText = l.node.title.length > 22 ? l.node.title.slice(0, 22) + '…' : l.node.title;
-    ctx.fillText(titleText, nx + 14, ny + 32);
-
-    // Name
-    ctx.fillStyle = '#64748b';
-    ctx.font = `9px "Arial", sans-serif`;
-    ctx.fillText(l.node.name || '—', nx + 14, ny + 46);
-
-    // Dept
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = `8px "Arial", sans-serif`;
-    ctx.fillText(l.node.department, nx + 14, ny + 59);
-
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-  });
-
-  // ── Footer ──
-  const footerY = H - FOOTER;
-  ctx.fillStyle = '#1e293b';
-  ctx.fillRect(16, footerY, W - 32, FOOTER - 16);
-
-  // Signature zones
-  const sigW = (W - 100) / 3;
-  ['Prepared By', 'Reviewed By', 'Approved By'].forEach((label, i) => {
-    const sx = 50 + i * (sigW + 25);
-    const sigLineY = footerY + 45;
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(sx, sigLineY);
-    ctx.lineTo(sx + sigW - 20, sigLineY);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.font = `bold 10px "Arial", sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText(label, sx + (sigW - 20) / 2, sigLineY + 5);
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    ctx.font = `8px "Arial", sans-serif`;
-    ctx.fillText('Name / Date', sx + (sigW - 20) / 2, sigLineY + 18);
-  });
-
-  // Footer bottom bar info
-  ctx.fillStyle = '#3b82f6';
-  ctx.fillRect(16, H - 32, W - 32, 16);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold 9px "Arial", sans-serif`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`QMS Organogram  ·  ${record.code}  ·  ${record.chartTitle}`, 26, H - 24);
-  ctx.textAlign = 'right';
-  ctx.fillText(`Generated: ${new Date().toLocaleString('en-GB')}`, W - 26, H - 24);
-
-  return canvas;
-}
-
+// ── Export logic ───────────────────────────────────────
 async function exportOrgPNG(record: OrgRecord) {
-  const canvas = renderOrgToCanvas(record, 2);
-  const url = canvas.toDataURL('image/png', 1.0);
-  const a = document.createElement('a'); a.href = url; a.download = `${record.code}_Organogram.png`; a.click();
+  const svgEl = document.querySelector('.mermaid-render svg');
+  if (!svgEl) return;
+  const canvas = document.createElement('canvas');
+  const svgData = new XMLSerializer().serializeToString(svgEl);
+  const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(svgBlob);
+  const img = new Image();
+  img.onload = () => {
+    canvas.width = img.width * 2; canvas.height = img.height * 2;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const link = document.createElement('a');
+    link.download = `${record.code}_Organogram.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
 }
 
 async function exportOrgPDF(record: OrgRecord) {
-  const canvas = renderOrgToCanvas(record, 2);
-  const imgData = canvas.toDataURL('image/png', 1.0);
-  const aspectRatio = canvas.width / canvas.height;
-
-  const doc = new jsPDF({ orientation: aspectRatio > 1 ? 'l' : 'p', unit: 'mm', format: 'a4' });
-  const pgW = doc.internal.pageSize.getWidth();
-  const pgH = doc.internal.pageSize.getHeight();
-
-  const startY = drawPdfHeader(doc, record.chartTitle || 'Organogram', `Reference: ${record.code} | Version: ${record.version || '1.0'}`, 'organogram');
-  const sideMargin = 8;
-  const topMargin = startY + 2;
-  const footerReserve = 16;
-  const availW = pgW - sideMargin * 2;
-  const availH = pgH - topMargin - footerReserve;
-  const ratio = Math.min(availW / (canvas.width / 2), availH / (canvas.height / 2));
-  const imgW = (canvas.width / 2) * ratio;
-  const imgH = (canvas.height / 2) * ratio;
-  const imgX = sideMargin + (availW - imgW) / 2;
-  const imgY = topMargin + Math.max(0, (availH - imgH) / 2);
-
-  doc.addImage(imgData, 'PNG', imgX, imgY, imgW, imgH);
-  addPageFooters(doc);
-  doc.save(`${record.code}_Organogram.pdf`);
+  const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+  const svgEl = document.querySelector('.mermaid-render svg');
+  if (!svgEl) return;
+  const svgData = new XMLSerializer().serializeToString(svgEl);
+  const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(svgBlob);
+  const img = new Image();
+  img.onload = async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width * 2; canvas.height = img.height * 2;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const imgData = canvas.toDataURL('image/png');
+    await exportDetailToPDF({
+      moduleName: 'Organizational Hierarchy Report',
+      moduleId: 'organogram',
+      recordId: record.code,
+      fileName: `${record.code}_Chart`,
+      orientation: 'landscape',
+      sections: [
+        {
+          title: 'Document Identification',
+          fields: [
+            { label: 'Chart Description', value: record.chartTitle },
+            { label: 'Organization Code', value: record.code },
+            { label: 'Revision Level',    value: record.version },
+            { label: 'Effective Date',    value: record.date },
+          ]
+        },
+        {
+          title: 'Responsibility & Authority',
+          fields: [
+            { label: 'Business Process',   value: record.department },
+            { label: 'Chart Responsible',  value: record.responsiblePerson || '—' },
+            { label: 'Approved By',        value: record.approvedBy || '—' },
+            { label: 'Status',             value: record.status },
+          ]
+        }
+      ],
+      attachments: [{ name: 'Hierarchy Visualization', data: imgData }]
+    });
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -844,11 +620,10 @@ export function OrganogramPage({ onNavigate }: { onNavigate: (page: string, para
         {filtered.map((r, idx) => (
           <motion.div key={r.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
             className="bg-bg-1 rounded-2xl border border-border-main shadow-sm overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all duration-300 flex flex-col group">
-            {/* Mini preview */}
-            <div className="bg-gradient-to-br from-bg-2/80 to-bg-2/30 p-4 border-b border-border-main overflow-hidden cursor-pointer"
-              style={{ height: 160 }} onClick={() => { setSelectedRecord(r); setMode('view'); }}>
-              <div className="flex justify-center items-start" style={{ transform: 'scale(0.38)', transformOrigin: 'top center', width: '100%' }}>
-                <OrgSvgTree tree={r.tree} />
+            <div className="bg-gradient-to-br from-bg-2/80 to-bg-2/30 p-4 border-b border-border-main overflow-hidden cursor-pointer h-[160px] flex items-center justify-center"
+               onClick={() => { setSelectedRecord(r); setMode('view'); }}>
+              <div className="w-full h-full transform scale-[0.4] origin-center opacity-60">
+                 <MermaidOrgPreview chartCode={orgToMermaid(r.tree)} />
               </div>
             </div>
             <div className="p-4 flex-1">
@@ -939,17 +714,13 @@ export function OrganogramPage({ onNavigate }: { onNavigate: (page: string, para
         onMouseLeave={() => setIsPanning(false)}
         onWheel={e => setZoom(z => Math.max(0.3, Math.min(2.5, z - e.deltaY * 0.001)))}
         style={{ cursor: isPanning ? 'grabbing' : 'grab' }}>
-        <div style={{
-          transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
-          transformOrigin: 'center top',
-          transition: isPanning ? 'none' : 'transform 0.1s',
-          display: 'flex',
-          justifyContent: 'center',
-          padding: '40px',
-          minWidth: 'max-content',
-        }}>
-          <OrgSvgTree tree={selectedRecord.tree} />
-        </div>
+          <div className="w-full max-w-[1200px]" style={{
+            transform: `scale(${zoom})`,
+            transformOrigin: 'top center',
+            transition: isPanning ? 'none' : 'transform 0.1s',
+          }}>
+            <MermaidOrgPreview chartCode={orgToMermaid(selectedRecord.tree)} />
+          </div>
       </div>
     </motion.div>
   );
@@ -1046,8 +817,8 @@ export function OrganogramPage({ onNavigate }: { onNavigate: (page: string, para
           </div>
           <div className="flex-1 overflow-auto bg-[radial-gradient(circle_at_50%_50%,var(--bg-2)_0%,var(--bg-0)_100%)] flex justify-center p-8">
             {formData.tree && (
-              <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>
-                <OrgSvgTree tree={formData.tree} />
+              <div className="w-full max-w-[1000px]" style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>
+                 <MermaidOrgPreview chartCode={orgToMermaid(formData.tree)} />
               </div>
             )}
           </div>

@@ -11,6 +11,7 @@ import { Login } from './pages/Login';
 import type { UserProfile } from './pages/Login';
 import { ReportsAnalytics } from './pages/ReportsAnalytics';
 import { Certification } from './pages/Certification';
+import { CertificationForm } from './pages/CertificationForm';
 import { RiskManagementPage } from './pages/RiskManagementPage';
 import { TraceabilityPage } from './pages/TraceabilityPage';
 import { SOPManagement } from './pages/SOPManagement';
@@ -29,8 +30,10 @@ import { FollowUpAudit } from './pages/FollowUpAudit';
 import { FlowChartPage } from './pages/FlowChartPage';
 import { OrganogramPage } from './pages/OrganogramPage';
 import { TrainingModule } from './pages/TrainingModule';
+import { TrainingForm } from './pages/TrainingForm';
 import { SupplierModule } from './pages/SupplierModule';
 import { KPIModule } from './pages/KPI';
+import { KPIForm } from './pages/KPIForm';
 import { UniversalModule } from './components/universal/UniversalModule';
 import { MODULE_CONFIGS } from './config/moduleConfigs';
 import { loadAppearance, saveAppearance, applyAppearance } from './config/themeEngine';
@@ -270,7 +273,8 @@ export default function App() {
       case 'capa':                   return <CAPA {...commonProps} />;
       case 'capa-form':              return <CAPAForm {...commonProps} />;
       case 'follow-up':              return <FollowUpAudit />;
-      case 'certification':          return <Certification {...commonProps} />;
+      case 'certification':          return <Certification onNavigate={navigate} />;
+      case 'certification-form':     return <CertificationForm onNavigate={navigate} params={pageParams} />;
       case 'risk':                   return <RiskManagementPage {...commonProps} />;
       case 'traceability':           return <TraceabilityPage onNavigate={navigate} />;
       case 'sop':                    return <SOPManagement {...commonProps} />;
@@ -286,6 +290,7 @@ export default function App() {
       case 'settings':               return <Settings isDarkMode={isDarkMode} onToggleDarkMode={handleToggleDarkMode} />;
       case 'profile':                return <Profile avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} />;
       case 'training':               return <TrainingModule onNavigate={navigate} />;
+      case 'training-form':          return <TrainingForm onNavigate={navigate} params={pageParams} />;
       case 'supplier':               return <SupplierModule onNavigate={navigate} />;
       case 'complaints':             return <CustomerComplaint onNavigate={navigate} />;
       case 'customer-complaint-form': return <CustomerComplaintForm onNavigate={navigate} params={pageParams} />;
@@ -297,6 +302,7 @@ export default function App() {
       case 'buyer-summary':          return <BuyerOrderSummary onNavigate={navigate} />;
       case 'buyer-order-summary-form': return <BuyerOrderSummaryForm onNavigate={navigate} params={pageParams} />;
       case 'kpi':                    return <KPIModule onNavigate={navigate} params={pageParams} />;
+      case 'kpi-form':               return <KPIForm onNavigate={navigate} params={pageParams} />;
       case 'goals':
       case 'quality-goals':          return <QualityGoals onNavigate={navigate} />;
       case 'quality-goals-form':     return <QualityGoalsForm onNavigate={navigate} params={pageParams} />;

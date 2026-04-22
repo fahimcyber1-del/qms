@@ -101,11 +101,32 @@ export async function seedUniversalModules() {
   // ── 7. Order Summary ──
   await seedTable('orderSummary', [
     {
-      id: 'ORD-001', buyer: 'Target', orderNumber: 'TGT-9921', style: 'JKT-WINTER',
-      date: '2024-01-20', quantity: 50000, deliveryDate: '2024-06-15',
-      department: 'Merchandising', responsiblePerson: 'Fahim Ahmed',
+      id: 'ORD-001', buyer: 'Target', orderNo: 'TGT-9921', styleNo: 'JKT-WINTER-01',
+      date: '2024-01-20', qty: 50000, shipDate: '2024-06-15',
+      department: 'Merchandising', merchandiser: 'Fahim Ahmed',
       fabricType: 'Heavy Denim', color: 'Midnight Black', shipmentMode: 'Sea',
-      status: 'In Production'
+      priority: 'High', status: 'In Production', remarks: 'Awaiting trim in-house.'
+    },
+    {
+      id: 'ORD-002', buyer: 'H&M', orderNo: 'HM-SUM-77', styleNo: 'TS-BASIC-WHITE',
+      date: '2024-02-05', qty: 120000, shipDate: '2024-05-20',
+      department: 'Merchandising', merchandiser: 'Kamrul Hasan',
+      fabricType: 'Single Jersey', color: 'Optic White', shipmentMode: 'Sea',
+      priority: 'Urgent / AOG', status: 'In Washing', remarks: 'Bulk washing in progress.'
+    },
+    {
+      id: 'ORD-003', buyer: 'Zara', orderNo: 'ZR-FALL-88', styleNo: 'DRS-VELVET-RED',
+      date: '2024-02-15', qty: 15000, shipDate: '2024-08-10',
+      department: 'Merchandising', merchandiser: 'Nila Sultana',
+      fabricType: 'Velvet', color: 'Crimson Red', shipmentMode: 'Air',
+      priority: 'Medium', status: 'New', remarks: 'Samples approved.'
+    },
+    {
+      id: 'ORD-004', buyer: 'Walmart', orderNo: 'WM-SPR-22', styleNo: 'PNT-CARGO-KHAKI',
+      date: '2024-01-10', qty: 200000, shipDate: '2024-04-30',
+      department: 'Merchandising', merchandiser: 'Arif Ahmed',
+      fabricType: 'Twill', color: 'Dusty Khaki', shipmentMode: 'Sea',
+      priority: 'High', status: 'Shipped', remarks: 'Shipped via Chittagong Port.'
     }
   ]);
 

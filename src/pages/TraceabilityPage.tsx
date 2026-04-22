@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
   Link, TrendingUp, Plus, Edit2, 
@@ -224,52 +224,36 @@ export function TraceabilityPage({ onNavigate }: { onNavigate: (page: string, pa
   };
 
   const handleExportPDF = async (record?: TraceabilityRecord) => {
-    const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
-      proTable, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
-
     if (record) {
-      const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
-      let y = drawPdfHeader(doc, 'Traceability Report', `Ref: ${record.code} | PO: ${record.poNumber}`);
-
-      y = drawInfoGrid(doc, y, [
-        { label: 'Style Number',    value: record.styleNumber },
-        { label: 'Buyer',           value: record.buyer },
-        { label: 'Order Quantity',  value: String(record.orderQuantity) },
-        { label: 'Current Stage',   value: record.currentStage },
-        { label: 'Status',          value: record.status },
-        { label: 'Target Date',     value: record.targetDate || '—' },
-        { label: 'Responsible',     value: record.responsiblePerson || '—' },
-        { label: 'Start Date',      value: record.identifiedDate },
-      ]);
-
-      y = drawSectionLabel(doc, y, 'Production Stage Traceability');
-      y = proTable(doc, y,
-        [['Stage', 'Status', 'Date', 'Key Info', 'Details']],
-        [
-          ['Fabric',    record.fabricStage.status,    record.fabricStage.date,    `Roll: ${record.fabricStage.rollNumber}`,     record.fabricStage.details],
-          ['Cutting',   record.cuttingStage.status,   record.cuttingStage.date,   `Bundle: ${record.cuttingStage.bundleNumber}`, record.cuttingStage.details],
-          ['Sewing',    record.sewingStage.status,    record.sewingStage.date,    `Line: ${record.sewingStage.lineNumber}`,      record.sewingStage.details],
-          ['Finishing', record.finishingStage.status, record.finishingStage.date, `Batch: ${record.finishingStage.batchNumber}`, record.finishingStage.details],
-          ['Packing',   record.packingStage.status,   record.packingStage.date,   `Carton: ${record.packingStage.cartonNumber}`, record.packingStage.details],
-          ['Shipment',  record.shipmentStage.status,  record.shipmentStage.date,  `Dest: ${record.shipmentStage.destination}`,   record.shipmentStage.details],
+      const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+      await exportDetailToPDF({
+        moduleName: 'Product Traceability Record',
+        moduleId: 'traceability',
+        recordId: record.code,
+        fileName: `Trace_${record.code}`,
+        fields: [
+          { label: 'PO Number',         value: record.poNumber },
+          { label: 'Style Number',      value: record.styleNumber },
+          { label: 'Buyer',             value: record.buyer },
+          { label: 'Order Quantity',    value: String(record.orderQuantity) },
+          { label: 'Current Stage',     value: record.currentStage },
+          { label: 'Control Status',    value: record.status },
+          { label: 'Target Date',       value: record.targetDate || '—' },
+          { label: 'Responsible PIC',   value: record.responsiblePerson || '—' },
+          { label: 'Fabric Trace',      value: `Status: ${record.fabricStage.status} | Roll: ${record.fabricStage.rollNumber} | Date: ${record.fabricStage.date}` },
+          { label: 'Cutting Trace',     value: `Status: ${record.cuttingStage.status} | Bundle: ${record.cuttingStage.bundleNumber} | Date: ${record.cuttingStage.date}` },
+          { label: 'Sewing Trace',      value: `Status: ${record.sewingStage.status} | Line: ${record.sewingStage.lineNumber} | Date: ${record.sewingStage.date}` },
         ]
-      ) + 6;
-
-      drawSignatureRow(doc, y, ['QC Manager', 'Production Manager', 'Authorized By']);
-      addPageFooters(doc);
-      doc.save(`${record.code}_Traceability.pdf`);
+      });
     } else {
+      const { exportTableToPDF } = await import('../utils/pdfExportUtils');
       const dataToExport = selectedIds.length > 0 ? records.filter(r => selectedIds.includes(r.id)) : filtered;
-      const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
-      let y = drawPdfHeader(doc, 'Traceability Register', `${dataToExport.length} records | Generated: ${new Date().toLocaleDateString()}`);
-      y = proTable(doc, y,
-        [['Code', 'PO Number', 'Style', 'Buyer', 'Qty', 'Stage', 'Status', 'Target Date']],
-        dataToExport.map(r => [r.code, r.poNumber, r.styleNumber, r.buyer, String(r.orderQuantity), r.currentStage, r.status, r.targetDate || '—'])
-      ) + 6;
-      addPageFooters(doc);
-      doc.save('Traceability_Register.pdf');
+      exportTableToPDF({
+        moduleName: 'Traceability Register',
+        columns: ['Code', 'PO #', 'Style', 'Buyer', 'Stage', 'Status'],
+        rows: dataToExport.map(r => [r.code, r.poNumber, r.styleNumber, r.buyer, r.currentStage, r.status]),
+        fileName: 'Traceability_Register'
+      });
     }
   };
 

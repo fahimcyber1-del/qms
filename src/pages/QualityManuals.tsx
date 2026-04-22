@@ -97,6 +97,25 @@ export function QualityManuals({ onNavigate }: Props) {
     });
   };
 
+  const exportSinglePDF = async (record: ManualRecord) => {
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    await exportDetailToPDF({
+      moduleName: 'Quality Management System Manual',
+      moduleId: 'quality-manual',
+      recordId: record.id,
+      fileName: `Manual_${record.manualTitle.replace(/\s+/g, '_')}`,
+      fields: [
+        { label: 'Manual Title',       value: record.manualTitle },
+        { label: 'Document Type',      value: record.manualType },
+        { label: 'Version Number',     value: record.version },
+        { label: 'Owning Department',  value: record.department },
+        { label: 'Responsible Officer',value: record.responsiblePerson },
+        { label: 'Last Periodic Review', value: record.lastReviewDate },
+        { label: 'Current Status',     value: record.status },
+      ]
+    });
+  };
+
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -212,6 +231,9 @@ export function QualityManuals({ onNavigate }: Props) {
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('quality-manuals-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
+                        <Download className="w-4 h-4" />
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />

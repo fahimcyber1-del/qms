@@ -33,24 +33,30 @@ export interface AppearanceSettings {
   bgImage: string; // URL or predefined key
   bgImageOpacity: number; // 0–100
   bgImageBlur: number; // 0–20
-  borderRadius: 'sharp' | 'rounded' | 'pill';
-  sidebarStyle: 'solid' | 'transparent' | 'glass' | 'gradient';
-  density: 'compact' | 'comfortable' | 'spacious';
+  borderRadius: 'sharp' | 'soft' | 'rounded' | 'medium' | 'pill' | 'extra' | 'leaf' | 'asymmetric' | 'organic';
+  sidebarStyle: 'solid' | 'transparent' | 'glass' | 'gradient' | 'accent' | 'dark' | 'neon' | 'floating' | 'minimal' | 'bordered' | 'industrial' | 'sunset' | 'midnight' | 'soft' | 'royal' | 'brutalist' | '3d' | 'glass-accent' | 'neon-dark';
+  density: 'ultra-compact' | 'compact' | 'comfortable' | 'spacious' | 'airy';
   fontFamily: 'system' | 'inter' | 'roboto' | 'poppins' | 'outfit' | 'mono';
-  cardStyle: 'default' | 'glass' | 'flat' | 'elevated' | 'bordered';
-  animationLevel: 'none' | 'subtle' | 'full';
+  cardStyle: 'default' | 'glass' | 'flat' | 'elevated' | 'bordered' | 'neon' | 'gradient' | 'minimalist' | 'brutalist' | '3d' | 'floating';
+  animationLevel: 'none' | 'subtle' | 'standard' | 'smooth' | 'dynamic' | 'playful' | 'heavy';
   navLayout: 'sidebar' | 'top';
   colorSaturation: number; // 50–150
-  uiScale: 'sm' | 'md' | 'lg';
+  uiScale: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   // NEW settings
-  shadowIntensity: 'none' | 'soft' | 'medium' | 'strong';
-  topbarStyle: 'default' | 'accent' | 'dark' | 'glass';
+  shadowIntensity: 'none' | 'flat' | 'soft' | 'medium' | 'deep' | 'extra-deep' | 'floating' | 'inner' | 'brutalist';
+  topbarStyle: 'default' | 'accent' | 'dark' | 'glass' | 'gradient' | 'neon' | 'floating' | 'brutalist' | '3d';
   customBgUrl: string;
   localBgName: string; // filename of the uploaded image (display only)
   sidebarAccent: boolean; // accent colored sidebar items background
   compactTables: boolean;
   showBreadcrumbs: boolean;
   iconStyle: 'outline' | 'filled' | 'duotone';
+  glassNavbar: boolean;
+  animatePageTransitions: boolean;
+  hoverEffects: boolean;
+  frostedOverlays: boolean;
+  highContrast: boolean;
+  contentSpacing: 'compact' | 'standard' | 'wide';
   // Dashboard style
   dashboardStyle: 'modern' | 'corporate' | 'minimal' | 'glassmorphic' | 'neon' | 'executive' | 'sunset' | 'mono' | 'cyberpunk' | 'nature' | 'holographic';
 }
@@ -119,23 +125,59 @@ export const FONT_OPTIONS = [
 ];
 
 export const CARD_STYLES = [
-  { id: 'default',  name: 'Default',    description: 'Standard bordered card' },
-  { id: 'glass',    name: 'Glass',      description: 'Frosted glass effect' },
-  { id: 'flat',     name: 'Flat',       description: 'Clean & minimal' },
-  { id: 'elevated', name: 'Elevated',   description: 'Bold drop shadow' },
-  { id: 'bordered', name: 'Bordered',   description: 'Accent border highlight' },
+  { id: 'default',    name: 'Default',    description: 'Standard bordered card' },
+  { id: 'glass',      name: 'Glass',      description: 'Frosted glass effect' },
+  { id: 'flat',       name: 'Flat',       description: 'Clean & minimal' },
+  { id: 'elevated',   name: 'Elevated',   description: 'Bold drop shadow' },
+  { id: 'bordered',   name: 'Bordered',   description: 'Accent border highlight' },
+  { id: 'neon',       name: 'Neon',       description: 'Glowing accent borders' },
+  { id: 'gradient',   name: 'Gradient',   description: 'Soft color transitions' },
+  { id: 'minimalist', name: 'Minimalist', description: 'Clean without borders' },
+  { id: 'brutalist',  name: 'Brutalist',  description: 'Bold strokes & sharp' },
+  { id: '3d',         name: '3D Lift',     description: 'Tactile raised effect' },
+  { id: 'floating',   name: 'Floating',   description: 'Soft high-elevation' },
+] as const;
+
+export const SIDEBAR_OPTIONS = [
+  { id: 'solid',        name: 'Solid' },
+  { id: 'transparent',  name: 'Transparent' },
+  { id: 'glass',        name: 'Glass' },
+  { id: 'gradient',     name: 'Gradient' },
+  { id: 'accent',       name: 'Accent' },
+  { id: 'dark',         name: 'Dark' },
+  { id: 'neon',         name: 'Neon' },
+  { id: 'floating',     name: 'Floating' },
+  { id: 'minimal',      name: 'Minimal' },
+  { id: 'bordered',     name: 'Bordered' },
+  { id: 'industrial',   name: 'Industrial' },
+  { id: 'sunset',       name: 'Sunset' },
+  { id: 'midnight',     name: 'Midnight' },
+  { id: 'soft',         name: 'Soft White' },
+  { id: 'royal',        name: 'Royal Purple' },
+  { id: 'brutalist',    name: 'Brutalist' },
+  { id: '3d',           name: '3D Lift' },
+  { id: 'glass-accent', name: 'Glass Accent' },
+  { id: 'neon-dark',    name: 'Neon Dark' },
 ] as const;
 
 export const RADIUS_OPTIONS = [
-  { id: 'sharp',   name: 'Sharp',   value: '2px',  valueSm: '1px', description: 'Industrial' },
-  { id: 'rounded', name: 'Rounded', value: '8px',  valueSm: '6px', description: 'Default' },
-  { id: 'pill',    name: 'Pill',    value: '16px', valueSm: '12px', description: 'Soft' },
+  { id: 'sharp',      name: 'Sharp',      value: '0px',         valueSm: '0px',        description: 'Industrial' },
+  { id: 'soft',       name: 'Soft',       value: '4px',         valueSm: '3px',        description: 'Subtle' },
+  { id: 'rounded',    name: 'Rounded',    value: '8px',         valueSm: '6px',        description: 'Standard' },
+  { id: 'medium',     name: 'Medium',     value: '12px',        valueSm: '9px',        description: 'Balanced' },
+  { id: 'pill',       name: 'Pill',       value: '18px',        valueSm: '14px',       description: 'Friendly' },
+  { id: 'extra',      name: 'Extra',      value: '28px',        valueSm: '20px',       description: 'Very Soft' },
+  { id: 'leaf',       name: 'Leaf',       value: '24px 4px',    valueSm: '18px 3px',   description: 'Organic' },
+  { id: 'asymmetric', name: 'Asymmetric', value: '16px 4px 16px 4px', valueSm: '12px 3px 12px 3px', description: 'Modern' },
+  { id: 'organic',    name: 'Organic',    value: '30% 70% 70% 30% / 30% 30% 70% 70%', valueSm: '30% 70% 70% 30% / 30% 30% 70% 70%', description: 'Fluid' },
 ] as const;
 
 export const DENSITY_OPTIONS = [
+  { id: 'ultra-compact', name: 'Ultra Compact', description: 'Maximum information density' },
   { id: 'compact',     name: 'Compact',     description: 'More data, less space' },
   { id: 'comfortable', name: 'Comfortable', description: 'Balanced layout' },
   { id: 'spacious',    name: 'Spacious',    description: 'Extra breathing room' },
+  { id: 'airy',        name: 'Airy',        description: 'Maximum whitespace' },
 ] as const;
 
 const STORAGE_KEY = 'qms-appearance';
@@ -166,6 +208,12 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   compactTables: false,
   showBreadcrumbs: false,
   iconStyle: 'outline',
+  glassNavbar: false,
+  animatePageTransitions: true,
+  hoverEffects: true,
+  frostedOverlays: false,
+  highContrast: false,
+  contentSpacing: 'standard',
   dashboardStyle: 'modern',
 };
 
@@ -228,6 +276,7 @@ export function applyAppearance(settings: AppearanceSettings) {
   if (settings.customAccent) accentHex = settings.customAccent;
 
   root.style.setProperty('--accent', accentHex);
+  root.style.setProperty('--accent-raw', hexToRgbValues(accentHex));
   root.style.setProperty('--accent-dim', adjustColor(accentHex, -20));
   root.style.setProperty('--accent-light',
     settings.themeMode === 'dark'
@@ -235,6 +284,9 @@ export function applyAppearance(settings: AppearanceSettings) {
       : adjustColor(accentHex, 80, 0.12)
   );
   root.style.setProperty('--color-saturation', `${settings.colorSaturation ?? 100}%`);
+
+  const bg1Hex = settings.themeMode === 'dark' ? '#161822' : '#ffffff';
+  root.style.setProperty('--bg-1-raw', hexToRgbValues(bg1Hex));
 
   // 3. Background pattern on #content
   const app = document.getElementById('app');
@@ -265,16 +317,27 @@ export function applyAppearance(settings: AppearanceSettings) {
 
   // 7. Animation level
   root.setAttribute('data-animation', settings.animationLevel ?? 'subtle');
-  if (settings.animationLevel === 'none') {
-    root.style.setProperty('--transition-speed', '0ms');
-  } else if (settings.animationLevel === 'subtle') {
-    root.style.setProperty('--transition-speed', '150ms');
-  } else {
-    root.style.setProperty('--transition-speed', '300ms');
-  }
+  const animMap: Record<string, string> = {
+    none: '0ms',
+    subtle: '150ms',
+    standard: '300ms',
+    smooth: '450ms',
+    dynamic: '600ms',
+    playful: '800ms',
+    heavy: '1200ms'
+  };
+  const animSpeed = animMap[settings.animationLevel ?? 'subtle'] ?? '300ms';
+  root.style.setProperty('--transition-speed', animSpeed);
 
   // 8. UI Scale
-  const scaleMap: Record<string, string> = { sm: '13px', md: '14px', lg: '15px' };
+  const scaleMap: Record<string, string> = {
+    xs: '12px',
+    sm: '13px',
+    md: '14px',
+    lg: '15px',
+    xl: '16px',
+    '2xl': '18px'
+  };
   const baseSize = scaleMap[settings.uiScale ?? 'md'] ?? '14px';
   root.style.setProperty('--ui-base-size', baseSize);
   document.body.style.fontSize = baseSize;
@@ -285,9 +348,11 @@ export function applyAppearance(settings: AppearanceSettings) {
   // 10. Density
   root.setAttribute('data-density', settings.density ?? 'comfortable');
   const densityPad: Record<string, string> = {
-    compact: '10px',
+    'ultra-compact': '6px',
+    compact: '12px',
     comfortable: '18px',
     spacious: '26px',
+    airy: '36px',
   };
   root.style.setProperty('--density-pad', densityPad[settings.density ?? 'comfortable']);
 
@@ -307,17 +372,30 @@ export function applyAppearance(settings: AppearanceSettings) {
 
   // 12. Shadow intensity
   const shadowMap: Record<string, { sm: string; md: string; lg: string }> = {
-    none:   { sm: 'none', md: 'none', lg: 'none' },
-    soft:   { sm: '0 1px 2px rgba(0,0,0,0.05)', md: '0 4px 6px -1px rgba(0,0,0,0.07),0 2px 4px rgba(0,0,0,0.04)', lg: '0 10px 15px -3px rgba(0,0,0,0.08),0 4px 6px rgba(0,0,0,0.04)' },
-    medium: { sm: '0 1px 3px rgba(0,0,0,0.1)',  md: '0 4px 8px rgba(0,0,0,0.12)',                                   lg: '0 12px 20px rgba(0,0,0,0.15)' },
-    strong: { sm: '0 2px 4px rgba(0,0,0,0.15)', md: '0 6px 12px rgba(0,0,0,0.2)',                                   lg: '0 16px 32px rgba(0,0,0,0.25)' },
+    none:       { sm: 'none', md: 'none', lg: 'none' },
+    flat:       { sm: '0 1px 1px rgba(0,0,0,0.02)', md: '0 2px 2px rgba(0,0,0,0.03)', lg: '0 4px 4px rgba(0,0,0,0.04)' },
+    soft:       { sm: '0 1px 2px rgba(0,0,0,0.05)', md: '0 4px 6px -1px rgba(0,0,0,0.07)', lg: '0 10px 15px -3px rgba(0,0,0,0.08)' },
+    medium:     { sm: '0 1px 3px rgba(0,0,0,0.1)',  md: '0 4px 8px rgba(0,0,0,0.12)',     lg: '0 12px 20px rgba(0,0,0,0.15)' },
+    deep:       { sm: '0 2px 5px rgba(0,0,0,0.15)', md: '0 8px 16px rgba(0,0,0,0.18)',    lg: '0 20px 40px rgba(0,0,0,0.22)' },
+    'extra-deep': { sm: '0 4px 10px rgba(0,0,0,0.2)', md: '0 12px 24px rgba(0,0,0,0.25)',  lg: '0 30px 60px rgba(0,0,0,0.35)' },
+    floating:   { sm: '0 8px 20px rgba(0,0,0,0.1)', md: '0 15px 35px rgba(0,0,0,0.15)',  lg: '0 25px 60px rgba(0,0,0,0.2)' },
+    inner:      { sm: 'inset 0 1px 2px rgba(0,0,0,0.1)', md: 'inset 0 2px 4px rgba(0,0,0,0.15)', lg: 'inset 0 4px 8px rgba(0,0,0,0.2)' },
+    brutalist:  { sm: '2px 2px 0 #000', md: '4px 4px 0 #000', lg: '8px 8px 0 #000' }
   };
-  const sMap = shadowMap[settings.shadowIntensity ?? 'soft'];
+  const sMap = shadowMap[settings.shadowIntensity ?? 'soft'] ?? shadowMap.soft;
   root.style.setProperty('--shadow-sm', sMap.sm);
   root.style.setProperty('--shadow-md', sMap.md);
   root.style.setProperty('--shadow-lg', sMap.lg);
 
-  // 13. Topbar style
+  // 13. Interface Extras
+  root.setAttribute('data-glass-navbar', String(settings.glassNavbar ?? false));
+  root.setAttribute('data-animate-pages', String(settings.animatePageTransitions ?? true));
+  root.setAttribute('data-hover-effects', String(settings.hoverEffects ?? true));
+  root.setAttribute('data-frosted', String(settings.frostedOverlays ?? false));
+  root.setAttribute('data-high-contrast', String(settings.highContrast ?? false));
+  root.setAttribute('data-content-spacing', settings.contentSpacing ?? 'standard');
+
+  // 14. Topbar style
   root.setAttribute('data-topbar', settings.topbarStyle ?? 'default');
 
   // 14. Sidebar accent
@@ -346,4 +424,11 @@ function adjustColor(hex: string, amount: number, alpha?: number): string {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+function hexToRgbValues(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r}, ${g}, ${b}`;
 }

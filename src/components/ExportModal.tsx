@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { FileDown, FileText, FileSpreadsheet, X, ChevronDown, Layers } from 'lucide-react';
-import {
-  createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel,
-  proTable, embedAttachments, addPageFooters, drawSignatureRow
-} from '../utils/pdfExport';
+import { embedAttachments } from '../utils/pdfExportUtils';
+import { exportTableToPDF, TableExportOptions } from '../utils/pdfExportUtils';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -74,55 +72,34 @@ export function ExportModal({
       XLSX.writeFile(workbook, `${title}.xlsx`);
 
     } else if (format === 'pdf') {
-      const doc  = createDoc({ orientation, paperSize: pageSize });
-      let   y    = drawPdfHeader(doc, title,
-        `Records exported: ${filteredData.length}  |  Date range: ${startDate || 'All'} – ${endDate || 'All'}`,
-        moduleId ?? title
-      );
-
-      // Info grid (counts)
-      y = drawInfoGrid(doc, y, [
-        { label: 'Module',          value: title },
-        { label: 'Total Records',   value: String(filteredData.length) },
-        { label: 'Export Date',     value: new Date().toLocaleDateString('en-GB') },
-        { label: 'Orientation',     value: orientation === 'p' ? 'Portrait' : 'Landscape' },
-      ]);
-
-      y = drawSectionLabel(doc, y, 'Data Table');
-
-      const head = [columns.map(c => c.label)];
-      const body = filteredData.map(item =>
+      const headColumns = columns.map(c => c.label);
+      const rowData = filteredData.map(item =>
         columns.map(c => {
           const v = item[c.key];
           return v !== null && v !== undefined ? String(v) : '—';
         }),
       );
 
-      // Smart column sizing for common labels
-      const columnStyles: any = {};
-      columns.forEach((col, idx) => {
-        const lbl = col.label.toLowerCase();
-        if (lbl.includes('issue') || lbl.includes('description') || lbl.includes('nc') || lbl.includes('clause')) {
-           columnStyles[idx] = { cellWidth: 'auto', minCellWidth: 40 };
-        } else if (lbl.includes('date') || lbl.includes('id') || lbl.includes('status')) {
-           columnStyles[idx] = { halign: 'center', cellWidth: orientation === 'l' ? 30 : 22 };
-        }
-      });
-
-      y = proTable(doc, y, head, body, { columnStyles });
-
-      // Collect attachments from all records if key provided
+      let allAttachments: string[] = [];
       if (attachmentKey) {
-        const allAttachments: string[] = filteredData.flatMap(
+        allAttachments = filteredData.flatMap(
           item => (Array.isArray(item[attachmentKey]) ? item[attachmentKey] : [])
         );
-        if (allAttachments.length > 0) {
-          await embedAttachments(doc, allAttachments, 'EXPORTED EVIDENCE PHOTOS');
-        }
       }
 
-      addPageFooters(doc);
-      doc.save(`${title.replace(/\s+/g, '_')}.pdf`);
+      await exportTableToPDF({
+        moduleName: title,
+        moduleId: moduleId ?? title,
+        columns: headColumns,
+        rows: rowData,
+        fileName: title.replace(/\s+/g, '_'),
+        orientation: orientation === 'p' ? 'portrait' : 'landscape',
+        summary: [
+          `Date Range: ${startDate || 'All'} to ${endDate || 'All'}`,
+          `Export Date: ${new Date().toLocaleDateString('en-GB')}`
+        ],
+        attachments: allAttachments
+      });
     }
 
     onClose();

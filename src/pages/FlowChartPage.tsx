@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   GitBranch, Plus, Search, Trash2, Edit2, Save, FileDown, X, Copy,
@@ -6,21 +6,21 @@ import {
   AlertTriangle, CheckCircle2, Clock, Settings2, Layers, Maximize2,
   Scissors, Activity, Package, Shield, User, Calendar, Tag,
   Zap, RefreshCw, Image as ImageIcon, FileText, Filter,
-  ArrowRight, Download
+  ArrowRight, Download, ChevronDown, ChevronRight, GripVertical, Settings
 } from 'lucide-react';
-import {
-  ReactFlow, Controls, Background, MiniMap, addEdge, applyNodeChanges, applyEdgeChanges,
-  Node, Edge, Connection, NodeChange, EdgeChange, BackgroundVariant,
-  ReactFlowProvider, useReactFlow, Handle, Position, NodeProps,
-  useNodesInitialized,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import { jsPDF } from 'jspdf';
+import mermaid from 'mermaid';
 import { db } from '../db/db';
-import { addPageFooters, drawPdfHeader } from '../utils/pdfExport';
+import { cn } from '../lib/utils';
 
 // ── Types ───────────────────────────────────────────────
 export type FlowStatus = 'Draft' | 'Pending Review' | 'Approved' | 'Archived';
+
+export interface FlowStep {
+  id: string;
+  type: 'process' | 'decision' | 'qc' | 'terminal' | 'record';
+  label: string;
+  links: { targetId: string; label?: string }[];
+}
 
 export interface FlowChartRecord {
   id: string;
@@ -32,9 +32,9 @@ export interface FlowChartRecord {
   status: FlowStatus;
   createdAt: string;
   updatedAt: string;
-  nodes: Node[];
-  edges: Edge[];
   description: string;
+  mermaidDefinition: string; // The source of truth for the chart
+  steps?: FlowStep[]; // Structured steps for the builder
   changeHistory: { date: string; user: string; note: string }[];
 }
 
@@ -54,1005 +54,539 @@ const DEPT_ICONS: Record<string, any> = {
   'Lab': Zap, 'IE': Activity, 'HR': User, 'Washing': RefreshCw,
 };
 
-// ── Node style helpers ───────────────────────────────────
-const handleStyle = (color: string) => ({ background: color, border: '2px solid #fff', width: 10, height: 10 });
+// ── Mermaid Styles ───────────────────────────────────────
+const MERMAID_THEME = `
+  %%{init: { 
+    'theme': 'base', 
+    'themeVariables': {
+      'primaryColor': '#1d4ed8',
+      'primaryTextColor': '#fff',
+      'primaryBorderColor': '#1e3a8a',
+      'lineColor': '#475569',
+      'secondaryColor': '#f59e0b',
+      'tertiaryColor': '#7c3aed',
+      'mainBkg': '#ffffff',
+      'nodeBorder': '#1e293b',
+      'clusterBkg': '#f8fafc',
+      'titleColor': '#1e293b',
+      'edgeLabelBackground': '#ffffff',
+      'fontFamily': 'Inter, sans-serif'
+    }
+  }}%%
+  graph TD
+  
+  classDef terminal fill:#1d4ed8,stroke:#1e3a8a,stroke-width:2px,color:#fff,rx:20,ry:20;
+  classDef process fill:#1565c0,stroke:#1e3a8a,stroke-width:2px,color:#fff;
+  classDef qc fill:#7c3aed,stroke:#4c1d95,stroke-width:2px,color:#fff;
+  classDef decision fill:#f59e0b,stroke:#b45309,stroke-width:2px,color:#1c1917;
+  classDef record fill:#d97706,stroke:#92400e,stroke-width:2px,color:#1c1917;
+`;
 
-function NodeHandles({ color }: { color: string }) {
-  return (
-    <>
-      <Handle type="source" position={Position.Bottom} style={handleStyle(color)} />
-      <Handle type="target" position={Position.Top}    style={handleStyle(color)} />
-      <Handle type="source" position={Position.Right}  style={handleStyle(color)} />
-      <Handle type="target" position={Position.Left}   style={handleStyle(color)} />
-    </>
-  );
+// ── Helper: Convert steps to mermaid code ────────────────
+function stepsToMermaid(steps: FlowStep[]): string {
+  let code = 'graph TD\n';
+  steps.forEach(step => {
+    let shape = '';
+    switch(step.type) {
+      case 'terminal': shape = `([${step.label}])`; break;
+      case 'decision': shape = `{${step.label}}`; break;
+      case 'qc': shape = `[[${step.label}]]`; break;
+      case 'record': shape = `[/${step.label}/]`; break;
+      default: shape = `[${step.label}]`;
+    }
+    code += `    ${step.id}${shape}:::${step.type}\n`;
+  });
+  
+  steps.forEach(step => {
+    (step.links || []).forEach(link => {
+      const labelText = link.label ? `|${link.label}| ` : '';
+      code += `    ${step.id} --> ${labelText}${link.targetId}\n`;
+    });
+  });
+  
+  return code;
 }
 
-// ── Custom Node Types ────────────────────────────────────
-function TerminalNode({ data, selected }: NodeProps) {
+// ── Mermaid Component ───────────────────────────────────
+function MermaidPreview({ chartCode }: { chartCode: string }) {
+  const [svg, setSvg] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'loose',
+      theme: 'base',
+      fontFamily: 'Inter, sans-serif'
+    });
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const renderChart = async () => {
+      if (!chartCode) {
+        setSvg('');
+        return;
+      }
+      try {
+        setError(null);
+        const id = `mermaid-${Math.random().toString(36).substring(2, 11)}`;
+        
+        // Validation: Mermaid needs a graph type
+        if (!/^\s*(graph|flowchart|sequenceDiagram|gantt|classDiagram|stateDiagram|erDiagram|journey|pie|gitGraph)/i.test(chartCode)) {
+           // If it's just steps, it might be missing the header. 
+           // But our engine adds MERMAID_THEME which has graph TD.
+        }
+
+        const { svg: renderedSvg } = await mermaid.render(id, MERMAID_THEME + '\n' + chartCode);
+        if (!isCancelled) setSvg(renderedSvg);
+      } catch (err) {
+        console.error('Mermaid render error:', err);
+        if (!isCancelled) {
+          setError(String(err));
+          // Try fallback rendering without theme variables
+          try {
+             const fallbackId = `fallback-${Math.random().toString(36).substring(2, 11)}`;
+             const { svg: fallbackSvg } = await mermaid.render(fallbackId, 'graph TD\n' + chartCode);
+             setSvg(fallbackSvg);
+             setError(null);
+          } catch (e) {
+             setSvg('');
+          }
+        }
+      }
+    };
+    renderChart();
+    return () => { isCancelled = true; };
+  }, [chartCode]);
+
   return (
-    <div style={{
-      background: 'linear-gradient(135deg,#1d4ed8,#1e40af)',
-      border: `3px solid ${selected ? '#93c5fd' : '#1e3a8a'}`,
-      borderRadius: 50, padding: '12px 32px', minWidth: 170, textAlign: 'center',
-      boxShadow: selected ? '0 0 0 4px rgba(96,165,250,0.3),0 8px 24px rgba(29,78,216,0.5)' : '0 4px 16px rgba(29,78,216,0.4)',
-    }}>
-      <NodeHandles color="#1e3a8a" />
-      <span style={{ color: '#fff', fontWeight: 800, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', lineHeight: 1.3, display: 'block', fontFamily: 'Inter,Arial,sans-serif' }}>
-        {data.label as string}
-      </span>
+    <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-white rounded-2xl overflow-auto select-none shadow-inner relative">
+      {error && (
+        <div className="absolute top-4 right-4 bg-red-50 text-red-500 text-[10px] px-2 py-1 rounded border border-red-100 z-10">
+          Render Warning
+        </div>
+      )}
+      {svg ? (
+        <div className="w-full h-full flex items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />
+      ) : (
+        <div className="flex flex-col items-center gap-4 opacity-20">
+          <Network className="w-16 h-16" />
+          <p className="text-sm font-bold uppercase tracking-widest">Generating Visual...</p>
+        </div>
+      )}
     </div>
   );
 }
 
-function ProcessNode({ data, selected }: NodeProps) {
-  return (
-    <div style={{
-      background: 'linear-gradient(135deg,#1d4ed8,#1565c0)',
-      border: `3px solid ${selected ? '#93c5fd' : '#1e3a8a'}`,
-      borderRadius: 8, padding: '14px 20px', minWidth: 190, textAlign: 'center',
-      boxShadow: selected ? '0 0 0 3px rgba(96,165,250,0.3)' : '0 2px 12px rgba(0,0,0,0.25)',
-    }}>
-      <NodeHandles color="#1e3a8a" />
-      <span style={{ color: '#fff', fontWeight: 700, fontSize: 12, letterSpacing: 0.5, lineHeight: 1.4, display: 'block', fontFamily: 'Inter,Arial,sans-serif' }}>
-        {data.label as string}
-      </span>
-    </div>
-  );
-}
-
-function QCNode({ data, selected }: NodeProps) {
-  return (
-    <div style={{
-      background: 'linear-gradient(135deg,#7c3aed,#6d28d9)',
-      border: `3px solid ${selected ? '#c4b5fd' : '#4c1d95'}`,
-      borderRadius: 8, padding: '14px 18px', minWidth: 180, textAlign: 'center',
-      boxShadow: selected ? '0 0 0 3px rgba(167,139,250,0.4)' : '0 2px 12px rgba(124,58,237,0.4)',
-    }}>
-      <NodeHandles color="#4c1d95" />
-      <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 8, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 3, fontFamily: 'Inter,Arial,sans-serif' }}>QC Inspection</div>
-      <span style={{ color: '#fff', fontWeight: 700, fontSize: 12, lineHeight: 1.4, display: 'block', fontFamily: 'Inter,Arial,sans-serif' }}>
-        {data.label as string}
-      </span>
-    </div>
-  );
-}
-
-function RecordNode({ data, selected }: NodeProps) {
-  return (
-    <div style={{
-      background: 'linear-gradient(135deg,#f59e0b,#d97706)',
-      border: `3px solid ${selected ? '#fff' : '#92400e'}`,
-      borderRadius: 8, padding: '10px 18px', minWidth: 140, textAlign: 'center',
-      boxShadow: selected ? '0 0 0 3px rgba(252,211,77,0.5)' : '0 2px 10px rgba(217,119,6,0.35)',
-    }}>
-      <NodeHandles color="#92400e" />
-      <div style={{ color: 'rgba(28,9,0,0.6)', fontSize: 8, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 2, fontFamily: 'Inter,Arial,sans-serif' }}>Record</div>
-      <span style={{ color: '#1c1917', fontWeight: 700, fontSize: 11, lineHeight: 1.35, display: 'block', fontFamily: 'Inter,Arial,sans-serif' }}>
-        {data.label as string}
-      </span>
-    </div>
-  );
-}
-
-function DecisionNode({ data, selected }: NodeProps) {
-  return (
-    <div style={{ padding: 0, background: 'transparent', width: 140, height: 100, position: 'relative' }}>
-      <NodeHandles color="#78350f" />
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%', width: 85, height: 85,
-        transform: 'translate(-50%,-50%) rotate(45deg)',
-        background: 'linear-gradient(135deg,#f59e0b,#d97706)',
-        border: `3px solid ${selected ? '#fbbf24' : '#78350f'}`,
-        boxShadow: selected ? '0 0 0 3px rgba(251,191,36,0.4)' : '0 2px 12px rgba(0,0,0,0.3)',
-      }} />
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-        color: '#1c1917', fontWeight: 800, fontSize: 11, textAlign: 'center',
-        padding: '0 10px', fontFamily: 'Inter,Arial,sans-serif', zIndex: 2, pointerEvents: 'none', lineHeight: 1.3,
-      }}>{data.label as string}</div>
-    </div>
-  );
-}
-
-function DecisionPassNode({ data, selected }: NodeProps) {
-  return (
-    <div style={{ padding: 0, background: 'transparent', width: 110, height: 85, position: 'relative' }}>
-      <NodeHandles color="#14532d" />
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%', width: 72, height: 72,
-        transform: 'translate(-50%,-50%) rotate(45deg)',
-        background: 'linear-gradient(135deg,#22c55e,#16a34a)',
-        border: `3px solid ${selected ? '#86efac' : '#14532d'}`,
-        boxShadow: selected ? '0 0 0 3px rgba(134,239,172,0.4)' : '0 2px 12px rgba(0,0,0,0.3)',
-      }} />
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-        color: '#fff', fontWeight: 900, fontSize: 13, textAlign: 'center',
-        fontFamily: 'Inter,Arial,sans-serif', zIndex: 2, pointerEvents: 'none',
-      }}>{data.label as string}</div>
-    </div>
-  );
-}
-
-function DecisionFailNode({ data, selected }: NodeProps) {
-  return (
-    <div style={{ padding: 0, background: 'transparent', width: 110, height: 85, position: 'relative' }}>
-      <NodeHandles color="#7f1d1d" />
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%', width: 72, height: 72,
-        transform: 'translate(-50%,-50%) rotate(45deg)',
-        background: 'linear-gradient(135deg,#ef4444,#dc2626)',
-        border: `3px solid ${selected ? '#fca5a5' : '#7f1d1d'}`,
-        boxShadow: selected ? '0 0 0 3px rgba(252,165,165,0.4)' : '0 2px 12px rgba(0,0,0,0.3)',
-      }} />
-      <div style={{
-        position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-        color: '#fff', fontWeight: 900, fontSize: 13, textAlign: 'center',
-        fontFamily: 'Inter,Arial,sans-serif', zIndex: 2, pointerEvents: 'none',
-      }}>{data.label as string}</div>
-    </div>
-  );
-}
-
-const NODE_TYPES = {
-  terminal: TerminalNode, process: ProcessNode, qc: QCNode,
-  decision: DecisionNode, decision_pass: DecisionPassNode, decision_fail: DecisionFailNode,
-  record: RecordNode,
-};
-
-// ── Node factory ─────────────────────────────────────────
-function makeNode(type: string, label: string, x: number, y: number): Node {
-  return {
-    id: `n${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    position: { x, y }, data: { label }, type,
-  };
-}
-
-function makeEdge(source: string, target: string, label?: string): Edge {
-  return {
-    id: `e${source}_${target}_${Date.now()}`,
-    source, target, animated: false,
-    label: label || undefined,
-    labelStyle: label ? { fill: '#1e3a5f', fontWeight: 700, fontSize: 11, fontFamily: 'Inter,Arial' } : undefined,
-    labelBgStyle: label ? { fill: '#fff', fillOpacity: 0.9 } : undefined,
-    labelBgPadding: [6, 3] as [number, number],
-    style: { strokeWidth: 2.5, stroke: '#1e293b' },
-    markerEnd: { type: 'arrowclosed' as any, color: '#1e293b', width: 14, height: 14 },
-  };
-}
-
-// ── Templates ────────────────────────────────────────────
-function buildTemplateFlow(steps: string[], types?: string[]): { nodes: Node[]; edges: Edge[] } {
-  const nodes: Node[] = steps.map((label, i) =>
-    makeNode(types?.[i] || (i === 0 || i === steps.length - 1 ? 'terminal' : 'process'), label, 280, i * 130)
-  );
-  const edges: Edge[] = nodes.slice(0, -1).map((n, i) => makeEdge(n.id, nodes[i + 1].id));
-  return { nodes, edges };
-}
-
-// ── Complex garment flow chart builders (branching layouts) ──────
-function buildCuttingSectionFlow(): { nodes: Node[]; edges: Edge[] } {
-  const id = (s: string) => 'cs_' + s;
-  const nodes: Node[] = [
-    { id: id('1'), type: 'terminal', position: { x: 280, y: 0 }, data: { label: 'FABRIC RECEIVE FROM\nWEARHOUSE' } },
-    { id: id('2'), type: 'process', position: { x: 220, y: 140 }, data: { label: 'ROLL TO ROLL SHADE, GSM &\nALL LAB TEST REPORT CHECK' } },
-    { id: id('3'), type: 'record', position: { x: 560, y: 140 }, data: { label: 'KEEP RECORD' } },
-    { id: id('4'), type: 'process', position: { x: 280, y: 280 }, data: { label: 'PATTERN TEST\n(GMTS MAKE)' } },
-    { id: id('5'), type: 'qc', position: { x: 210, y: 410 }, data: { label: 'REVIEW FABRIC INSPECTION\n(4 POINT SYSTEM MIN 10%)\nIF FAIL 20% IF FAIL 100%\nINSPECTION' } },
-    { id: id('6'), type: 'record', position: { x: 560, y: 430 }, data: { label: 'MAKE REPORT' } },
-    { id: id('7'), type: 'decision_pass', position: { x: 130, y: 600 }, data: { label: 'PASS' } },
-    { id: id('8'), type: 'decision_fail', position: { x: 520, y: 600 }, data: { label: 'FAIL' } },
-    { id: id('9'), type: 'process', position: { x: 80, y: 730 }, data: { label: 'SENT RELAX ZONE' } },
-    { id: id('10'), type: 'process', position: { x: 55, y: 850 }, data: { label: 'DO PLAN COUNTRY & GROUP' } },
-    { id: id('11'), type: 'process', position: { x: 80, y: 970 }, data: { label: 'DELIVERY TO CUTTING' } },
-    { id: id('12'), type: 'process', position: { x: 55, y: 1090 }, data: { label: 'SPREADING & LAY HEIGHT' } },
-    { id: id('13'), type: 'process', position: { x: 40, y: 1210 }, data: { label: 'MARKER CHECK WITH RATIO' } },
-    { id: id('14'), type: 'qc', position: { x: 55, y: 1330 }, data: { label: 'RANDOM M-MENT CHECK' } },
-    { id: id('15'), type: 'qc', position: { x: 55, y: 1450 }, data: { label: 'CUT PANEL CHECK 100%' } },
-    { id: id('16'), type: 'decision', position: { x: 310, y: 1460 }, data: { label: 'IF PRINT /\nEMBO' } },
-    { id: id('17'), type: 'decision_pass', position: { x: 95, y: 1600 }, data: { label: 'PASS' } },
-    { id: id('18'), type: 'terminal', position: { x: 55, y: 1740 }, data: { label: 'SEND TO\nSEWING' } },
-    { id: id('19'), type: 'process', position: { x: 295, y: 1600 }, data: { label: 'SENT TO\nPRINT / EMBO' } },
-    { id: id('20'), type: 'qc', position: { x: 295, y: 1740 }, data: { label: '100% CHECK\nPRINT / EMBO' } },
-    { id: id('21'), type: 'decision_pass', position: { x: 240, y: 1890 }, data: { label: 'PASS' } },
-    { id: id('22'), type: 'decision_fail', position: { x: 420, y: 1890 }, data: { label: 'FAIL' } },
-    { id: id('23'), type: 'process', position: { x: 500, y: 730 }, data: { label: 'RETURN TO SUP' } },
-    { id: id('24'), type: 'process', position: { x: 500, y: 860 }, data: { label: 'RE-PROCESS' } },
-    { id: id('25'), type: 'qc', position: { x: 500, y: 990 }, data: { label: 'RE-INSPECTION' } },
-    { id: id('26'), type: 'decision_pass', position: { x: 440, y: 1140 }, data: { label: 'PASS' } },
-    { id: id('27'), type: 'decision_fail', position: { x: 590, y: 1140 }, data: { label: 'FAIL' } },
-    { id: id('28'), type: 'record', position: { x: 545, y: 1300 }, data: { label: 'Immediate corrective\naction / sorting' } },
-  ];
-  const edges: Edge[] = [
-    makeEdge(id('1'), id('2')), makeEdge(id('2'), id('3')), makeEdge(id('2'), id('4')),
-    makeEdge(id('4'), id('5')), makeEdge(id('5'), id('6')),
-    makeEdge(id('5'), id('7')), makeEdge(id('5'), id('8')),
-    makeEdge(id('7'), id('9')), makeEdge(id('8'), id('23')),
-    makeEdge(id('9'), id('10')), makeEdge(id('10'), id('11')),
-    makeEdge(id('11'), id('12')), makeEdge(id('12'), id('13')),
-    makeEdge(id('13'), id('14')), makeEdge(id('14'), id('15')),
-    makeEdge(id('15'), id('16')), makeEdge(id('15'), id('17')),
-    makeEdge(id('17'), id('18')), makeEdge(id('16'), id('19')),
-    makeEdge(id('19'), id('20')), makeEdge(id('20'), id('21')),
-    makeEdge(id('20'), id('22')), makeEdge(id('21'), id('18')),
-    makeEdge(id('22'), id('28')),
-    makeEdge(id('23'), id('24')), makeEdge(id('24'), id('25')),
-    makeEdge(id('25'), id('26')), makeEdge(id('25'), id('27')),
-    makeEdge(id('27'), id('28')),
-  ];
-  return { nodes, edges };
-}
-
-function buildSewingSectionFlow(): { nodes: Node[]; edges: Edge[] } {
-  const id = (s: string) => 'sw_' + s;
-  const nodes: Node[] = [
-    { id: id('1'), type: 'terminal', position: { x: 280, y: 0 }, data: { label: 'RECEIVE CUT PANELS\nFROM CUTTING' } },
-    { id: id('2'), type: 'process', position: { x: 220, y: 140 }, data: { label: 'BUNDLE CHECK &\nCOUNTING' } },
-    { id: id('3'), type: 'record', position: { x: 550, y: 140 }, data: { label: 'BUNDLE RECORD' } },
-    { id: id('4'), type: 'process', position: { x: 280, y: 280 }, data: { label: 'LINE LOADING &\nLAYOUT SETUP' } },
-    { id: id('5'), type: 'process', position: { x: 280, y: 400 }, data: { label: 'PILOT RUN\n(FIRST 5 PCS)' } },
-    { id: id('6'), type: 'qc', position: { x: 250, y: 530 }, data: { label: 'INLINE QC\nINSPECTION' } },
-    { id: id('7'), type: 'decision_pass', position: { x: 120, y: 690 }, data: { label: 'PASS' } },
-    { id: id('8'), type: 'decision_fail', position: { x: 470, y: 690 }, data: { label: 'FAIL' } },
-    { id: id('9'), type: 'qc', position: { x: 80, y: 830 }, data: { label: 'END LINE\nINSPECTION 100%' } },
-    { id: id('10'), type: 'process', position: { x: 470, y: 830 }, data: { label: 'REWORK /\nALTERATION' } },
-    { id: id('11'), type: 'decision_pass', position: { x: 60, y: 980 }, data: { label: 'PASS' } },
-    { id: id('12'), type: 'decision_fail', position: { x: 240, y: 980 }, data: { label: 'FAIL' } },
-    { id: id('13'), type: 'terminal', position: { x: 60, y: 1120 }, data: { label: 'SEND TO\nFINISHING' } },
-    { id: id('14'), type: 'record', position: { x: 470, y: 980 }, data: { label: 'DEFECT RECORD\n& ANALYSIS' } },
-  ];
-  const edges: Edge[] = [
-    makeEdge(id('1'), id('2')), makeEdge(id('2'), id('3')), makeEdge(id('2'), id('4')),
-    makeEdge(id('4'), id('5')), makeEdge(id('5'), id('6')),
-    makeEdge(id('6'), id('7')), makeEdge(id('6'), id('8')),
-    makeEdge(id('7'), id('9')), makeEdge(id('8'), id('10')),
-    makeEdge(id('10'), id('6')), makeEdge(id('8'), id('14')),
-    makeEdge(id('9'), id('11')), makeEdge(id('9'), id('12')),
-    makeEdge(id('11'), id('13')), makeEdge(id('12'), id('10')),
-  ];
-  return { nodes, edges };
-}
-
-function buildFinishingPackingFlow(): { nodes: Node[]; edges: Edge[] } {
-  const id = (s: string) => 'fp_' + s;
-  const nodes: Node[] = [
-    { id: id('1'), type: 'terminal', position: { x: 280, y: 0 }, data: { label: 'RECEIVE FROM\nSEWING' } },
-    { id: id('2'), type: 'process', position: { x: 280, y: 130 }, data: { label: 'THREAD CUTTING\n& TRIMMING' } },
-    { id: id('3'), type: 'process', position: { x: 280, y: 260 }, data: { label: 'SPOT CLEANING\n& STAIN REMOVAL' } },
-    { id: id('4'), type: 'process', position: { x: 280, y: 390 }, data: { label: 'IRONING /\nPRESSING' } },
-    { id: id('5'), type: 'qc', position: { x: 250, y: 520 }, data: { label: 'FINISHING QC\nINSPECTION' } },
-    { id: id('6'), type: 'decision_pass', position: { x: 120, y: 680 }, data: { label: 'PASS' } },
-    { id: id('7'), type: 'decision_fail', position: { x: 470, y: 680 }, data: { label: 'FAIL' } },
-    { id: id('8'), type: 'process', position: { x: 80, y: 810 }, data: { label: 'TAGGING &\nLABELLING' } },
-    { id: id('9'), type: 'process', position: { x: 80, y: 940 }, data: { label: 'POLY PACKING\n& ASSORTMENT' } },
-    { id: id('10'), type: 'process', position: { x: 80, y: 1070 }, data: { label: 'CARTON PACKING\n& MARKING' } },
-    { id: id('11'), type: 'qc', position: { x: 80, y: 1200 }, data: { label: 'FINAL INSPECTION\n(AQL 2.5)' } },
-    { id: id('12'), type: 'decision_pass', position: { x: 50, y: 1360 }, data: { label: 'PASS' } },
-    { id: id('13'), type: 'decision_fail', position: { x: 260, y: 1360 }, data: { label: 'FAIL' } },
-    { id: id('14'), type: 'terminal', position: { x: 50, y: 1500 }, data: { label: 'SHIPMENT\nRELEASE' } },
-    { id: id('15'), type: 'process', position: { x: 470, y: 810 }, data: { label: 'REWORK /\nRE-IRON' } },
-    { id: id('16'), type: 'process', position: { x: 260, y: 1500 }, data: { label: 'RE-INSPECTION\n& SORTING' } },
-  ];
-  const edges: Edge[] = [
-    makeEdge(id('1'), id('2')), makeEdge(id('2'), id('3')), makeEdge(id('3'), id('4')),
-    makeEdge(id('4'), id('5')), makeEdge(id('5'), id('6')), makeEdge(id('5'), id('7')),
-    makeEdge(id('6'), id('8')), makeEdge(id('7'), id('15')), makeEdge(id('15'), id('5')),
-    makeEdge(id('8'), id('9')), makeEdge(id('9'), id('10')), makeEdge(id('10'), id('11')),
-    makeEdge(id('11'), id('12')), makeEdge(id('11'), id('13')),
-    makeEdge(id('12'), id('14')), makeEdge(id('13'), id('16')), makeEdge(id('16'), id('11')),
-  ];
-  return { nodes, edges };
-}
-
-function buildWashingFlow(): { nodes: Node[]; edges: Edge[] } {
-  const id = (s: string) => 'ws_' + s;
-  const nodes: Node[] = [
-    { id: id('1'), type: 'terminal', position: { x: 280, y: 0 }, data: { label: 'RECEIVE GARMENTS\nFOR WASHING' } },
-    { id: id('2'), type: 'process', position: { x: 280, y: 140 }, data: { label: 'LOT WISE\nSORTING' } },
-    { id: id('3'), type: 'process', position: { x: 250, y: 270 }, data: { label: 'RECIPE SETUP &\nCHEMICAL MIXING' } },
-    { id: id('4'), type: 'record', position: { x: 550, y: 270 }, data: { label: 'RECIPE RECORD' } },
-    { id: id('5'), type: 'process', position: { x: 280, y: 400 }, data: { label: 'SAMPLE WASH\n(APPROVAL)' } },
-    { id: id('6'), type: 'decision_pass', position: { x: 120, y: 550 }, data: { label: 'APPROVED' } },
-    { id: id('7'), type: 'decision_fail', position: { x: 470, y: 550 }, data: { label: 'REJECTED' } },
-    { id: id('8'), type: 'process', position: { x: 80, y: 690 }, data: { label: 'BULK WASH\nPROCESS' } },
-    { id: id('9'), type: 'process', position: { x: 470, y: 690 }, data: { label: 'RE-ADJUST\nRECIPE' } },
-    { id: id('10'), type: 'process', position: { x: 80, y: 820 }, data: { label: 'HYDRO\nEXTRACTOR' } },
-    { id: id('11'), type: 'process', position: { x: 80, y: 950 }, data: { label: 'DRYING' } },
-    { id: id('12'), type: 'qc', position: { x: 80, y: 1080 }, data: { label: 'WASH QC CHECK\n(COLOR, HAND FEEL,\nSHRINKAGE)' } },
-    { id: id('13'), type: 'decision_pass', position: { x: 50, y: 1240 }, data: { label: 'PASS' } },
-    { id: id('14'), type: 'decision_fail', position: { x: 280, y: 1240 }, data: { label: 'FAIL' } },
-    { id: id('15'), type: 'terminal', position: { x: 50, y: 1380 }, data: { label: 'SEND TO\nFINISHING' } },
-    { id: id('16'), type: 'process', position: { x: 280, y: 1380 }, data: { label: 'RE-WASH /\nCORRECTION' } },
-  ];
-  const edges: Edge[] = [
-    makeEdge(id('1'), id('2')), makeEdge(id('2'), id('3')),
-    makeEdge(id('3'), id('4')), makeEdge(id('3'), id('5')),
-    makeEdge(id('5'), id('6')), makeEdge(id('5'), id('7')),
-    makeEdge(id('6'), id('8')), makeEdge(id('7'), id('9')),
-    makeEdge(id('9'), id('5')), makeEdge(id('8'), id('10')),
-    makeEdge(id('10'), id('11')), makeEdge(id('11'), id('12')),
-    makeEdge(id('12'), id('13')), makeEdge(id('12'), id('14')),
-    makeEdge(id('13'), id('15')), makeEdge(id('14'), id('16')),
-    makeEdge(id('16'), id('12')),
-  ];
-  return { nodes, edges };
-}
-
-const TEMPLATES_RAW = [
-  { code: 'FC-001', title: 'Order Management Flow', department: 'Merchandising', processOwner: 'Merchandising Manager', description: 'End-to-end buyer order flow.',
-    ...buildTemplateFlow(['Buyer Order Received','Order Review','Tech Pack Review','Costing Approval','Order Confirmation','Production Planning'], ['terminal','process','process','decision','process','terminal']) },
-  { code: 'FC-002', title: 'Fabric Inspection Flow', department: 'Quality', processOwner: 'Fabric QC Officer', description: '4-point fabric inspection workflow.',
-    ...buildTemplateFlow(['Fabric Receive','Fabric Identification','4 Point Inspection','Defect Recording','Inspection Report','Accept / Reject'], ['terminal','process','qc','record','process','decision']) },
-  { code: 'FC-003', title: 'Cutting Process Flow', department: 'Cutting', processOwner: 'Cutting Manager', description: 'Standard garment cutting process.',
-    ...buildTemplateFlow(['Cutting Plan','Fabric Relaxation','Fabric Spreading','Marker Placement','Cutting','Cutting QC Inspection','Bundle Numbering'], ['terminal','process','process','process','process','qc','terminal']) },
-  { code: 'FC-004', title: 'Sewing QC Flow', department: 'Sewing', processOwner: 'Sewing QC Manager', description: 'In-line sewing quality control.',
-    ...buildTemplateFlow(['Bundle Input','Line Setup','Pilot Run','Inline QC','Defect Correction','End Line Inspection'], ['terminal','process','process','qc','process','qc']) },
-  { code: 'FC-005', title: 'Finishing Flow', department: 'Finishing', processOwner: 'Finishing Manager', description: 'Garment finishing and packing approval.',
-    ...buildTemplateFlow(['Thread Cutting','Ironing','Spot Cleaning','Finishing QC','Measurement Check','Packing Approval'], ['terminal','process','process','qc','qc','terminal']) },
-  { code: 'FC-006', title: 'Final Inspection Flow', department: 'Quality', processOwner: 'Quality Manager', description: 'AQL-based pre-shipment final inspection.',
-    ...buildTemplateFlow(['Lot Selection','AQL Sampling','Visual Inspection','Measurement Inspection','Defect Classification','PASS','FAIL'], ['terminal','process','qc','qc','qc','decision_pass','decision_fail']) },
-  { code: 'FC-007', title: 'Shipment Release Flow', department: 'Merchandising', processOwner: 'Shipment Coordinator', description: 'Post-final-inspection shipment release.',
-    ...buildTemplateFlow(['Final Inspection Pass','Documentation Review','Buyer Approval','Shipment Booking','Shipment Release'], ['terminal','process','decision','process','terminal']) },
-  { code: 'FC-008', title: 'Cutting Section Flow Chart', department: 'Cutting', processOwner: 'Cutting Manager',
-    description: 'Complete cutting section workflow with fabric inspection, QC checkpoints, print/embroidery branching, and corrective action paths.',
-    ...buildCuttingSectionFlow() },
-  { code: 'FC-009', title: 'Sewing Section Flow Chart', department: 'Sewing', processOwner: 'Sewing Manager',
-    description: 'Comprehensive sewing line workflow with inline QC, end-line inspection, rework loops and defect analysis.',
-    ...buildSewingSectionFlow() },
-  { code: 'FC-010', title: 'Finishing & Packing Flow Chart', department: 'Finishing', processOwner: 'Finishing Manager',
-    description: 'Complete finishing workflow through AQL final inspection, carton packing and shipment release process.',
-    ...buildFinishingPackingFlow() },
-  { code: 'FC-011', title: 'Washing Process Flow Chart', department: 'Washing', processOwner: 'Wash Manager',
-    description: 'Garment washing workflow with recipe management, sample approval, QC validation and corrective loops.',
-    ...buildWashingFlow() },
+// ── Default Templates ───────────────────────────────────
+const DEFAULT_STEPS: FlowStep[] = [
+  { id: 'start', type: 'terminal', label: 'Order Received', links: [{ targetId: 'review' }] },
+  { id: 'review', type: 'process', label: 'Review Tech Pack', links: [{ targetId: 'qc_check' }] },
+  { id: 'qc_check', type: 'decision', label: 'Docs Complete?', links: [{ targetId: 'planning', label: 'Yes' }, { targetId: 'missing', label: 'No' }] },
+  { id: 'missing', type: 'process', label: 'Request Data', links: [{ targetId: 'review' }] },
+  { id: 'planning', type: 'process', label: 'Production Plan', links: [{ targetId: 'end' }] },
+  { id: 'end', type: 'terminal', label: 'Shipment Release', links: [] }
 ];
 
 function buildDefaultTemplates(): FlowChartRecord[] {
-  return TEMPLATES_RAW.map((t, i) => ({
-    ...t, id: 'fc-' + Date.now() + '-' + i, version: 'v1.0', status: 'Approved' as FlowStatus,
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    changeHistory: [{ date: new Date().toISOString(), user: 'System', note: 'Template imported.' }],
-  }));
-}
-
-// ═══════════════════════════════════════════════════════
-// PROFESSIONAL PDF/PNG EXPORT (Canvas-based)
-// ═══════════════════════════════════════════════════════
-
-function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-// ── Helper: render flowchart with proper shapes + edge connections on canvas ──
-function renderFlowchartCanvas(
-  ctx: CanvasRenderingContext2D,
-  record: { nodes: Node[]; edges: Edge[] },
-  areaX: number, areaY: number, areaW: number, areaH: number
-) {
-  // Area background
-  ctx.fillStyle = '#ffffff';
-  drawRoundRect(ctx, areaX, areaY, areaW, areaH, 8);
-  ctx.fill();
-  ctx.strokeStyle = '#e2e8f0';
-  ctx.lineWidth = 2;
-  drawRoundRect(ctx, areaX, areaY, areaW, areaH, 8);
-  ctx.stroke();
-
-  if (record.nodes.length === 0) {
-    ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 20px Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Open in canvas editor to build the flowchart', areaX + areaW / 2, areaY + areaH / 2);
-    return;
-  }
-
-  const xs = record.nodes.map(n => n.position.x);
-  const ys = record.nodes.map(n => n.position.y);
-  const minX = Math.min(...xs), maxX = Math.max(...xs) + 200;
-  const minY = Math.min(...ys), maxY = Math.max(...ys) + 100;
-  const scaleX = (areaW - 100) / Math.max(maxX - minX, 1);
-  const scaleY = (areaH - 100) / Math.max(maxY - minY, 1);
-  const scale = Math.min(scaleX, scaleY, 1.2);
-  const nw = 170 * Math.min(scale, 1);
-  const nh = 56 * Math.min(scale, 1);
-  const padX = areaX + 50;
-  const padY = areaY + 30;
-
-  const nodeColors: Record<string, { bg: string; text: string }> = {
-    terminal:      { bg: '#1d4ed8', text: '#fff' },
-    process:       { bg: '#1565c0', text: '#fff' },
-    qc:            { bg: '#7c3aed', text: '#fff' },
-    decision:      { bg: '#f59e0b', text: '#1c1917' },
-    decision_pass: { bg: '#22c55e', text: '#fff' },
-    decision_fail: { bg: '#ef4444', text: '#fff' },
-    record:        { bg: '#f59e0b', text: '#1c1917' },
-  };
-
-  // Build position map
-  const posMap: Record<string, { x: number; y: number }> = {};
-  record.nodes.forEach(n => {
-    posMap[n.id] = {
-      x: padX + (n.position.x - minX) * scale,
-      y: padY + (n.position.y - minY) * scale,
-    };
-  });
-
-  // Draw edges with arrows
-  ctx.save();
-  record.edges.forEach(e => {
-    const sp = posMap[e.source];
-    const tp = posMap[e.target];
-    if (!sp || !tp) return;
-    const sx = sp.x + nw / 2, sy = sp.y + nh;
-    const tx = tp.x + nw / 2, ty = tp.y;
-    ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    if (Math.abs(sx - tx) < 5) {
-      ctx.moveTo(sx, sy); ctx.lineTo(tx, ty);
-    } else {
-      const midY = (sy + ty) / 2;
-      ctx.moveTo(sx, sy); ctx.lineTo(sx, midY);
-      ctx.lineTo(tx, midY); ctx.lineTo(tx, ty);
+  return [
+    {
+      id: 'fc-template-1',
+      code: 'FC-001',
+      title: 'Standard Production Flow',
+      department: 'Quality',
+      processOwner: 'Quality Manager',
+      version: 'v1.0',
+      status: 'Approved',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      description: 'Standard flowchart for general production process tracking.',
+      mermaidDefinition: stepsToMermaid(DEFAULT_STEPS),
+      steps: DEFAULT_STEPS,
+      changeHistory: []
     }
-    ctx.stroke();
-    // Arrowhead
-    ctx.fillStyle = '#475569'; ctx.beginPath();
-    ctx.moveTo(tx, ty); ctx.lineTo(tx - 4, ty - 7); ctx.lineTo(tx + 4, ty - 7);
-    ctx.closePath(); ctx.fill();
-  });
-  ctx.restore();
-
-  // Draw nodes with proper shapes
-  record.nodes.forEach(n => {
-    const pos = posMap[n.id];
-    const type = n.type || 'process';
-    const colors = nodeColors[type] || nodeColors.process;
-    const nx = pos.x, ny = pos.y;
-
-    ctx.save();
-    ctx.fillStyle = colors.bg;
-    ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 2;
-
-    if (type === 'terminal') {
-      drawRoundRect(ctx, nx, ny, nw, nh, nh / 2);
-      ctx.fill(); ctx.stroke();
-    } else if (type.includes('decision')) {
-      const cx = nx + nw / 2, cy = ny + nh / 2;
-      const dw = nw * 0.42, dh = nh * 0.48;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - dh); ctx.lineTo(cx + dw, cy);
-      ctx.lineTo(cx, cy + dh); ctx.lineTo(cx - dw, cy);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-    } else {
-      drawRoundRect(ctx, nx, ny, nw, nh, 6);
-      ctx.fill(); ctx.stroke();
-    }
-
-    // Label text
-    ctx.fillStyle = colors.text;
-    const fontSize = Math.max(8, Math.min(12, nh / 3.5));
-    ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const label = (n.data.label as string || '');
-    const lines = label.split('\n');
-    const lh = fontSize * 1.25;
-    const startTextY = ny + nh / 2 - (lines.length - 1) * lh / 2;
-    lines.forEach((line: string, i: number) => {
-      const t = line.length > 24 ? line.slice(0, 24) + '\u2026' : line;
-      ctx.fillText(t, nx + nw / 2, startTextY + i * lh);
-    });
-    ctx.restore();
-  });
-}
-
-async function renderFlowToImage(reactFlowElement: HTMLElement): Promise<string> {
-  // Use toPng from dom-to-image-more dynamically
-  const domtoimage = await import('dom-to-image-more');
-  return domtoimage.default.toPng(reactFlowElement, { bgcolor: '#ffffff', scale: 2 });
-}
-
-async function buildFlowExportCanvas(record: FlowChartRecord, flowImgSrc: string): Promise<HTMLCanvasElement> {
-  const flowImg = new Image();
-  await new Promise<void>(res => { flowImg.onload = () => res(); flowImg.src = flowImgSrc; });
-
-  const SCALE = 1;
-  const HEADER = 130;
-  const FOOTER = 100;
-  const PAD = 40;
-  const MIN_W = 1400;
-
-  const contentW = Math.max(flowImg.width ? flowImg.width / 2 : 1000, MIN_W);
-  const contentH = flowImg.height ? (flowImg.height / 2) : 800;
-  const totalW = contentW + PAD * 2;
-  const totalH = HEADER + contentH + FOOTER + PAD * 2;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = totalW * SCALE;
-  canvas.height = totalH * SCALE;
-  const ctx = canvas.getContext('2d')!;
-  ctx.scale(SCALE, SCALE);
-
-  const W = totalW;
-  const H = totalH;
-
-  // ── Background ──
-  ctx.fillStyle = '#f8fafc';
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#ffffff';
-  drawRoundRect(ctx, 12, 12, W - 24, H - 24, 14);
-  ctx.fill();
-
-  // ── HEADER ──
-  const hGrad = ctx.createLinearGradient(0, 0, W, 0);
-  hGrad.addColorStop(0, '#0f172a');
-  hGrad.addColorStop(0.5, '#1e3a8a');
-  hGrad.addColorStop(1, '#0f172a');
-  ctx.fillStyle = hGrad;
-  drawRoundRect(ctx, 12, 12, W - 24, HEADER - 8, 14);
-  ctx.fill();
-
-  // Accent line under header
-  const lineGrad = ctx.createLinearGradient(0, 0, W, 0);
-  lineGrad.addColorStop(0, '#3b82f6');
-  lineGrad.addColorStop(0.5, '#60a5fa');
-  lineGrad.addColorStop(1, '#3b82f6');
-  ctx.fillStyle = lineGrad;
-  ctx.fillRect(12, HEADER - 8, W - 24, 3);
-
-  // Company / chart title
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold 22px Arial, sans-serif`;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillText(record.title.toUpperCase(), 36, 28);
-
-  // Subtitle info row
-  ctx.font = `12px Arial, sans-serif`;
-  ctx.fillStyle = 'rgba(148,163,184,1)';
-  ctx.fillText(`${record.code}  ·  ${record.department} Department  ·  Process Owner: ${record.processOwner || '—'}  ·  Version: ${record.version}`, 36, 58);
-
-  // Status badge
-  const statusColors: Record<string, [string, string]> = {
-    'Approved': ['#059669', '#d1fae5'], 'Draft': ['#64748b', '#f1f5f9'],
-    'Pending Review': ['#d97706', '#fef3c7'], 'Archived': ['#dc2626', '#fee2e2'],
-  };
-  const [sBg, sFg] = statusColors[record.status] || ['#64748b', '#f1f5f9'];
-  ctx.fillStyle = sFg;
-  drawRoundRect(ctx, W - 160, 30, 130, 28, 6);
-  ctx.fill();
-  ctx.fillStyle = sBg;
-  ctx.font = `bold 11px Arial, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(record.status.toUpperCase(), W - 95, 44);
-
-  // Meta boxes
-  const metaItems = [
-    { label: 'NODES', value: String(record.nodes.length) },
-    { label: 'CONNECTIONS', value: String(record.edges.length) },
-    { label: 'CREATED', value: new Date(record.createdAt).toLocaleDateString('en-GB') },
-    { label: 'UPDATED', value: new Date(record.updatedAt).toLocaleDateString('en-GB') },
   ];
-  const boxW = 180, boxH = 40, boxY = 76;
-  metaItems.forEach((item, i) => {
-    const bx = 36 + i * (boxW + 10);
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    drawRoundRect(ctx, bx, boxY, boxW, boxH, 6);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 1;
-    drawRoundRect(ctx, bx, boxY, boxW, boxH, 6);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(148,163,184,0.8)';
-    ctx.font = `bold 8px Arial, sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(item.label, bx + 10, boxY + 8);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold 15px Arial, sans-serif`;
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(item.value, bx + 10, boxY + boxH - 8);
-  });
-
-  // Description if exists
-  if (record.description) {
-    ctx.fillStyle = 'rgba(148,163,184,0.7)';
-    ctx.font = `italic 10px Arial, sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    const desc = record.description.length > 100 ? record.description.slice(0, 100) + '…' : record.description;
-    ctx.fillText(desc, 36, 78);
-  }
-
-  // ── Flow diagram ──
-  const imgY = HEADER + PAD;
-  const imgX = PAD;
-  const imgW = contentW;
-  const imgH = contentH;
-
-  // Diagram background
-  ctx.fillStyle = '#f8fafc';
-  drawRoundRect(ctx, imgX, imgY, imgW, imgH, 10);
-  ctx.fill();
-  ctx.strokeStyle = '#e2e8f0';
-  ctx.lineWidth = 2;
-  drawRoundRect(ctx, imgX, imgY, imgW, imgH, 10);
-  ctx.stroke();
-
-  // Draw the flow image, fitting within the box
-  const srcRatio = flowImg.width / flowImg.height;
-  const boxRatio = imgW / imgH;
-  let drawW = imgW, drawH = imgH, drawX = imgX, drawY = imgY;
-  if (srcRatio > boxRatio) {
-    drawW = imgW; drawH = imgW / srcRatio;
-    drawY = imgY + (imgH - drawH) / 2;
-  } else {
-    drawH = imgH; drawW = imgH * srcRatio;
-    drawX = imgX + (imgW - drawW) / 2;
-  }
-  ctx.save();
-  drawRoundRect(ctx, imgX, imgY, imgW, imgH, 10);
-  ctx.clip();
-  ctx.drawImage(flowImg, drawX, drawY, drawW, drawH);
-  ctx.restore();
-
-  // ── FOOTER ──
-  const footerY = imgY + imgH + PAD;
-
-  // Signature strip
-  ctx.fillStyle = '#f1f5f9';
-  ctx.fillRect(PAD, footerY, contentW, FOOTER - 20);
-  ctx.strokeStyle = '#e2e8f0';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(PAD, footerY, contentW, FOOTER - 20);
-
-  const sigLabels = ['Prepared By', 'Reviewed By', 'Approved By'];
-  const sigW = (contentW - 60) / 3;
-  sigLabels.forEach((label, i) => {
-    const sx = PAD + 20 + i * (sigW + 20);
-    const sigLineY = footerY + 55;
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(sx, sigLineY); ctx.lineTo(sx + sigW - 10, sigLineY); ctx.stroke();
-    ctx.fillStyle = '#64748b';
-    ctx.font = `bold 10px Arial, sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(label, sx + (sigW - 10) / 2, sigLineY + 6);
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = `8px Arial, sans-serif`;
-    ctx.fillText('Name / Designation / Date', sx + (sigW - 10) / 2, sigLineY + 18);
-  });
-
-  // Bottom bar
-  const bbY = footerY + FOOTER - 20;
-  ctx.fillStyle = '#1e3a8a';
-  ctx.fillRect(PAD, bbY, contentW, 20);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold 9px Arial, sans-serif`;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(`QMS Process Flowchart  ·  ${record.code}  ·  ${record.title}`, PAD + 12, bbY + 10);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillText(`Generated: ${new Date().toLocaleString('en-GB')}`, PAD + contentW - 12, bbY + 10);
-
-  return canvas;
 }
 
-// ═══════════════════════════════════════════════════════
-// CANVAS EDITOR (ReactFlow)
-// ═══════════════════════════════════════════════════════
-interface EditorProps { record: FlowChartRecord; onSave: (r: FlowChartRecord) => void; onClose: () => void; }
-
-const NODE_BTNS = [
-  { type: 'terminal',      label: 'Start/End',  bg: '#1d4ed8', desc: 'Oval — begin or end' },
-  { type: 'process',       label: 'Process',    bg: '#1565c0', desc: 'Rectangle — step' },
-  { type: 'qc',            label: 'QC Check',   bg: '#6d28d9', desc: 'Purple — inspection' },
-  { type: 'decision',      label: 'Decision',   bg: '#b45309', desc: 'Diamond — branch' },
-  { type: 'decision_pass', label: 'PASS',       bg: '#15803d', desc: 'Green diamond' },
-  { type: 'decision_fail', label: 'FAIL',       bg: '#b91c1c', desc: 'Red diamond' },
-  { type: 'record',        label: 'Record',     bg: '#d97706', desc: 'Yellow — document' },
-];
-
-function CanvasEditorInner({ record, onSave, onClose }: EditorProps) {
-  const [nodes, setNodes] = useState<Node[]>(record.nodes);
-  const [edges, setEdges] = useState<Edge[]>(record.edges);
+// ── EDITOR COMPONENT ────────────────────────────────────
+function FlowBuilderEditor({ record, onSave, onClose }: { record: FlowChartRecord; onSave: (r: FlowChartRecord) => void; onClose: () => void }) {
+  const [steps, setSteps] = useState<FlowStep[]>(record.steps || DEFAULT_STEPS);
   const [meta, setMeta] = useState({
-    title: record.title, department: record.department, processOwner: record.processOwner,
-    version: record.version, status: record.status as FlowStatus, description: record.description,
+    title: record.title,
+    department: record.department,
+    processOwner: record.processOwner,
+    version: record.version,
+    status: record.status,
+    description: record.description
   });
-  const [selected, setSelected] = useState<{ id: string; type: 'node' | 'edge'; label: string; nodeType?: string } | null>(null);
-  const [panel, setPanel] = useState<'props' | 'meta' | null>(null);
-  const [exporting, setExporting] = useState(false);
-  const rf = useReactFlow();
-  const flowRef = useRef<HTMLDivElement>(null);
+  const [activeStepId, setActiveStepId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'visual' | 'code' | 'wizard'>('visual');
+  const [mermaidCode, setMermaidCode] = useState(record.mermaidDefinition);
+  const [wizardText, setWizardText] = useState((record.steps || []).map(s => s.label).join('\n'));
 
-  const onNodesChange = useCallback((c: NodeChange[]) => setNodes(n => applyNodeChanges(c, n)), []);
-  const onEdgesChange = useCallback((c: EdgeChange[]) => setEdges(e => applyEdgeChanges(c, e)), []);
-  const onConnect = useCallback((c: Connection) => {
-    setEdges(es => addEdge({ ...c, style: { strokeWidth: 2.5, stroke: '#1e293b' }, markerEnd: { type: 'arrowclosed' as any, color: '#1e293b', width: 14, height: 14 } } as unknown as Edge, es));
-  }, []);
-
-  const spawnNode = (type: string) => {
-    const labels: Record<string, string> = {
-      terminal: 'Start / End', process: 'New Process Step', qc: 'QC Inspection',
-      decision: 'Decision?', decision_pass: 'PASS', decision_fail: 'FAIL', record: 'Keep Record',
-    };
-    const vp = rf.getViewport();
-    const x = (-vp.x + window.innerWidth / 2) / vp.zoom;
-    const y = (-vp.y + window.innerHeight / 2) / vp.zoom;
-    setNodes(ns => [...ns, makeNode(type, labels[type] || 'New Node', x, y)]);
-  };
-
-  const onSelectionChange = useCallback(({ nodes: sn, edges: se }: { nodes: Node[]; edges: Edge[] }) => {
-    if (sn.length === 1) {
-      setSelected({ id: sn[0].id, type: 'node', label: sn[0].data.label as string, nodeType: sn[0].type });
-      setPanel('props');
-    } else if (se.length === 1) {
-      setSelected({ id: se[0].id, type: 'edge', label: se[0].label as string || '' });
-      setPanel('props');
-    } else {
-      setSelected(null);
-      setPanel(p => p === 'props' ? null : p);
+  useEffect(() => {
+    if (viewMode === 'visual') {
+      setMermaidCode(stepsToMermaid(steps));
     }
-  }, []);
+  }, [steps, viewMode]);
 
-  const updateLabel = (val: string) => {
-    if (!selected) return;
-    setSelected(p => p ? { ...p, label: val } : null);
-    if (selected.type === 'node')
-      setNodes(ns => ns.map(n => n.id === selected.id ? { ...n, data: { ...n.data, label: val } } : n));
-    else
-      setEdges(es => es.map(e => e.id === selected.id ? { ...e, label: val, labelStyle: { fill: '#1e3a5f', fontWeight: 700, fontSize: 11 }, labelBgPadding: [6, 3] as [number, number] } : e));
+  const addStep = () => {
+    const newId = `step_${Date.now()}`;
+    const newStep: FlowStep = {
+      id: newId,
+      type: 'process',
+      label: 'New Step',
+      links: []
+    };
+    setSteps([...steps, newStep]);
+    setActiveStepId(newId);
   };
 
-  const changeNodeType = (nodeType: string) => {
-    if (!selected || selected.type !== 'node') return;
-    setNodes(ns => ns.map(n => n.id === selected.id ? { ...n, type: nodeType } : n));
-    setSelected(p => p ? { ...p, nodeType } : null);
+  const updateStep = (id: string, updates: Partial<FlowStep>) => {
+    setSteps(curr => curr.map(s => s.id === id ? { ...s, ...updates } : s));
   };
 
-  const deleteSelected = () => {
-    if (!selected) return;
-    if (selected.type === 'node') setNodes(ns => ns.filter(n => n.id !== selected.id));
-    else setEdges(es => es.filter(e => e.id !== selected.id));
-    setSelected(null); setPanel(null);
+  const deleteStep = (id: string) => {
+    if (!confirm('Are you sure you want to delete this step?')) return;
+    setSteps(curr => curr.filter(s => s.id !== id).map(s => ({
+       ...s,
+       links: s.links.filter(l => l.targetId !== id)
+    })));
+    if (activeStepId === id) setActiveStepId(null);
   };
 
-  const commit = () => onSave({ ...record, ...meta, nodes, edges, updatedAt: new Date().toISOString(), changeHistory: [{ date: new Date().toISOString(), user: 'QMS User', note: 'Updated.' }, ...record.changeHistory].slice(0, 20) });
-
-  const handleExportPNG = async () => {
-    setExporting(true);
-    try {
-      const rfEl = document.querySelector('.react-flow') as HTMLElement;
-      if (!rfEl) throw new Error('No canvas');
-      const imgSrc = await renderFlowToImage(rfEl);
-      const tempRecord = { ...record, ...meta, nodes, edges };
-      const canvas = await buildFlowExportCanvas(tempRecord, imgSrc);
-      const url = canvas.toDataURL('image/png', 1.0);
-      const a = document.createElement('a'); a.href = url; a.download = `${record.code}_Flowchart.png`; a.click();
-    } catch (e) { console.error(e); alert('PNG export failed. Try again.'); }
-    setExporting(false);
+  const handleSave = () => {
+    onSave({
+      ...record,
+      ...meta,
+      steps,
+      mermaidDefinition: mermaidCode,
+      updatedAt: new Date().toISOString()
+    });
   };
 
   const handleExportPDF = async () => {
-    setExporting(true);
-    try {
-      const rfEl = document.querySelector('.react-flow') as HTMLElement;
-      if (!rfEl) throw new Error('No canvas');
-      const imgSrc = await renderFlowToImage(rfEl);
-      const tempRecord = { ...record, ...meta, nodes, edges };
-      const canvas = await buildFlowExportCanvas(tempRecord, imgSrc);
-      const imgData = canvas.toDataURL('image/png', 1.0);
-      const landscape = canvas.width > canvas.height;
-      const doc = new jsPDF({ orientation: landscape ? 'l' : 'p', unit: 'mm', format: 'a4' });
-      const W = doc.internal.pageSize.getWidth();
-      const H = doc.internal.pageSize.getHeight();
-      const startY = drawPdfHeader(doc, meta.title || 'Flow Chart', `Reference: ${record.code} | Version: ${meta.version || '1.0'}`, 'flow_chart');
-      const footerReserve = 16;
-      const topMargin = startY + 2;
-      const availableW = W - 16;
-      const availableH = H - topMargin - footerReserve;
-      const ratio = Math.min(availableW / (canvas.width / 2), availableH / (canvas.height / 2));
-      const iW = (canvas.width / 2) * ratio;
-      const iH = (canvas.height / 2) * ratio;
-      doc.addImage(imgData, 'PNG', (W - iW) / 2, topMargin + Math.max(0, (availableH - iH) / 2), iW, iH);
-      addPageFooters(doc);
-      doc.save(`${record.code}_Flowchart.pdf`);
-    } catch (e) { console.error(e); alert('PDF export failed. Try again.'); }
-    setExporting(false);
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    const svgEl = document.querySelector('.mermaid-preview svg');
+    if (!svgEl) return;
+    
+    // Generate PNG from SVG for PDF
+    const canvas = document.createElement('canvas');
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    
+    const img = new Image();
+    img.onload = async () => {
+      canvas.width = img.width * 2;
+      canvas.height = img.height * 2;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imgData = canvas.toDataURL('image/png');
+      
+      await exportDetailToPDF({
+        moduleName: 'Process Flow Chart Report',
+        moduleId: 'flow-chart',
+        recordId: record.code,
+        fileName: `${record.code}_Flowchart`,
+        orientation: 'landscape',
+        sections: [
+          {
+            title: 'Design Identification',
+            fields: [
+              { label: 'Process Title',      value: meta.title },
+              { label: 'Sequential Code',    value: record.code },
+              { label: 'Project Version',    value: meta.version },
+              { label: 'Operational Status', value: meta.status },
+            ]
+          },
+          {
+            title: 'Ownership & Authority',
+            fields: [
+              { label: 'Process Owner',      value: meta.processOwner },
+              { label: 'Stakeholder Dept',   value: meta.department },
+              { label: 'Definition Source',  value: 'Mermaid Engine v1.0' },
+            ]
+          },
+          {
+             title: 'Process Description',
+             fields: [
+               { label: 'Summary', value: meta.description || 'Verified process flow for QMS compliance.', fullWidth: true }
+             ]
+          }
+        ],
+        attachments: [{ name: 'Visual Workflow Diagram', data: imgData }]
+      });
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
   };
 
-  const inputStyle = {
-    width: '100%', padding: '8px 12px', background: '#0f1117', border: '1px solid #2d3147',
-    borderRadius: 10, fontSize: 13, color: '#fff', outline: 'none',
-  };
+  const activeStep = steps.find(s => s.id === activeStepId);
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: '#0c0e16', fontFamily: '"Inter", system-ui, sans-serif' }}>
-      {/* ── Top Bar ── */}
-      <div style={{ height: 56, background: '#141621', borderBottom: '1px solid #2d3147', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={onClose} style={{ padding: 8, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-            <ArrowRight style={{ width: 18, height: 18, transform: 'rotate(180deg)' }} />
+    <div className="fixed inset-0 z-[100] bg-bg-1 flex flex-col font-sans">
+      {/* Header */}
+      <div className="h-16 border-b border-border-main bg-bg-2 px-6 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-4">
+          <button onClick={onClose} className="p-2 hover:bg-bg-1 rounded-xl text-text-3 transition-colors">
+            <ChevronLeft className="w-5 h-5" />
           </button>
-          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.08)' }} />
           <div>
-            <div style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>{meta.title}</div>
-            <div style={{ color: '#64748b', fontSize: 10, fontFamily: 'monospace' }}>{record.code} · {meta.department} · {meta.version}</div>
+            <h2 className="text-base font-bold text-text-1">{meta.title || 'Untitled Flow'}</h2>
+            <div className="text-[10px] uppercase font-black tracking-widest text-text-3">Flow Builder Tool</div>
           </div>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          {/* Node spawn buttons */}
-          {NODE_BTNS.map(b => (
-            <button key={b.type} onClick={() => spawnNode(b.type)}
-              title={b.desc}
-              style={{ padding: '6px 12px', background: b.bg, border: 'none', borderRadius: 8, color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
-              + {b.label}
-            </button>
-          ))}
-
-          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.08)', margin: '0 4px' }} />
-
-          {/* Meta toggle */}
-          <button onClick={() => setPanel(p => p === 'meta' ? null : 'meta')}
-            style={{ padding: 8, borderRadius: 8, border: 'none', background: panel === 'meta' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}>
-            <Settings2 style={{ width: 16, height: 16 }} />
+        
+        <div className="flex items-center gap-3">
+          <div className="bg-bg-1 rounded-xl p-1 flex border border-border-main mr-4 shadow-sm">
+             <button 
+                onClick={() => setViewMode('wizard')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'wizard' ? 'bg-amber-500 text-white shadow-md' : 'text-text-3 hover:text-text-2'}`}
+             >Easy Creator</button>
+             <button 
+                onClick={() => setViewMode('visual')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'visual' ? 'bg-accent text-white shadow-md' : 'text-text-3 hover:text-text-2'}`}
+             >Manual Edit</button>
+             <button 
+                onClick={() => setViewMode('code')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'code' ? 'bg-accent text-white shadow-md' : 'text-text-3 hover:text-text-2'}`}
+             >Source Code</button>
+          </div>
+          
+          <button onClick={handleExportPDF} className="btn bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 px-4">
+            <Download className="w-4 h-4 mr-2" /> PDF Report
           </button>
-
-          {/* Fit view */}
-          <button onClick={() => rf.fitView({ padding: 0.15 })}
-            style={{ padding: 8, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}
-            title="Fit to screen">
-            <Maximize2 style={{ width: 16, height: 16 }} />
-          </button>
-
-          <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.08)', margin: '0 4px' }} />
-
-          {/* Export buttons */}
-          <button onClick={handleExportPNG} disabled={exporting}
-            style={{ padding: '7px 14px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: '#94a3b8', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, opacity: exporting ? 0.5 : 1 }}>
-            <ImageIcon style={{ width: 13, height: 13 }} /> PNG
-          </button>
-          <button onClick={handleExportPDF} disabled={exporting}
-            style={{ padding: '7px 14px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 9, color: '#94a3b8', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, opacity: exporting ? 0.5 : 1 }}>
-            <FileDown style={{ width: 13, height: 13 }} /> PDF
-          </button>
-
-          {/* Save */}
-          <button onClick={commit}
-            style={{ padding: '8px 20px', background: 'var(--accent, #2563eb)', border: 'none', borderRadius: 10, color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 12px rgba(37,99,235,0.4)' }}>
-            <Save style={{ width: 15, height: 15 }} /> Save
+          <button onClick={handleSave} className="btn btn-primary px-6 shadow-lg shadow-accent/20">
+            <Save className="w-4 h-4 mr-2" /> Save & Build
           </button>
         </div>
       </div>
 
-      {/* ── Canvas + Panel ── */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* ReactFlow Canvas */}
-        <div style={{ flex: 1, position: 'relative' }} ref={flowRef}>
-          <ReactFlow
-            nodes={nodes} edges={edges}
-            nodeTypes={NODE_TYPES}
-            onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
-            onSelectionChange={onSelectionChange}
-            fitView
-            style={{ background: '#0c0e16' }}
-            deleteKeyCode="Backspace"
-          >
-            <Background variant={BackgroundVariant.Dots} gap={28} size={1.5} color="#1e2235" />
-            <Controls style={{ background: '#141621', border: '1px solid #2d3147', borderRadius: 12 }} />
-            <MiniMap nodeColor="#1976d2" maskColor="rgba(12,14,22,0.85)"
-              style={{ background: '#141621', border: '1px solid #2d3147', borderRadius: 12 }} />
-          </ReactFlow>
-
-          {nodes.length === 0 && (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-              <div style={{ textAlign: 'center', opacity: 0.4 }}>
-                <GitBranch style={{ width: 52, height: 52, color: '#475569', margin: '0 auto 12px' }} />
-                <p style={{ color: '#475569', fontWeight: 700, fontSize: 18 }}>Canvas is empty</p>
-                <p style={{ color: '#334155', fontSize: 13, marginTop: 4 }}>Click the shape buttons above to add nodes</p>
-              </div>
-            </div>
-          )}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar: Step List */}
+        <div className="w-80 border-r border-border-main bg-bg-1 flex flex-col">
+           <div className="p-4 border-b border-border-main flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-text-3">Structure Index</span>
+              <button onClick={addStep} className="p-1.5 bg-accent/10 text-accent rounded-lg hover:bg-accent/20 transition-all">
+                <Plus className="w-4 h-4" />
+              </button>
+           </div>
+           
+           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {steps.map((step, idx) => (
+                <div 
+                  key={step.id}
+                  onClick={() => setActiveStepId(step.id)}
+                  className={`group p-4 rounded-xl border transition-all cursor-pointer ${
+                    activeStepId === step.id 
+                    ? 'bg-accent/5 border-accent shadow-sm' 
+                    : 'bg-bg-2 border-border-main hover:border-text-3'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${
+                      step.type === 'terminal' ? 'bg-blue-500/10 text-blue-500' :
+                      step.type === 'decision' ? 'bg-amber-500/10 text-amber-500' :
+                      'bg-emerald-500/10 text-emerald-500'
+                    }`}>
+                      {step.type}
+                    </span>
+                    <span className="text-[9px] font-mono text-text-3 opacity-0 group-hover:opacity-100 transition-opacity">#{idx+1}</span>
+                  </div>
+                  <div className="text-xs font-bold text-text-1 truncate">{step.label}</div>
+                  <div className="text-[9px] text-text-3 mt-1 flex items-center gap-1">
+                    <Network className="w-3 h-3" /> {step.links.length} connections
+                  </div>
+                </div>
+              ))}
+           </div>
         </div>
 
-        {/* Side panel */}
+        {/* Main Content: Preview or Code */}
+        <div className="flex-1 bg-bg-2 relative flex flex-col">
+            {viewMode === 'wizard' ? (
+               <div className="flex-1 p-8 flex flex-col gap-6">
+                  <div className="bg-bg-1 border border-border-main p-6 rounded-2xl shadow-sm">
+                    <h3 className="text-sm font-bold text-text-1 mb-2">Rapid Step Generation</h3>
+                    <p className="text-xs text-text-3 mb-4">Just type your steps line-by-line. Use {"->"} to indicate decision branching (e.g., "Review {"->"} Accept").</p>
+                    <textarea 
+                      value={wizardText}
+                      onChange={e => setWizardText(e.target.value)}
+                      placeholder="Order Received&#10;In-line Inspection&#10;QC Status -> OK&#10;Packing&#10;Shipment"
+                      className="w-full h-[300px] bg-bg-2 border border-border-main rounded-xl p-6 text-sm font-mono text-text-1 focus:ring-2 focus:ring-amber-500 outline-none transition-all shadow-inner"
+                    />
+                    <div className="mt-4 flex justify-end">
+                      <button 
+                        onClick={() => {
+                           const lines = wizardText.split('\n').filter(l => l.trim());
+                           const newSteps: FlowStep[] = lines.map((line, i) => {
+                              const id = `wz_${i}`;
+                              const label = line.trim();
+                              const isDecision = label.includes('->') || label.includes('?');
+                              const nextId = i < lines.length - 1 ? `wz_${i+1}` : null;
+                              
+                              return {
+                                 id,
+                                 type: isDecision ? 'decision' : (i === 0 || i === lines.length - 1) ? 'terminal' : 'process',
+                                 label: label.replace('->', '').trim(),
+                                 links: nextId ? [{ targetId: nextId }] : []
+                              };
+                           });
+                           setSteps(newSteps);
+                           setViewMode('visual');
+                        }}
+                        className="btn bg-amber-500 text-white shadow-lg shadow-amber-500/20 px-6 font-bold"
+                      >
+                        Generate Flow Visual
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 bg-white rounded-2xl border border-border-main p-4 opacity-40 grayscale pointer-events-none">
+                     <p className="text-[10px] font-black uppercase text-center mt-20">Live Preview Unavailable in Wizard Mode</p>
+                  </div>
+               </div>
+            ) : viewMode === 'visual' ? (
+               <div className="flex-1 p-8 mermaid-preview">
+                  <MermaidPreview chartCode={mermaidCode} />
+               </div>
+            ) : (
+               <div className="flex-1 p-8 h-full">
+                  <textarea 
+                    value={mermaidCode}
+                    onChange={e => setMermaidCode(e.target.value)}
+                    className="w-full h-full bg-[#0c0e16] text-emerald-400 font-mono text-sm p-8 rounded-2xl border border-border-main outline-none focus:ring-2 focus:ring-accent/40"
+                    spellCheck={false}
+                  />
+                  <div className="absolute top-12 right-12 text-[10px] font-black uppercase text-text-3 tracking-widest pointer-events-none">Mermaid syntax</div>
+               </div>
+            )}
+        </div>
+
+        {/* Right Sidebar: Properties */}
         <AnimatePresence>
-          {panel && (
-            <motion.div key="panel"
-              initial={{ x: 310, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 310, opacity: 0 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              style={{ width: 300, background: '#141621', borderLeft: '1px solid #2d3147', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' }}>
-
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid #2d3147', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: '#64748b', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  {panel === 'meta' ? 'Flow Properties' : selected?.type === 'node' ? 'Node Properties' : 'Edge Properties'}
-                </span>
-                <button onClick={() => { setPanel(null); setSelected(null); }}
-                  style={{ padding: 6, borderRadius: 7, border: 'none', background: 'rgba(255,255,255,0.05)', color: '#64748b', cursor: 'pointer', display: 'flex' }}>
-                  <X style={{ width: 14, height: 14 }} />
-                </button>
+          {(activeStepId || viewMode === 'visual') && (
+            <motion.div 
+              initial={{ x: 300 }} animate={{ x: 0 }} exit={{ x: 300 }}
+              className="w-80 border-l border-border-main bg-bg-1 flex flex-col"
+            >
+              <div className="p-4 border-b border-border-main flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-text-3">Properties</span>
+                {activeStepId && (
+                  <button onClick={() => deleteStep(activeStepId)} className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-lg">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
-
-              <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {panel === 'meta' ? (
-                  <>
-                    {[
-                      { key: 'title', label: 'Flow Title' },
-                      { key: 'processOwner', label: 'Process Owner' },
-                    ].map(f => (
-                      <div key={f.key}>
-                        <label style={{ display: 'block', color: '#64748b', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>{f.label}</label>
-                        <input value={(meta as any)[f.key]} onChange={e => setMeta(p => ({ ...p, [f.key]: e.target.value }))} style={inputStyle} />
-                      </div>
-                    ))}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div>
-                        <label style={{ display: 'block', color: '#64748b', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Department</label>
-                        <select value={meta.department} onChange={e => setMeta(p => ({ ...p, department: e.target.value }))} style={inputStyle}>
-                          {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', color: '#64748b', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Version</label>
-                        <input value={meta.version} onChange={e => setMeta(p => ({ ...p, version: e.target.value }))} style={inputStyle} />
-                      </div>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', color: '#64748b', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Status</label>
-                      <select value={meta.status} onChange={e => setMeta(p => ({ ...p, status: e.target.value as FlowStatus }))} style={inputStyle}>
-                        {(['Draft', 'Pending Review', 'Approved', 'Archived'] as FlowStatus[]).map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', color: '#64748b', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Description</label>
-                      <textarea value={meta.description} onChange={e => setMeta(p => ({ ...p, description: e.target.value }))} rows={3} style={{ ...inputStyle, resize: 'none' }} />
-                    </div>
-                  </>
-                ) : selected ? (
-                  <>
-                    <div>
-                      <label style={{ display: 'block', color: '#64748b', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Label</label>
-                      <textarea value={selected.label} onChange={e => updateLabel(e.target.value)} rows={3} autoFocus style={{ ...inputStyle, resize: 'none' }} />
-                    </div>
-                    {selected.type === 'node' && (
-                      <div>
-                        <label style={{ display: 'block', color: '#64748b', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>Shape Type</label>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                          {NODE_BTNS.map(nb => (
-                            <button key={nb.type} onClick={() => changeNodeType(nb.type)}
-                              style={{
-                                padding: '8px 10px', border: selected.nodeType === nb.type ? 'none' : '1px solid #2d3147',
-                                borderRadius: 8, cursor: 'pointer', fontSize: 10, fontWeight: 700,
-                                background: selected.nodeType === nb.type ? nb.bg : 'rgba(255,255,255,0.03)',
-                                color: selected.nodeType === nb.type ? '#fff' : '#64748b',
-                                display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.15s',
-                              }}>
-                              <span style={{ width: 8, height: 8, borderRadius: nb.type.includes('terminal') ? '50%' : 2, background: nb.bg, flexShrink: 0 }} />
-                              {nb.label}
-                            </button>
-                          ))}
+              
+              <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                 {activeStep ? (
+                   <>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-text-3 block mb-2">Step Label</label>
+                          <input 
+                            className="w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-xs text-text-1 focus:ring-2 focus:ring-accent outline-none"
+                            value={activeStep.label}
+                            onChange={e => updateStep(activeStepId, { label: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-widest text-text-3 block mb-2">Shape Type</label>
+                          <select 
+                            className="w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-xs text-text-1 focus:ring-2 focus:ring-accent outline-none"
+                            value={activeStep.type}
+                            onChange={e => updateStep(activeStepId, { type: e.target.value as any })}
+                          >
+                             <option value="process">Standard Process</option>
+                             <option value="decision">Decision Gate</option>
+                             <option value="qc">Inspection Check</option>
+                             <option value="terminal">Start / End</option>
+                             <option value="record">Doc / Record</option>
+                          </select>
                         </div>
                       </div>
-                    )}
-                    <button onClick={deleteSelected}
-                      style={{ padding: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, color: '#ef4444', cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      <Trash2 style={{ width: 14, height: 14 }} /> Delete {selected.type === 'node' ? 'Node' : 'Connection'}
-                    </button>
-                    <p style={{ color: '#334155', fontSize: 10, textAlign: 'center' }}>Press <kbd>Backspace</kbd> / <kbd>Delete</kbd> to remove selected</p>
-                  </>
-                ) : null}
+
+                      <div className="pt-6 border-t border-border-main">
+                        <div className="flex items-center justify-between mb-4">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-text-3">Next Steps</label>
+                          <button 
+                            onClick={() => {
+                              const targets = steps.filter(s => s.id !== activeStepId);
+                              if (targets.length === 0) return;
+                              updateStep(activeStepId, { 
+                                links: [...activeStep.links, { targetId: targets[0].id }] 
+                              });
+                            }}
+                            className="text-[10px] font-bold text-accent hover:underline"
+                          >+ Add Link</button>
+                        </div>
+                        <div className="space-y-3">
+                           {activeStep.links.map((link, idx) => (
+                             <div key={idx} className="bg-bg-2 p-3 rounded-xl border border-border-main space-y-2 relative group-link">
+                                <button 
+                                  onClick={() => updateStep(activeStepId, { links: activeStep.links.filter((_, i) => i !== idx) })}
+                                  className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-link-hover:opacity-100 transition-all shadow-md"
+                                ><X className="w-3 h-3" /></button>
+                                
+                                <select 
+                                   className="w-full bg-bg-1 border border-border-main rounded-lg px-3 py-2 text-[11px] text-text-1 outline-none"
+                                   value={link.targetId}
+                                   onChange={e => {
+                                      const newLinks = [...activeStep.links];
+                                      newLinks[idx].targetId = e.target.value;
+                                      updateStep(activeStepId, { links: newLinks });
+                                   }}
+                                >
+                                   {steps.filter(s => s.id !== activeStepId).map(s => (
+                                     <option key={s.id} value={s.id}>{s.label}</option>
+                                   ))}
+                                </select>
+                                <input 
+                                   placeholder="Edge Label (Optional)"
+                                   className="w-full bg-bg-1 border border-border-main rounded-lg px-3 py-2 text-[11px] text-text-1 outline-none"
+                                   value={link.label || ''}
+                                   onChange={e => {
+                                      const newLinks = [...activeStep.links];
+                                      newLinks[idx].label = e.target.value;
+                                      updateStep(activeStepId, { links: newLinks });
+                                   }}
+                                />
+                             </div>
+                           ))}
+                        </div>
+                      </div>
+                   </>
+                 ) : (
+                   <div className="space-y-6">
+                      <div>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-text-3 block mb-2">Flow Chart Info</label>
+                        <input 
+                           className="w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-xs text-text-1 focus:ring-2 focus:ring-accent outline-none mb-3"
+                           placeholder="Flow Title"
+                           value={meta.title}
+                           onChange={e => setMeta(p => ({ ...p, title: e.target.value }))}
+                        />
+                        <select 
+                           className="w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-xs text-text-1 focus:ring-2 focus:ring-accent outline-none"
+                           value={meta.department}
+                           onChange={e => setMeta(p => ({ ...p, department: e.target.value }))}
+                        >
+                           {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      </div>
+                      <textarea 
+                         placeholder="Brief description of the process..."
+                         className="w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-xs text-text-1 focus:ring-2 focus:ring-accent outline-none resize-none"
+                         rows={4}
+                         value={meta.description}
+                         onChange={e => setMeta(p => ({ ...p, description: e.target.value }))}
+                      />
+                   </div>
+                 )}
               </div>
             </motion.div>
           )}
@@ -1062,17 +596,7 @@ function CanvasEditorInner({ record, onSave, onClose }: EditorProps) {
   );
 }
 
-function CanvasEditor(props: EditorProps) {
-  return (
-    <ReactFlowProvider>
-      <CanvasEditorInner {...props} />
-    </ReactFlowProvider>
-  );
-}
-
-// ═══════════════════════════════════════════════════════
-// MAIN LIST PAGE
-// ═══════════════════════════════════════════════════════
+// ── MAIN LIST PAGE ──────────────────────────────────────
 export function FlowChartPage({ onNavigate }: { onNavigate: (page: string, params?: any) => void }) {
   const [records, setRecords] = useState<FlowChartRecord[]>([]);
   const [editing, setEditing] = useState<FlowChartRecord | null>(null);
@@ -1081,24 +605,65 @@ export function FlowChartPage({ onNavigate }: { onNavigate: (page: string, param
   const [filterStatus, setFilterStatus] = useState('All');
   const [showNew, setShowNew] = useState(false);
   const [newForm, setNewForm] = useState({ title: '', department: 'Quality', processOwner: '', version: 'v1.0', description: '' });
-  const [exportingId, setExportingId] = useState<string | null>(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      const data = await db.processFlowChart.toArray();
+      
+      // MIGRATION: If legacy records found (nodes/edges instead of steps/mermaidDefinition)
+      const migrated = data.map((item: any) => {
+        if (!item.mermaidDefinition && (item.nodes || !item.steps)) {
+          // Convert legacy structure to steps if possible
+          const steps: FlowStep[] = (item.nodes || []).map((n: any) => ({
+            id: n.id,
+            type: n.type === 'decision' ? 'decision' : n.type === 'output' ? 'terminal' : 'process',
+            label: n.data?.label || 'Step',
+            links: (item.edges || [])
+              .filter((e: any) => e.source === n.id)
+              .map((e: any) => ({ targetId: e.target, label: e.label })),
+          }));
+          
+          if (steps.length === 0 && !item.mermaidDefinition) {
+             // Fallback to default template if truly empty
+             return {
+               ...item,
+               steps: DEFAULT_STEPS,
+               mermaidDefinition: stepsToMermaid(DEFAULT_STEPS),
+               changeHistory: item.changeHistory || []
+             };
+          }
+
+          return {
+            ...item,
+            steps,
+            mermaidDefinition: stepsToMermaid(steps),
+            changeHistory: item.changeHistory || [{ date: new Date().toISOString(), user: 'System', note: 'Migrated to Mermaid Engine' }]
+          };
+        }
+        return item;
+      });
+
+      setRecords(migrated as FlowChartRecord[]);
+    } catch (err) {
+      console.error('Failed to load FlowCharts:', err);
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
       try {
         const count = await db.processFlowChart.count();
         if (count === 0) { await db.processFlowChart.bulkPut(buildDefaultTemplates() as any[]); }
-        const data = await db.processFlowChart.toArray();
-        setRecords(data as unknown as FlowChartRecord[]);
+        loadData();
       } catch { setRecords(buildDefaultTemplates()); }
     })();
-  }, []);
+  }, [loadData]);
 
   const filtered = useMemo(() => records.filter(r => {
     const q = searchTerm.toLowerCase();
     return (filterDept === 'All' || r.department === filterDept)
       && (filterStatus === 'All' || r.status === filterStatus)
-      && (r.title.toLowerCase().includes(q) || r.code.toLowerCase().includes(q) || r.department.toLowerCase().includes(q));
+      && (r.title.toLowerCase().includes(q) || r.code.toLowerCase().includes(q));
   }), [records, searchTerm, filterDept, filterStatus]);
 
   const stats = useMemo(() => ({
@@ -1114,295 +679,184 @@ export function FlowChartPage({ onNavigate }: { onNavigate: (page: string, param
     setEditing(null);
   };
 
-  const handleCreate = async () => {
-    if (!newForm.title.trim()) return;
-    const r: FlowChartRecord = {
-      id: 'fc-' + Date.now(), code: `FC-${String(records.length + 1).padStart(3, '0')}`,
-      title: newForm.title, department: newForm.department, processOwner: newForm.processOwner,
-      version: newForm.version, status: 'Draft', description: newForm.description,
-      nodes: [], edges: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      changeHistory: [{ date: new Date().toISOString(), user: 'QMS User', note: 'Created.' }],
-    };
-    try { await db.processFlowChart.put(r as any); } catch { }
-    setRecords(prev => [r, ...prev]);
-    setShowNew(false);
-    setEditing(r);
-    setNewForm({ title: '', department: 'Quality', processOwner: '', version: 'v1.0', description: '' });
-  };
-
-  const handleDuplicate = async (r: FlowChartRecord) => {
-    const dup: FlowChartRecord = {
-      ...r, id: 'fc-' + Date.now(), code: `FC-${String(records.length + 1).padStart(3, '0')}`,
-      title: r.title + ' (Copy)', status: 'Draft',
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      changeHistory: [{ date: new Date().toISOString(), user: 'QMS User', note: 'Duplicated.' }],
-    };
-    try { await db.processFlowChart.put(dup as any); } catch { }
-    setRecords(prev => [dup, ...prev]);
-  };
-
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this flowchart?')) return;
     try { await db.processFlowChart.delete(id); } catch { }
     setRecords(prev => prev.filter(r => r.id !== id));
   };
 
-  // Quick export directly from list page
-  const quickExportPNG = async (record: FlowChartRecord) => {
-    setExportingId(record.id);
-    // Render nodes as a simple static image using canvas
-    const canvas = document.createElement('canvas');
-    canvas.width = 1400; canvas.height = 900;
-    const ctx = canvas.getContext('2d')!;
-
-    // Build a simple branded document
-    ctx.fillStyle = '#f8fafc'; ctx.fillRect(0, 0, 1400, 900);
-    const hGrad = ctx.createLinearGradient(0, 0, 1400, 0);
-    hGrad.addColorStop(0, '#0f172a'); hGrad.addColorStop(0.5, '#1e3a8a'); hGrad.addColorStop(1, '#0f172a');
-    ctx.fillStyle = hGrad; ctx.fillRect(0, 0, 1400, 120);
-    ctx.fillStyle = '#3b82f6'; ctx.fillRect(0, 120, 1400, 3);
-
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 28px Arial'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
-    ctx.fillText(record.title.toUpperCase(), 40, 30);
-    ctx.fillStyle = 'rgba(148,163,184,0.9)'; ctx.font = '13px Arial';
-    ctx.fillText(`${record.code}  ·  ${record.department}  ·  ${record.version}  ·  Status: ${record.status}`, 40, 66);
-    ctx.fillText(`Process Owner: ${record.processOwner || '—'}  ·  ${record.nodes.length} nodes, ${record.edges.length} connections`, 40, 86);
-
-    // Draw flowchart with proper shapes and edge connections
-    renderFlowchartCanvas(ctx, record, 30, 140, 1340, 700);
-
-    ctx.fillStyle = '#1e3a8a'; ctx.fillRect(0, 858, 1400, 32);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Arial'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(`QMS Flowchart  ·  ${record.code}  ·  ${record.title}`, 20, 874);
-    ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillText(`Generated: ${new Date().toLocaleString('en-GB')}`, 1380, 874);
-
-    const url = canvas.toDataURL('image/png', 1.0);
-    const a = document.createElement('a'); a.href = url; a.download = `${record.code}_Flowchart.png`; a.click();
-    setExportingId(null);
+  const handleCreate = async () => {
+     if (!newForm.title) return;
+     const newRecord: FlowChartRecord = {
+        id: `fc-${Date.now()}`,
+        code: `FC-${String(records.length + 1).padStart(3, '0')}`,
+        title: newForm.title,
+        department: newForm.department,
+        processOwner: newForm.processOwner || 'Manager',
+        version: newForm.version || 'v1.0',
+        status: 'Draft',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        description: newForm.description,
+        steps: DEFAULT_STEPS,
+        mermaidDefinition: stepsToMermaid(DEFAULT_STEPS),
+        changeHistory: []
+     };
+     await handleSave(newRecord);
+     setEditing(newRecord);
+     setShowNew(false);
   };
 
-  const quickExportPDF = async (record: FlowChartRecord) => {
-    setExportingId(record.id);
-    const canvas = document.createElement('canvas');
-    canvas.width = 2480; canvas.height = 1754; // A4 landscape @ 150dpi
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 2480, 1754);
-
-    // Header
-    const hGrad = ctx.createLinearGradient(0, 0, 2480, 0);
-    hGrad.addColorStop(0, '#0f172a'); hGrad.addColorStop(0.5, '#1e3a8a'); hGrad.addColorStop(1, '#0f172a');
-    ctx.fillStyle = hGrad; ctx.fillRect(0, 0, 2480, 200);
-    ctx.fillStyle = '#3b82f6'; ctx.fillRect(0, 200, 2480, 5);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 52px Arial'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
-    ctx.fillText(record.title.toUpperCase(), 60, 45);
-    ctx.fillStyle = 'rgba(148,163,184,0.9)'; ctx.font = '24px Arial';
-    ctx.fillText(`${record.code}  ·  ${record.department} Department  ·  Process Owner: ${record.processOwner || '—'}  ·  Version: ${record.version}`, 60, 110);
-    ctx.fillText(`Description: ${record.description || 'No description.'}`, 60, 150);
-
-    // Draw flowchart with proper shapes and edge connections
-    renderFlowchartCanvas(ctx, record, 30, 220, 2420, 1440);
-
-    // Footer
-    ctx.fillStyle = '#1e3a8a'; ctx.fillRect(0, 1700, 2480, 54);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px Arial'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(`QMS Process Flowchart  ·  ${record.code}  ·  ${record.title}  ·  ${record.version}`, 40, 1727);
-    ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillText(`Generated: ${new Date().toLocaleString('en-GB')}`, 2440, 1727);
-
-    const imgData = canvas.toDataURL('image/png', 1.0);
-    const doc = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4' });
-    const W = doc.internal.pageSize.getWidth();
-    const H = doc.internal.pageSize.getHeight();
-    const startY = drawPdfHeader(doc, record.title || 'Flow Chart', `Reference: ${record.code} | Version: ${record.version || '1.0'}`, 'flow_chart');
-    const footerReserve = 16;
-    const topMargin = startY + 2;
-    const availableW = W - 16;
-    const availableH = H - topMargin - footerReserve;
-    const ratio = Math.min(availableW / 2480, availableH / 1754);
-    const imageW = 2480 * ratio;
-    const imageH = 1754 * ratio;
-    doc.addImage(imgData, 'PNG', (W - imageW) / 2, topMargin + Math.max(0, (availableH - imageH) / 2), imageW, imageH);
-    addPageFooters(doc);
-    doc.save(`${record.code}_Flowchart.pdf`);
-    setExportingId(null);
-  };
-
-  const inputClass = "w-full px-3 py-2 bg-bg-2 border border-border-main rounded-xl text-sm text-text-1 placeholder:text-text-3 focus:ring-2 focus:ring-accent/30 focus:border-accent outline-none transition-all";
-
-  if (editing) return <CanvasEditor record={editing} onSave={handleSave} onClose={() => setEditing(null)} />;
+  if (editing) return <FlowBuilderEditor record={editing} onSave={handleSave} onClose={() => setEditing(null)} />;
 
   return (
-    <motion.div className="p-4 md:p-6 lg:p-8 space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div className="p-4 md:p-8 space-y-8 min-h-screen" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-text-1 flex items-center gap-3">
-            <GitBranch className="w-7 h-7 text-accent" /> Process Flow Charts
+          <h1 className="text-3xl font-bold text-text-1 flex items-center gap-3">
+            <GitBranch className="w-8 h-8 text-accent" />
+            Process Flow Command
           </h1>
-          <p className="text-text-3 text-sm mt-1">ISO 9001 process flowchart library — build, manage and export</p>
+          <p className="text-text-2 text-base mt-1">Design and manage high-fidelity QMS process diagrams.</p>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-all shadow-sm" onClick={() => setShowNew(true)}>
-          <Plus className="w-4 h-4" /> New Flow Chart
+        <button 
+           className="btn btn-primary flex items-center gap-2 px-6 shadow-lg shadow-accent/20"
+           onClick={() => setShowNew(true)}
+        >
+          <Plus className="w-4 h-4" /> New Flowchart
         </button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Total Charts', value: stats.total, color: 'bg-blue-500', icon: GitBranch },
-          { label: 'Approved', value: stats.approved, color: 'bg-emerald-500', icon: CheckCircle2 },
-          { label: 'Pending Review', value: stats.pending, color: 'bg-amber-500', icon: Clock },
-          { label: 'Drafts', value: stats.draft, color: 'bg-slate-400', icon: Edit2 },
-        ].map((s, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-            className="bg-bg-1 border border-border-main rounded-2xl p-4 shadow-sm flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${s.color} flex-shrink-0`}><s.icon className="w-5 h-5 text-white" /></div>
-            <div>
-              <div className="text-2xl font-black text-text-1">{s.value}</div>
-              <div className="text-xs text-text-3 font-semibold uppercase tracking-wide">{s.label}</div>
+          { label: 'Total Library', value: stats.total, icon: Layers, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+          { label: 'Live Systems', value: stats.approved, icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+          { label: 'Pending Review', value: stats.pending, icon: Clock, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+          { label: 'System Drafts', value: stats.draft, icon: Edit2, color: 'text-slate-500', bg: 'bg-slate-500/10' },
+        ].map((stat, idx) => (
+          <div key={idx} className="bg-bg-1 border border-border-main rounded-2xl p-6 flex items-center gap-5 shadow-sm">
+            <div className={`p-4 rounded-2xl ${stat.bg} ${stat.color}`}>
+              <stat.icon className="w-6 h-6" />
             </div>
-          </motion.div>
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-text-3 mb-1">{stat.label}</div>
+              <div className="text-3xl font-bold text-text-1">{stat.value}</div>
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="bg-bg-1 border border-border-main rounded-2xl p-4 shadow-sm flex flex-col md:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-text-3" />
-          <input type="text" placeholder="Search flowcharts..." className={`${inputClass} pl-10`}
-            value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-        </div>
-        <select className="px-3 py-2 bg-bg-2 border border-border-main rounded-xl text-sm text-text-1 outline-none focus:ring-2 focus:ring-accent/30"
-          value={filterDept} onChange={e => setFilterDept(e.target.value)}>
-          <option value="All">All Departments</option>
-          {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <select className="px-3 py-2 bg-bg-2 border border-border-main rounded-xl text-sm text-text-1 outline-none focus:ring-2 focus:ring-accent/30"
-          value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="All">All Statuses</option>
-          {['Draft', 'Pending Review', 'Approved', 'Archived'].map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-
-      {/* Cards grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {filtered.map((r, idx) => {
+      {/* Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {filtered.map(r => {
           const s = STATUS_CONFIG[r.status];
-          const DI = DEPT_ICONS[r.department] || Network;
+          const IDI = DEPT_ICONS[r.department] || Network;
           return (
-            <motion.div key={r.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }}
-              className="bg-bg-1 border border-border-main rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col group">
-              {/* Top accent */}
-              <div className="h-1.5 bg-gradient-to-r from-blue-500 via-blue-400 to-blue-600 rounded-t-2xl" />
-
-              <div className="p-5 flex-1 flex flex-col">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-blue-50 rounded-xl dark:bg-blue-950/30"><DI className="w-5 h-5 text-blue-500" /></div>
-                    <div>
-                      <div className="text-[10px] font-black text-blue-500 tracking-widest">{r.code}</div>
-                      <h3 className="font-bold text-text-1 text-sm leading-tight group-hover:text-accent transition-colors">{r.title}</h3>
-                    </div>
-                  </div>
-                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${s.bg} ${s.color} flex-shrink-0`}>
-                    <s.icon className="w-3 h-3" /> {s.label}
-                  </span>
+            <motion.div 
+              key={r.id}
+              className="bg-bg-1 border border-border-main rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-4">
+                   <div className="p-3 bg-bg-2 rounded-xl border border-border-main">
+                      <IDI className="w-5 h-5 text-accent" />
+                   </div>
+                   <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter ${s.bg} ${s.color}`}>
+                      {s.label}
+                   </span>
                 </div>
-
-                <p className="text-xs text-text-3 leading-relaxed flex-1 line-clamp-2 mb-4">{r.description || 'No description.'}</p>
-
-                <div className="grid grid-cols-2 gap-2 text-[11px] text-text-3">
-                  <div className="flex items-center gap-1.5"><User className="w-3 h-3 flex-shrink-0 text-text-3/60" /><span className="truncate">{r.processOwner || '—'}</span></div>
-                  <div className="flex items-center gap-1.5"><Layers className="w-3 h-3 flex-shrink-0 text-text-3/60" />{r.nodes.length} nodes · {r.edges.length} links</div>
-                  <div className="flex items-center gap-1.5"><Tag className="w-3 h-3 flex-shrink-0 text-text-3/60" />{r.department}</div>
-                  <div className="flex items-center gap-1.5"><Calendar className="w-3 h-3 flex-shrink-0 text-text-3/60" />{r.version}</div>
+                <div className="text-[10px] font-black text-accent tracking-widest mb-1">{r.code}</div>
+                <h3 className="text-lg font-bold text-text-1 mb-2 group-hover:text-accent transition-colors">{r.title}</h3>
+                <p className="text-xs text-text-3 line-clamp-2 mb-6 h-8 opacity-70 leading-relaxed font-medium">
+                  {r.description || 'No detailed process breakdown available for this module.'}
+                </p>
+                <div className="flex items-center gap-4 py-3 border-t border-border-main">
+                  <div className="flex items-center gap-2">
+                    <User className="w-3.5 h-3.5 text-text-3" />
+                    <span className="text-[10px] font-bold text-text-2 uppercase truncate max-w-[80px]">{r.processOwner}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Network className="w-3.5 h-3.5 text-text-3" />
+                    <span className="text-[10px] font-bold text-text-2 uppercase">v{r.version}</span>
+                  </div>
                 </div>
               </div>
-
-              <div className="px-5 py-3 border-t border-border-main bg-bg-2/20 flex items-center justify-between">
-                <button onClick={() => setEditing(r)}
-                  className="flex items-center gap-1.5 text-xs font-bold text-text-2 hover:text-accent transition-colors">
-                  <Edit2 className="w-3.5 h-3.5" /> Open Canvas
+              <div className="px-6 py-4 bg-bg-2/30 border-t border-border-main flex items-center justify-between">
+                <button 
+                  onClick={() => setEditing(r)}
+                  className="text-xs font-black uppercase tracking-widest text-text-2 hover:text-accent flex items-center gap-2 transition-all"
+                >
+                  <Edit2 className="w-3.5 h-3.5" /> Project Tool
                 </button>
-                <div className="flex items-center gap-0.5">
-                  <button onClick={() => quickExportPNG(r)} disabled={exportingId === r.id}
-                    className="p-2 rounded-lg text-text-3 hover:text-blue-500 hover:bg-blue-50 transition-all disabled:opacity-40" title="Export PNG">
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => quickExportPDF(r)} disabled={exportingId === r.id}
-                    className="p-2 rounded-lg text-text-3 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-40" title="Export PDF">
-                    <FileDown className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => handleDuplicate(r)}
-                    className="p-2 rounded-lg text-text-3 hover:text-emerald-500 hover:bg-emerald-50 transition-all" title="Duplicate">
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => handleDelete(r.id)}
-                    className="p-2 rounded-lg text-text-3 hover:text-red-500 hover:bg-red-50 transition-all" title="Delete">
-                    <Trash2 className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                  <button onClick={() => handleDelete(r.id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg">
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             </motion.div>
           );
         })}
-
-        {filtered.length === 0 && (
-          <div className="col-span-full flex flex-col items-center py-20 text-text-3">
-            <GitBranch className="w-12 h-12 mb-4 opacity-20" />
-            <p className="font-semibold">No flowcharts found. Try creating one.</p>
-          </div>
-        )}
       </div>
 
-      {/* New flowchart modal */}
+      {/* New Modal */}
       <AnimatePresence>
         {showNew && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.92, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.92, opacity: 0, y: 20 }}
-              className="bg-bg-1 rounded-2xl border border-border-main shadow-2xl w-full max-w-lg p-6">
-              <div className="flex items-center justify-between mb-5">
-                <h3 className="text-lg font-bold text-text-1">New Flow Chart</h3>
-                <button className="p-2 hover:bg-bg-2 rounded-xl transition-colors text-text-3" onClick={() => setShowNew(false)}>
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-text-2 mb-1.5">Chart Title *</label>
-                  <input className={inputClass} placeholder="e.g. Sewing In-line QC Flow" value={newForm.title} onChange={e => setNewForm(p => ({ ...p, title: e.target.value }))} autoFocus />
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+             <motion.div 
+               initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+               className="bg-bg-1 border border-border-main rounded-3xl w-full max-w-lg p-8 shadow-2xl"
+             >
+                <div className="flex justify-between items-center mb-6">
+                   <h2 className="text-xl font-bold text-text-1">Initialize Process Flow</h2>
+                   <button onClick={() => setShowNew(false)} className="p-2 hover:bg-bg-2 rounded-xl transition-colors"><X className="w-5 h-5" /></button>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-semibold text-text-2 mb-1.5">Department</label>
-                    <select className={inputClass} value={newForm.department} onChange={e => setNewForm(p => ({ ...p, department: e.target.value }))}>
-                      {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-text-3 block mb-2">Process Name</label>
+                    <input 
+                      placeholder="e.g. End-to-End Sewing Workflow"
+                      className="w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm text-text-1 focus:ring-2 focus:ring-accent outline-none"
+                      value={newForm.title}
+                      onChange={e => setNewForm(p => ({ ...p, title: e.target.value }))}
+                      autoFocus
+                    />
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-text-2 mb-1.5">Version</label>
-                    <input className={inputClass} value={newForm.version} onChange={e => setNewForm(p => ({ ...p, version: e.target.value }))} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-text-3 block mb-2">Assign Department</label>
+                      <select 
+                        className="w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm text-text-1 focus:ring-2 focus:ring-accent outline-none"
+                        value={newForm.department}
+                        onChange={e => setNewForm(p => ({ ...p, department: e.target.value }))}
+                      >
+                        {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-text-3 block mb-2">Process Version</label>
+                      <input 
+                         className="w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm text-text-1 focus:ring-2 focus:ring-accent outline-none"
+                         value={newForm.version}
+                         onChange={e => setNewForm(p => ({ ...p, version: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="pt-4 flex gap-3">
+                     <button onClick={() => setShowNew(false)} className="btn bg-bg-2 border-border-main flex-1">Cancel</button>
+                     <button 
+                        onClick={handleCreate}
+                        disabled={!newForm.title}
+                        className="btn btn-primary flex-1 shadow-lg shadow-accent/20"
+                     >Start Designing</button>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-text-2 mb-1.5">Process Owner</label>
-                  <input className={inputClass} placeholder="e.g. QC Manager" value={newForm.processOwner} onChange={e => setNewForm(p => ({ ...p, processOwner: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-text-2 mb-1.5">Description</label>
-                  <textarea className={`${inputClass} resize-none`} rows={2} placeholder="Brief description of the process…" value={newForm.description} onChange={e => setNewForm(p => ({ ...p, description: e.target.value }))} />
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <button className="px-4 py-2.5 bg-bg-2 border border-border-main rounded-xl text-sm font-medium text-text-2 hover:text-text-1 transition-colors" onClick={() => setShowNew(false)}>Cancel</button>
-                  <button className="flex items-center gap-2 px-5 py-2.5 bg-accent text-white rounded-xl text-sm font-semibold hover:opacity-90 transition-all shadow-sm" onClick={handleCreate}>
-                    <Plus className="w-4 h-4" /> Create & Edit
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
+             </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </motion.div>

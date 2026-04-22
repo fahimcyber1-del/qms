@@ -15,7 +15,7 @@ const getCategory = (name: string) => {
   return 'General';
 };
 
-const DOCUMENT_NAMES = [
+export const DOCUMENT_NAMES = [
   "Daily Toilet Check List", "Sharp tools report", "Accessories inspection report (10%, AQL & 100%)", "Bin card",
   "Fabrics inspection report", "Fabrics inspection Summary report", "Shade band report", "Iron cleaning report",
   "Size set measurement correction report", "Fabrics relaxation report", "Pattern check report", "Marker check report",
@@ -62,27 +62,26 @@ const DOCUMENT_NAMES = [
   "Cutting Quality Audit", "Finishing Quality Audit", "Packing Quality Audit", "Shipment Quality Release"
 ];
 
-const MOCK_DOCS: DocumentControlRecord[] = DOCUMENT_NAMES.map((name, index) => ({
-  id: (index + 1).toString(),
-  serialNo: (index + 1).toString().padStart(3, '0'),
-  code: `QMS/FORM/${(index + 1).toString().padStart(3, '0')}`,
-  name: name,
-  issueDate: '2024-01-01',
-  status: 'Active',
-  version: '01',
-  category: getCategory(name)
+export const MOCK_DOCS = DOCUMENT_NAMES.map((name, index) => ({
+  id: `DOC-INIT-${(index + 1).toString().padStart(3, '0')}`,
+  docTitle: name,
+  docNumber: `QMS/FORM/${(index + 1).toString().padStart(3, '0')}`,
+  category: getCategory(name),
+  revision: '01',
+  status: 'Published',
+  department: getCategory(name),
+  responsiblePerson: 'System Admin',
+  releaseDate: '2024-01-01',
+  createdAt: new Date().toISOString(),
+  createdBy: 'System Admin',
+  updatedAt: new Date().toISOString(),
+  updatedBy: 'System Admin',
+  attachments: [],
+  comments: [],
+  history: []
 }));
 
-export const getDocuments = (): DocumentControlRecord[] => {
-  try {
-    const stored = localStorage.getItem('garmentqms_doc_control');
-    if (!stored) return MOCK_DOCS;
-    const parsed = JSON.parse(stored);
-    if (Array.isArray(parsed) && parsed.length < 100) {
-      return MOCK_DOCS;
-    }
-    return parsed;
-  } catch (e) {
-    return MOCK_DOCS;
-  }
+export const getDocuments = () => {
+  return MOCK_DOCS;
 };
+

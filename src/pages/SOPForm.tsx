@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { ChevronLeft, Save, Building, Users, ClipboardCheck, FileText, Link as LinkIcon, FileDown, Clock, Edit, CheckCircle, Trash2, AlertTriangle } from 'lucide-react';
 import { SOPRecord } from '../types';
 import { getSOPRecords, saveSOPRecords } from '../utils/sopUtils';
+import { AttachmentList } from '../components/AttachmentList';
 
 interface SOPFormProps {
   params: {
@@ -104,42 +105,41 @@ export function SOPForm({ params, onNavigate }: SOPFormProps) {
   };
 
   const handleDownloadPDF = async () => {
-    const {
-      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
-      proTable, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
-    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Standard Operating Procedure', `${formData.sopId} \u2022 ${formData.title}`);
+    await exportDetailToPDF({
+      moduleName: 'Standard Operating Procedure',
+      moduleId: `${formData.sopId} \u2022 ${formData.title}`,
+      recordId: formData.sopId || '—',
+      fileName: `${formData.sopId}_${formData.title.replace(/\s+/g, '_')}`,
+      fields: [
+        { label: 'SOP ID',         value: formData.sopId || '—' },
+        { label: 'Version',        value: formData.version || '—' },
+        { label: 'Department',     value: formData.department || '—' },
+        { label: 'Process / Area', value: formData.process || '—' },
+        { label: 'Effective Date', value: formData.effectiveDate || '—' },
+        { label: 'Next Review',    value: formData.reviewDate || '—' },
+        { label: 'Current Status', value: formData.status || 'Draft', fullWidth: true },
 
-    y = drawRecordTable(doc, y, 'SOP Identification & Status', [
-      { label: 'SOP ID',         value: formData.sopId || '—' },
-      { label: 'Version',        value: formData.version || '—' },
-      { label: 'Department',     value: formData.department || '—' },
-      { label: 'Process / Area', value: formData.process || '—' },
-      { label: 'Effective Date', value: formData.effectiveDate || '—' },
-      { label: 'Next Review',    value: formData.reviewDate || '—' },
-      { label: 'Current Status', value: formData.status || 'Draft', fullWidth: true },
-    ]);
+        { label: 'Procedural Scope & Intent', value: 'Overview', fullWidth: true },
+        { label: 'Purpose',        value: formData.purpose || 'Objectives not defined.', fullWidth: true },
+        { label: 'Scope',          value: formData.scope || 'Scope of application not defined.', fullWidth: true },
+        { label: 'Responsibility', value: formData.responsibility || 'Responsible parties not defined.', fullWidth: true },
 
-    y = drawRecordTable(doc, y, 'Procedural Scope & Intent', [
-      { label: 'Purpose',        value: formData.purpose || 'Objectives not defined.', fullWidth: true },
-      { label: 'Scope',          value: formData.scope || 'Scope of application not defined.', fullWidth: true },
-      { label: 'Responsibility', value: formData.responsibility || 'Responsible parties not defined.', fullWidth: true },
-    ]);
-
-    y = drawSectionLabel(doc, y, 'Operational Procedure Steps');
-    y = proTable(doc, y, [['Step Description / Technical Instructions']], [[formData.procedureSteps || 'Technical instructions pending...']]) + 12;
-
-    y = drawRecordTable(doc, y, 'Safety & Quality Control', [
-      { label: 'Safety Guidelines', value: formData.safetyGuidelines || 'No specific safety requirements.', fullWidth: true },
-      { label: 'QC Checkpoints',   value: formData.qcPoints || 'No specific quality checkpoints.', fullWidth: true },
-      { label: 'Required Tools',   value: formData.requiredEquipment || 'N/A', fullWidth: true },
-    ]);
-
-    y = drawSignatureRow(doc, y, ['Author / Specialist', 'Quality Assurance', 'Management Approval']);
-    addPageFooters(doc);
-    doc.save(`${formData.sopId}_${formData.title.replace(/\s+/g, '_')}.pdf`);
+        { label: 'Safety & Quality Control', value: 'Guidelines', fullWidth: true },
+        { label: 'Safety Guidelines', value: formData.safetyGuidelines || 'No specific safety requirements.', fullWidth: true },
+        { label: 'QC Checkpoints',   value: formData.qcPoints || 'No specific quality checkpoints.', fullWidth: true },
+        { label: 'Required Tools',   value: formData.requiredEquipment || 'N/A', fullWidth: true },
+      ],
+      tables: [
+        {
+          title: 'Operational Procedure Steps',
+          columns: ['Step Description / Technical Instructions'],
+          rows: [[formData.procedureSteps || 'Technical instructions pending...']]
+        }
+      ],
+      signatureLabels: ['Author / Specialist', 'Quality Assurance', 'Management Approval']
+    });
   };
 
 
@@ -252,14 +252,9 @@ export function SOPForm({ params, onNavigate }: SOPFormProps) {
                   {formData.attachments && formData.attachments.length > 0 && (
                     <div className="mt-2 space-y-2">
                       <span className="text-xs font-bold text-text-3 uppercase">Attachments</span>
-                      <div className="flex flex-wrap gap-2">
-                        {formData.attachments.map((att, idx) => (
-                          <a key={idx} href={att.data} download={att.name} className="flex items-center gap-2 bg-bg-2 border border-border-main rounded-lg px-3 py-2 text-blue-500 hover:bg-blue-500/10 transition-colors text-sm">
-                            <FileDown className="w-4 h-4" />
-                            <span className="truncate">{att.name}</span>
-                          </a>
-                        ))}
-                      </div>
+                      <AttachmentList 
+                        attachments={formData.attachments}
+                      />
                     </div>
                   )}
                 </div>
@@ -438,17 +433,10 @@ export function SOPForm({ params, onNavigate }: SOPFormProps) {
                   <input type="file" multiple accept="image/*,.pdf" className="w-full bg-bg-2 border border-border-main rounded-xl px-4 py-2 text-sm text-text-1" onChange={onFileChange} />
                 </div>
                 {formData.attachments && formData.attachments.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {formData.attachments.map((att, idx) => (
-                      <div key={idx} className="flex items-center gap-2 bg-bg-2 border border-border-main rounded-lg px-3 py-2">
-                        <FileText className="w-4 h-4 text-text-3" />
-                        <span className="text-sm truncate text-text-1">{att.name}</span>
-                        <button type="button" onClick={() => removeFile(idx)} className="text-red-500 hover:bg-red-500/10 p-1 rounded transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                  <AttachmentList 
+                    attachments={formData.attachments}
+                    onRemove={removeFile}
+                  />
                 )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">

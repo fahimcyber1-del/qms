@@ -1,8 +1,8 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Copy, CheckCircle2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 import { ExportModal } from '../components/ExportModal';
-import jsPDF from 'jspdf';
+
 import { motion } from 'motion/react';
 import { CAPARecord, CertificateRecord } from '../types';
 import { autoGenerateCAPA } from '../utils/capaUtils';

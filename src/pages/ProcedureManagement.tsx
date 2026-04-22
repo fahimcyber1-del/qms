@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   Search, Plus, FileText, History, Edit2, Trash2, Download, RefreshCw, 
@@ -65,6 +65,27 @@ export function ProcedureManagement({ onNavigate }: { onNavigate: (page: string,
       const days = Math.ceil((new Date(p.reviewDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
       return days < 0 && p.status !== 'Obsolete';
     }).length
+  };
+
+  const handleExportSinglePDF = async (proc: ProcedureRecord) => {
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    await exportDetailToPDF({
+      moduleName: 'Documented Procedure Specification',
+      moduleId: 'procedure',
+      recordId: proc.code,
+      fileName: `Proc_${proc.code}`,
+      fields: [
+        { label: 'Procedure Title',    value: proc.title },
+        { label: 'Procedure Code',     value: proc.code },
+        { label: 'Category',           value: proc.cat },
+        { label: 'Department',         value: proc.dept },
+        { label: 'ISO 9001 Clause',    value: proc.clause },
+        { label: 'Current Version',    value: proc.ver },
+        { label: 'Issue Date',         value: proc.issueDate },
+        { label: 'Review Date',        value: proc.reviewDate },
+        { label: 'Control Status',     value: proc.status },
+      ]
+    });
   };
 
   const departments = [...new Set(procedures.map(p => p.dept))].sort();
@@ -245,14 +266,14 @@ export function ProcedureManagement({ onNavigate }: { onNavigate: (page: string,
                           <button className="p-2 rounded-lg hover:bg-accent/10 text-text-3 hover:text-accent transition-all" title="View Document" onClick={() => openForm('document', p)}>
                             <FileText className="w-3.5 h-3.5" />
                           </button>
-                          <button className="p-2 rounded-lg hover:bg-accent/10 text-text-3 hover:text-accent transition-all" title="Edit" onClick={() => openForm('edit', p)}>
-                            <Edit2 className="w-3.5 h-3.5" />
+                          <button className="p-2 hover:bg-blue-500/10 text-text-3 hover:text-blue-500 rounded-lg transition-all" title="Edit" onClick={() => openForm('edit', p)}>
+                            <Edit2 className="w-4 h-4" />
                           </button>
-                          <button className="p-2 rounded-lg hover:bg-accent/10 text-text-3 hover:text-accent transition-all" title="Revision History" onClick={() => openForm('revision', p)}>
-                            <History className="w-3.5 h-3.5" />
+                          <button className="p-2 hover:bg-indigo-500/10 text-text-3 hover:text-indigo-500 rounded-lg transition-all" title="Download PDF" onClick={(e) => { e.stopPropagation(); handleExportSinglePDF(p); }}>
+                            <Download className="w-4 h-4" />
                           </button>
-                          <button className="p-2 rounded-lg hover:bg-red-50 text-text-3 hover:text-red-500 transition-all" title="Delete" onClick={() => handleDelete(p.id)}>
-                            <Trash2 className="w-3.5 h-3.5" />
+                          <button className="p-2 hover:bg-red-500/10 text-gray-400 hover:text-red-500 rounded-lg transition-all" title="Delete" onClick={() => handleDelete(p.id)}>
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>

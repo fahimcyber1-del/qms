@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { ExportModal } from '../components/ExportModal';
+import { Pagination } from '../components/Pagination';
 import { autoGenerateCAPA } from '../utils/capaUtils';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -236,6 +237,10 @@ export function Audit({ onNavigate }: AuditProps) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   // Modals & Panels
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
@@ -254,6 +259,13 @@ export function Audit({ onNavigate }: AuditProps) {
       return matchesSearch && matchesType && matchesStatus && matchesDate;
     });
   }, [audits, searchQuery, filterType, filterStatus, startDate, endDate]);
+
+  const paginatedAudits = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredAudits.slice(startIndex, startIndex + pageSize);
+  }, [filteredAudits, currentPage, pageSize]);
+
+  const totalPages = Math.ceil(filteredAudits.length / pageSize);
 
   const stats = useMemo(() => {
     return {
@@ -304,79 +316,71 @@ export function Audit({ onNavigate }: AuditProps) {
       checklist: checklist
     };
     setAudits([mockAudit, ...audits]);
+    setCurrentPage(1);
   };
 
   const downloadIndividualPDF = async (audit: AuditRecord) => {
-    const {
-      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
-      proTable, embedAttachments, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
-    const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Audit Compliance Report', `Audit Reference: ${audit.auditId}`);
-
-    y = drawRecordTable(doc, y, 'Audit Overview', [
-      { label: 'Audit ID',       value: audit.auditId },
-      { label: 'Audit Type',     value: audit.auditType },
-      { label: 'Department',     value: audit.department },
-      { label: 'Lead Auditor',   value: audit.auditorName },
-      { label: 'Auditees',       value: (audit.auditees || []).join(', ') || '—' },
-      { label: 'Audit Date',     value: audit.auditDate },
-      { label: 'Overall Result', value: audit.result || 'PENDING' },
-      { label: 'Report Status',  value: audit.status },
-    ]);
-
-    if (audit.nonConformitySummary) {
-      y = drawRecordTable(doc, y, 'Non-Conformity Summary', [
-        { label: 'Executive Summary', value: audit.nonConformitySummary, fullWidth: true }
-      ]);
-    }
-
-    if (audit.auditType === 'Internal Audit' && audit.checklist) {
-      for (const group of AUDIT_CLAUSES) {
-        const rows = group.items.map(item => {
-          const ans = audit.checklist?.[item.id];
-          return [
-            item.id,
-            item.text,
-            ans?.result || 'N/A',
-            ans?.evidence || '—',
-            ans?.attachments?.length ? `${ans.attachments.length} Ph.` : '—',
-          ];
-        });
-        
-        y = drawSectionLabel(doc, y, group.group);
-        y = proTable(doc, y,
-          [['ID', 'Audit Checkpoint / Question', 'Finding', 'Evidence & Observations', 'Docs']],
-          rows,
-          {
-            columnStyles: {
-              0: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
-              1: { cellWidth: 'auto' },
-              2: { cellWidth: 35, fontStyle: 'bold' },
-              3: { cellWidth: 60 },
-              4: { cellWidth: 15, halign: 'center' },
-            }
-          }
-        ) + 10;
-      }
-    }
-
-    y = drawSignatureRow(doc, y, ['Lead Auditor', 'Management Rep.', 'Auditee / Dept. Head', 'Authorized Signatory']);
-
-    const photos: string[] = [];
-    if (audit.attachments) photos.push(...audit.attachments);
+    const checklistRows: string[][] = [];
     if (audit.checklist) {
-      Object.values(audit.checklist).forEach(entry => {
-        if (entry.attachments) photos.push(...entry.attachments);
+      AUDIT_CLAUSES.forEach(group => {
+        group.items.forEach(item => {
+          const entry = audit.checklist![item.id];
+          if (entry) {
+            checklistRows.push([
+              item.id,
+              item.text,
+              entry.result,
+              entry.evidence || '—',
+              (entry.attachments && entry.attachments.length > 0) ? 'Yes' : 'No'
+            ]);
+          }
+        });
       });
     }
-    if (photos.length > 0) {
-      await embedAttachments(doc, photos, 'COMPLIANCE EVIDENCE ATTACHMENTS');
+
+    const attachments: { name: string; data: string }[] = [];
+    if (audit.attachments) {
+      audit.attachments.forEach((data, i) => attachments.push({ name: `Attachment ${i + 1}`, data }));
+    }
+    if (audit.checklist) {
+      Object.entries(audit.checklist).forEach(([id, entry]) => {
+        if (entry.attachments) {
+          entry.attachments.forEach((data, i) => attachments.push({ name: `${id} attachment ${i+1}`, data }));
+        }
+      });
     }
 
-    addPageFooters(doc);
-    doc.save(`Audit_${audit.auditId}_Report.pdf`);
+    await exportDetailToPDF({
+      moduleName: 'Audit Compliance Report',
+      moduleId: 'audit',
+      recordId: audit.auditId,
+      fileName: `Audit_${audit.auditId}_Report`,
+      layout: 'technical',
+      fields: [
+        { label: 'Audit Type',    value: audit.auditType },
+        { label: 'Department',     value: audit.department },
+        { label: 'Auditees',       value: audit.auditees.join(', ') },
+        { label: 'Summary Result', value: audit.result },
+        { label: 'Lead Auditor',   value: audit.auditorName },
+        { label: 'Audit Date',     value: audit.auditDate },
+        { label: 'Status',         value: audit.status },
+      ],
+      tables: checklistRows.length > 0 ? [{
+        title: 'Audit Findings & Observations',
+        columns: ['ID', 'Checkpoint', 'Finding', 'Evidence', 'Docs'],
+        rows: checklistRows,
+        columnStyles: {
+          0: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 35, fontStyle: 'bold' },
+          3: { cellWidth: 60 },
+          4: { cellWidth: 15, halign: 'center' },
+        }
+      }] : [],
+      attachments
+    });
   };
 
   return (
@@ -433,18 +437,21 @@ export function Audit({ onNavigate }: AuditProps) {
             placeholder="Search by ID, Dept, or Auditor..." 
             className="w-full bg-bg-2 border-none rounded-xl pl-11 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none transition-all text-text-1 placeholder:text-text-2"
             value={searchQuery} 
-            onChange={(e) => setSearchQuery(e.target.value)} 
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }} 
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
         <div className="flex items-center gap-3 w-full md:w-auto">
-          <select className="w-full md:w-36 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+          <select className="w-full md:w-36 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterType} onChange={(e) => {setFilterType(e.target.value); setCurrentPage(1);}}>
             <option value="All">All Types</option>
             <option value="Internal Audit">Internal Audit</option>
             <option value="3rd Party Audit">3rd Party Audit</option>
             <option value="Buyer Audit">Buyer Audit</option>
           </select>
-          <select className="w-full md:w-36 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+          <select className="w-full md:w-36 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => {setFilterStatus(e.target.value); setCurrentPage(1);}}>
             <option value="All">All Statuses</option>
             <option value="Open">Open</option>
             <option value="In Progress">In Progress</option>
@@ -452,9 +459,9 @@ export function Audit({ onNavigate }: AuditProps) {
           </select>
           <div className="flex items-center gap-2 bg-bg-2 px-3 py-1.5 rounded-xl flex-1 md:flex-none">
             <Calendar className="w-4 h-4 text-text-2" />
-            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => {setStartDate(e.target.value); setCurrentPage(1);}} />
             <span className="text-text-2 text-sm px-1">-</span>
-            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => {setEndDate(e.target.value); setCurrentPage(1);}} />
           </div>
         </div>
       </motion.div>
@@ -474,7 +481,7 @@ export function Audit({ onNavigate }: AuditProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-main">
-              {filteredAudits.length === 0 ? (
+              {paginatedAudits.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-12 text-center text-text-2">
                     <div className="flex flex-col items-center justify-center gap-3">
@@ -483,7 +490,7 @@ export function Audit({ onNavigate }: AuditProps) {
                     </div>
                   </td>
                 </tr>
-              ) : filteredAudits.map(audit => (
+              ) : paginatedAudits.map(audit => (
                 <tr 
                   key={audit.id} 
                   className="hover:bg-bg-2/60 transition-all duration-200 group relative" 
@@ -577,6 +584,15 @@ export function Audit({ onNavigate }: AuditProps) {
             </tbody>
           </table>
         </div>
+        
+        <Pagination 
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          pageSize={pageSize}
+          onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
+          totalRecords={filteredAudits.length}
+        />
       </motion.div>
 
       {/* Slide-over Panel */}
@@ -616,3 +632,4 @@ export function Audit({ onNavigate }: AuditProps) {
     </motion.div>
   );
 }
+

@@ -96,6 +96,25 @@ export function MeetingMinutes({ onNavigate }: Props) {
     });
   };
 
+  const exportSinglePDF = async (record: MeetingRecord) => {
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    await exportDetailToPDF({
+      moduleName: 'Minutes of Meeting (MOM)',
+      moduleId: 'meeting-minutes',
+      recordId: record.id,
+      fileName: `MOM_${record.meetingTitle.replace(/\s+/g, '_')}`,
+      fields: [
+        { label: 'Meeting Title',      value: record.meetingTitle },
+        { label: 'Meeting Category',   value: record.category },
+        { label: 'Meeting Date',       value: record.date },
+        { label: 'Facilitator / Chair', value: record.facilitator },
+        { label: 'Meeting Location',   value: record.location },
+        { label: 'Open Action Items',  value: String(record.actionItemsCount || 0) },
+        { label: 'Session Status',     value: record.status },
+      ]
+    });
+  };
+
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -211,6 +230,9 @@ export function MeetingMinutes({ onNavigate }: Props) {
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('meeting-minutes-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
+                        <Download className="w-4 h-4" />
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />

@@ -11,6 +11,33 @@ interface Props {
   params?: any;
 }
 
+const Section = ({ title, icon: Icon, children, number }: any) => (
+  <div className="bg-bg-1 p-6 md:p-8 rounded-2xl border border-border-main shadow-sm space-y-6">
+    <div className="flex items-center justify-between border-b border-border-main pb-4">
+      <h3 className="text-lg font-bold text-text-1 flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center text-accent">
+          <Icon className="w-5 h-5" />
+        </div>
+        <span className="opacity-40 font-mono text-sm mr-1">{number}.</span>
+        {title}
+      </h3>
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {children}
+    </div>
+  </div>
+);
+
+const Field = ({ label, required, children, span2 }: any) => (
+  <div className={`space-y-2 ${span2 ? 'md:col-span-2' : ''}`}>
+    <label className="text-sm font-bold text-text-2 flex items-center gap-1">
+      {label}
+      {required && <span className="text-red-500">*</span>}
+    </label>
+    {children}
+  </div>
+);
+
 export function MeetingMinutesForm({ onNavigate, params }: Props) {
   const mode = params?.mode || 'create';
   const initialData = params?.data || {};
@@ -74,33 +101,6 @@ export function MeetingMinutesForm({ onNavigate, params }: Props) {
     newItems[index] = { ...newItems[index], [field]: value };
     setFormData(p => ({ ...p, actionItems: newItems }));
   };
-
-  const Section = ({ title, icon: Icon, children, number }: any) => (
-    <div className="bg-bg-1 p-6 md:p-8 rounded-2xl border border-border-main shadow-sm space-y-6">
-      <div className="flex items-center justify-between border-b border-border-main pb-4">
-        <h3 className="text-lg font-bold text-text-1 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center text-accent">
-            <Icon className="w-5 h-5" />
-          </div>
-          <span className="opacity-40 font-mono text-sm mr-1">{number}.</span>
-          {title}
-        </h3>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {children}
-      </div>
-    </div>
-  );
-
-  const Field = ({ label, required, children, span2 }: any) => (
-    <div className={`space-y-2 ${span2 ? 'md:col-span-2' : ''}`}>
-      <label className="text-sm font-bold text-text-2 flex items-center gap-1">
-        {label}
-        {required && <span className="text-red-500">*</span>}
-      </label>
-      {children}
-    </div>
-  );
 
   const inputClass = "w-full bg-bg-2 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed";
 

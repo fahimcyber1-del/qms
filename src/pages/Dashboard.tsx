@@ -69,6 +69,21 @@ interface InspectionRecord {
   createdAt: unknown;
 }
 
+interface BuyerOrder {
+  id: string;
+  orderNo: string;
+  status: string;
+  qty: number;
+  createdAt: any;
+}
+
+interface AQLInspection {
+  id: string;
+  type: string;
+  result: string;
+  createdAt: any;
+}
+
 interface DashboardProps {
   onNavigate?: (page: string) => void;
 }
@@ -82,6 +97,8 @@ const PALETTE = {
   red: '#d9485f',
   slate: '#5f6f8a',
   indigo: '#5b5bd6',
+  teal: '#0d9488',
+  rose: '#e11d48',
 };
 
 const CHART_COLORS = [PALETTE.blue, PALETTE.cyan, PALETTE.emerald, PALETTE.amber, PALETTE.red];
@@ -466,6 +483,7 @@ function MetricTile({
   accent,
   icon: Icon,
   trend,
+  onClick,
 }: {
   title: string;
   value: string | number;
@@ -473,16 +491,18 @@ function MetricTile({
   accent: string;
   icon: any;
   trend?: string;
+  onClick?: () => void;
 }) {
   return (
     <motion.div
       variants={itemVariants}
+      onClick={onClick}
       data-dashboard-surface="tile"
-      className="relative overflow-hidden border"
+      className={`relative overflow-hidden border ${onClick ? 'cursor-pointer hover:shadow-md transition-all active:scale-[0.98]' : ''}`}
       style={{
         ['--dash-accent-soft' as any]: `${accent}10`,
         background: 'var(--dash-tile-bg)',
-        borderColor: `${accent}26`,
+        borderColor: onClick ? `${accent}40` : `${accent}26`,
         boxShadow: 'var(--dash-panel-shadow)',
       }}
     >
@@ -505,6 +525,11 @@ function MetricTile({
       <div className="text-[10px] font-black uppercase tracking-[0.18em] text-text-3">{title}</div>
       <div className="mt-2 text-[30px] font-black leading-none text-text-1">{value}</div>
       <div className="mt-2 text-xs leading-relaxed text-text-3">{subtitle}</div>
+      {onClick && (
+        <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-100">
+          <ArrowUpRight className="w-4 h-4" />
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -558,18 +583,28 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [supplierCount, setSupplierCount] = useState(0);
   const [complaintsCount, setComplaintsCount] = useState(0);
   const [kpiRecords, setKpiRecords] = useState<SmartKPI[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [complaints, setComplaints] = useState<any[]>([]);
+  const [risks, setRisks] = useState<any[]>([]);
   const [clockTime, setClockTime] = useState(new Date());
   const [appearance, setAppearance] = useState<AppearanceSettings>(loadAppearance);
   const [dateRange, setDateRange] = useState<number | 'custom'>(30);
   const [customDates, setCustomDates] = useState({ start: '', end: '' });
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [buyerOrders, setBuyerOrders] = useState<BuyerOrder[]>([]);
+  const [finalInspections, setFinalInspections] = useState<AQLInspection[]>([]);
 
   useEffect(() => {
     const load = async () => {
       setCertificates(getCertificates());
       setInspections(getProductionQualityRecords() as unknown as InspectionRecord[]);
-      setDocumentsCount(getDocuments().length);
       setProceduresCount(getProcedures().length);
+
+      // Load real-time counts from DB
+      const [docCount] = await Promise.all([
+        db.documents.count(),
+      ]);
+      setDocumentsCount(docCount);
       try {
         const stored = localStorage.getItem('garmentqms_capas');
         setCapas(stored ? JSON.parse(stored) : []);
@@ -590,19 +625,28 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       }
       try {
         const stored = localStorage.getItem('garmentqms_risks');
-        setRisksCount(stored ? JSON.parse(stored).length : 0);
+        const parsed = stored ? JSON.parse(stored) : [];
+        setRisksCount(parsed.length);
+        setRisks(parsed);
       } catch {
         setRisksCount(0);
+        setRisks([]);
       }
-      const [training, suppliers, complaints, kpis] = await Promise.all([
+      const [training, suppliersList, complaintsList, kpis, ordersList, aqlList] = await Promise.all([
         db.training.toArray(),
-        db.supplierManagement.count(),
-        db.customerComplaints.count(),
+        db.supplierManagement.toArray(),
+        db.customerComplaints.toArray(),
         db.kpiRecords.toArray(),
+        db.orderSummary.toArray(),
+        db.aqlInspections.toArray(),
       ]);
       setTrainingRecords(training);
-      setSupplierCount(suppliers);
-      setComplaintsCount(complaints);
+      setSuppliers(suppliersList);
+      setComplaints(complaintsList);
+      setSupplierCount(suppliersList.length);
+      setComplaintsCount(complaintsList.length);
+      setBuyerOrders(ordersList as any);
+      setFinalInspections(aqlList as any);
       const kpiWithVals = await Promise.all(kpis.map(async (k: any) => ({ ...k, currentValue: await calculateActualValue(k) })));
       setKpiRecords(kpiWithVals);
     };
@@ -637,17 +681,62 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     return date.toISOString().split('T')[0];
   }, [dateRange]);
 
+
+
+  const checkDateInRange = (d: string) => {
+    if (!d) return false;
+    const dateStr = d.split('T')[0];
+    if (dateRange === 'custom') {
+      if (customDates.start && dateStr < customDates.start) return false;
+      if (customDates.end && dateStr > customDates.end) return false;
+      return true;
+    }
+    return dateStr >= filterDateAgo;
+  };
+
   const recentInspections = useMemo(() => {
-    return inspections.filter((item) => {
-      const d = item.date || '';
-      if (dateRange === 'custom') {
-        if (customDates.start && d < customDates.start) return false;
-        if (customDates.end && d > customDates.end) return false;
-        return true;
-      }
-      return d >= filterDateAgo;
-    });
+    return inspections.filter((item) => checkDateInRange(item.date || item.createdAt || ''));
   }, [inspections, filterDateAgo, dateRange, customDates]);
+
+  const recentCapas = useMemo(() => {
+    return capas.filter(item => checkDateInRange(item.createdAt || item.date || item.deadline || ''));
+  }, [capas, filterDateAgo, dateRange, customDates]);
+
+  const recentAudits = useMemo(() => {
+    return audits.filter(item => checkDateInRange(item.date || item.createdAt || ''));
+  }, [audits, filterDateAgo, dateRange, customDates]);
+
+  const recentTraining = useMemo(() => {
+    return trainingRecords.filter(item => checkDateInRange(item.createdAt || item.date || ''));
+  }, [trainingRecords, filterDateAgo, dateRange, customDates]);
+
+  const recentKpis = useMemo(() => {
+    return kpiRecords.filter(item => checkDateInRange(item.createdAt || item.date || ''));
+  }, [kpiRecords, filterDateAgo, dateRange, customDates]);
+
+  const recentSuppliers = useMemo(() => {
+    return suppliers.filter(item => checkDateInRange(item.createdAt || item.date || ''));
+  }, [suppliers, filterDateAgo, dateRange, customDates]);
+
+  const recentComplaints = useMemo(() => {
+    return complaints.filter(item => checkDateInRange(item.createdAt || item.date || ''));
+  }, [complaints, filterDateAgo, dateRange, customDates]);
+
+  const recentRisks = useMemo(() => {
+    return risks.filter(item => checkDateInRange(item.createdAt || item.date || ''));
+  }, [risks, filterDateAgo, dateRange, customDates]);
+
+  const recentOrders = useMemo(() => {
+    return buyerOrders.filter(item => checkDateInRange(item.createdAt || ''));
+  }, [buyerOrders, filterDateAgo, dateRange, customDates]);
+
+  const recentFinalInspections = useMemo(() => {
+    return finalInspections.filter(item => checkDateInRange(item.createdAt || ''));
+  }, [finalInspections, filterDateAgo, dateRange, customDates]);
+
+  const totalOrderQty = useMemo(() => {
+    return buyerOrders.reduce((sum, order) => sum + (Number(order.qty) || 0), 0);
+  }, [buyerOrders]);
 
   const qualityKpis = useMemo(() => {
     const totalChecked = recentInspections.reduce((sum, item) => sum + (item.checkedQuantity || 0), 0);
@@ -720,18 +809,18 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   }, [recentInspections]);
 
   const auditStats = useMemo(() => {
-    const total = audits.length;
-    const passed = audits.filter((item: any) => item.overallScore != null && parseFloat(item.overallScore) >= 75).length;
+    const total = recentAudits.length;
+    const passed = recentAudits.filter((item: any) => item.overallScore != null && parseFloat(item.overallScore) >= 75).length;
     return { total, passed, rate: total > 0 ? Math.round((passed / total) * 100) : 0 };
-  }, [audits]);
+  }, [recentAudits]);
 
   const capaStats = useMemo(() => {
-    const open = capas.filter((item) => item.status === 'Open' || item.status === 'In Progress').length;
-    const overdue = capas.filter((item) => item.status === 'Overdue').length;
-    const closed = capas.filter((item) => item.status === 'Closed').length;
-    const total = capas.length;
+    const open = recentCapas.filter((item) => item.status === 'Open' || item.status === 'In Progress').length;
+    const overdue = recentCapas.filter((item) => item.status === 'Overdue').length;
+    const closed = recentCapas.filter((item) => item.status === 'Closed').length;
+    const total = recentCapas.length;
     return { open, overdue, closed, total, closureRate: total > 0 ? Math.round((closed / total) * 100) : 0 };
-  }, [capas]);
+  }, [recentCapas]);
 
   const certStats = useMemo(() => {
     const expired = certificates.filter((item) => getDaysUntilExpiry(item.expiryDate) <= 0).length;
@@ -745,7 +834,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const trainingStats = useMemo(() => {
     const grouped: Record<string, { total: number; completed: number }> = {};
-    trainingRecords.forEach((item: any) => {
+    recentTraining.forEach((item: any) => {
       const department = item.department || item.data?.department || 'General';
       if (!grouped[department]) grouped[department] = { total: 0, completed: 0 };
       grouped[department].total += 1;
@@ -761,11 +850,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 4);
-  }, [trainingRecords]);
+  }, [recentTraining]);
 
   const radarData = useMemo(() => {
-    return formatRadarData(kpiRecords);
-  }, [kpiRecords]);
+    return formatRadarData(recentKpis);
+  }, [recentKpis]);
 
   const commandStats = useMemo(
     () => [
@@ -773,12 +862,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       { label: 'Documents', value: documentsCount, page: 'doc-control', accent: PALETTE.indigo },
       { label: 'Procedures', value: proceduresCount, page: 'procedure', accent: PALETTE.cyan },
       { label: 'SOPs', value: sopsCount, page: 'sop', accent: PALETTE.teal },
-      { label: 'KPI Central', value: kpiRecords.length, page: 'kpi', accent: PALETTE.emerald },
-      { label: 'Risks', value: risksCount, page: 'risk', accent: PALETTE.red },
-      { label: 'Suppliers', value: supplierCount, page: 'supplier', accent: PALETTE.amber },
-      { label: 'Complaints', value: complaintsCount, page: 'complaints', accent: PALETTE.rose },
+      { label: 'KPI Central', value: recentKpis.length, page: 'kpi', accent: PALETTE.emerald },
+      { label: 'Risks', value: recentRisks.length, page: 'risk', accent: PALETTE.red },
+      { label: 'Suppliers', value: recentSuppliers.length, page: 'supplier', accent: PALETTE.amber },
+      { label: 'Complaints', value: recentComplaints.length, page: 'complaints', accent: PALETTE.rose },
     ],
-    [complaintsCount, documentsCount, proceduresCount, risksCount, sopsCount, supplierCount, recentInspections.length, kpiRecords.length]
+    [recentComplaints.length, documentsCount, proceduresCount, recentRisks.length, sopsCount, recentSuppliers.length, recentInspections.length, recentKpis.length]
   );
 
   const liveFeed = useMemo(() => {
@@ -790,16 +879,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         accent: PALETTE.blue,
       },
       {
-        id: 'capa',
-        label: 'Corrective actions in motion',
-        detail: `${capaStats.open} open, ${capaStats.overdue} overdue, ${capaStats.closed} closed`,
-        accent: capaStats.overdue > 0 ? PALETTE.red : PALETTE.amber,
+        id: 'orders',
+        label: 'Buyer order tracking',
+        detail: `${recentOrders.length} active orders processed in selected range`,
+        accent: PALETTE.amber,
       },
       {
-        id: 'cert',
-        label: 'Compliance certificate watch',
-        detail: `${certStats.expiringSoon} expiring soon and ${certStats.expired} expired`,
-        accent: certStats.expired > 0 ? PALETTE.red : PALETTE.emerald,
+        id: 'inspection-summary',
+        label: 'Final AQL inspection status',
+        detail: `${recentFinalInspections.filter(i => i.result === 'PASS').length} lots passed and ${recentFinalInspections.filter(i => i.result === 'FAIL').length} failing lots`,
+        accent: PALETTE.emerald,
       },
       {
         id: 'audit',
@@ -809,7 +898,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       },
     ];
     return items;
-  }, [auditStats.passed, auditStats.rate, auditStats.total, capaStats.closed, capaStats.open, capaStats.overdue, certStats.expired, certStats.expiringSoon, qualityKpis.totalChecked]);
+  }, [auditStats.passed, auditStats.rate, auditStats.total, qualityKpis.totalChecked, recentOrders.length, recentFinalInspections, dateRange]);
 
   const rftTone = getStatusTone(Math.round(qualityKpis.rft), 95, 88);
   const auditTone = getStatusTone(auditStats.rate, 90, 75);
@@ -818,11 +907,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const activeStyle = getDashboardStylePreset(dashboardStyle, appearance.themeMode);
   const heroTone = appearance.themeMode === 'dark' || dashboardStyle !== 'minimal' ? 'dark' : 'light';
   const densityTokens =
-    appearance.density === 'compact'
-      ? { hero: '18px', panel: '14px', tile: '14px', card: '14px' }
-      : appearance.density === 'spacious'
-        ? { hero: '30px', panel: '24px', tile: '20px', card: '20px' }
-        : { hero: '24px', panel: '20px', tile: '16px', card: '18px' };
+    appearance.density === 'ultra-compact'
+      ? { hero: '12px', panel: '10px', tile: '10px', card: '10px' }
+      : appearance.density === 'compact'
+        ? { hero: '18px', panel: '14px', tile: '14px', card: '14px' }
+        : appearance.density === 'spacious'
+          ? { hero: '30px', panel: '24px', tile: '20px', card: '20px' }
+          : appearance.density === 'airy'
+            ? { hero: '42px', panel: '36px', tile: '28px', card: '28px' }
+            : { hero: '24px', panel: '20px', tile: '16px', card: '18px' };
 
   return (
     <motion.div
@@ -852,7 +945,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <h1 className="text-2xl font-bold text-text-1">Enterprise Dashboard</h1>
           <p className="text-sm text-text-3 mt-1">Real-time quality, compliance, and operational insights.</p>
         </div>
-        
+
         <div className="flex justify-end flex-wrap items-center gap-3">
           <div className="relative">
             <button
@@ -872,9 +965,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                     <button
                       key={days}
                       onClick={() => { setDateRange(days); setIsFilterOpen(false); }}
-                      className={`text-left px-3 py-2 text-sm font-medium rounded-md flex justify-between items-center transition-colors cursor-pointer ${
-                        dateRange === days ? 'bg-accent/10 text-accent' : 'text-text-1 hover:bg-bg-2'
-                      }`}
+                      className={`text-left px-3 py-2 text-sm font-medium rounded-md flex justify-between items-center transition-colors cursor-pointer ${dateRange === days ? 'bg-accent/10 text-accent' : 'text-text-1 hover:bg-bg-2'
+                        }`}
                     >
                       Last {days} Days
                       {dateRange === days && <CheckCircle2 className="h-4 w-4" />}
@@ -899,38 +991,49 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
       </div>
 
-      <motion.div variants={containerVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <motion.div variants={containerVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <MetricTile
           title="Right First Time"
           value={`${qualityKpis.rft.toFixed(1)}%`}
           subtitle="Primary production quality signal."
           accent={PALETTE.blue}
           icon={Target}
-          trend={`${recentInspections.length} inspections`}
+          trend={`${recentInspections.length} logs`}
         />
         <MetricTile
-          title="Defect Per Hundred Units"
+          title="Defect Pressure"
           value={qualityKpis.dhu.toFixed(2)}
-          subtitle="Lower is better. Defect pressure tracking."
+          subtitle="DHU tracking (Lower is better)."
           accent={PALETTE.red}
           icon={ShieldAlert}
           trend={qualityKpis.dhu <= 3 ? 'On target' : 'Above target'}
         />
         <MetricTile
-          title="CAPA Pressure"
-          value={capaStats.open}
-          subtitle={`${capaStats.overdue} overdue actions need attention.`}
-          accent={PALETTE.amber}
-          icon={Wrench}
-          trend={`${capaStats.closed} closed`}
+          title="Total Checked"
+          value={qualityKpis.totalChecked.toLocaleString()}
+          subtitle="Quality logs across units."
+          accent={PALETTE.indigo}
+          icon={ClipboardCheck}
+          trend="Production & Quality"
+          onClick={() => onNavigate?.('prod-quality')}
         />
         <MetricTile
-          title="Compliance Watch"
-          value={certStats.expired + certStats.expiringSoon}
-          subtitle="Expired & expiring certificates alerts."
+          title="Order Management"
+          value={totalOrderQty.toLocaleString()}
+          subtitle="Total volume across all orders."
+          accent={PALETTE.amber}
+          icon={Layers3}
+          trend={`${buyerOrders.length} Orders`}
+          onClick={() => onNavigate?.('buyer-summary')}
+        />
+        <MetricTile
+          title="Final Inspection"
+          value={recentFinalInspections.length}
+          subtitle="AQL Final audits conducted."
           accent={PALETTE.emerald}
-          icon={Award}
-          trend={certStats.expired > 0 ? 'Renewal needed' : 'Stable'}
+          icon={CheckCircle2}
+          trend="Standard Registry"
+          onClick={() => onNavigate?.('inspection')}
         />
       </motion.div>
 
@@ -975,7 +1078,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             </div>
           </Panel>
         </div>
-        
+
         <div className="lg:col-span-1 flex flex-col">
           <Panel
             title="Live Feed"
@@ -1009,18 +1112,22 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           icon={Layers3}
           accent={PALETTE.red}
         >
-          <div className="flex flex-col justify-between h-[280px]">
-            <div className="h-40 w-full mb-3 shrink-0">
+          <div className="flex flex-col h-[280px]">
+            <div className="h-[140px] w-full shrink-0 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={defectBreakdown}
                     dataKey="value"
                     nameKey="name"
-                    innerRadius={50}
-                    outerRadius={75}
-                    paddingAngle={3}
+                    innerRadius="65%"
+                    outerRadius="90%"
+                    paddingAngle={4}
                     stroke="none"
+                    isAnimationActive={true}
+                    animationDuration={1200}
+                    animationBegin={200}
+                    cornerRadius={4}
                   >
                     {defectBreakdown.map((entry) => (
                       <Cell key={entry.name} fill={entry.color} />
@@ -1029,20 +1136,41 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   <Tooltip content={<CustomTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="text-center">
+                  <motion.div
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ delay: 0.6, type: 'spring' }}
+                    className="text-2xl font-black text-text-1 leading-none"
+                  >
+                    {qualityKpis.totalDefects}
+                  </motion.div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-text-3 mt-1">Total</div>
+                </div>
+              </div>
             </div>
-            <div className="space-y-2 mt-auto overflow-y-auto pr-2">
+            <div className="space-y-1.5 mt-4 overflow-y-auto pr-1 flex-1">
               {defectBreakdown.length > 0 ? (
-                defectBreakdown.map((item) => (
-                  <div key={item.name} className="flex justify-between items-center text-xs">
-                    <span className="font-semibold text-text-1 truncate pr-2 flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full block border border-white/10" style={{ backgroundColor: item.color }} />
+                defectBreakdown.map((item, index) => (
+                  <motion.div
+                    key={item.name}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 + 0.3 }}
+                    className="flex justify-between items-center text-xs p-1.5 rounded hover:bg-bg-2 transition-colors border border-transparent hover:border-border-main group cursor-default"
+                  >
+                    <span className="font-semibold text-text-2 group-hover:text-text-1 truncate pr-2 flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full block border border-white/10 shadow-sm" style={{ backgroundColor: item.color }} />
                       {item.name}
                     </span>
-                    <span className="text-text-3 shrink-0">{item.value} cases ({item.share}%)</span>
-                  </div>
+                    <span className="text-text-3 shrink-0 font-medium group-hover:text-text-2 bg-bg-2 px-1.5 py-0.5 rounded-sm">
+                      {item.share}% ({item.value})
+                    </span>
+                  </motion.div>
                 ))
               ) : (
-                <div className="text-center text-xs text-text-3">No defect data available</div>
+                <div className="text-center text-xs text-text-3 h-full flex items-center justify-center">No defect data available</div>
               )}
             </div>
           </div>
@@ -1070,19 +1198,32 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
         <Panel title="KPI Performance" subtitle="Cross-functional metric scores" icon={Target} accent={PALETTE.indigo}>
           <div className="h-[280px] w-full pt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={radarData} margin={{ top: 10, right: 20, left: 80, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} opacity={0.4} />
-                <XAxis type="number" domain={[0, 100]} hide />
-                <YAxis dataKey="subject" type="category" tick={axisStyle} axisLine={false} tickLine={false} width={120} tickFormatter={(tick) => tick.length > 20 ? tick.substring(0, 17) + '...' : tick} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--bg-2)' }} />
-                <Bar dataKey="value" name="Score" radius={[0, 8, 8, 0]} barSize={20} background={{ fill: 'var(--bg-2)' }}>
-                  {radarData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {radarData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData}>
+                  <PolarGrid stroke="var(--border)" opacity={0.6} />
+                  <PolarAngleAxis
+                    dataKey="subject"
+                    tick={{ fill: 'var(--text-3)', fontSize: 10, fontWeight: 700 }}
+                    tickFormatter={(tick) => tick.length > 15 ? tick.substring(0, 15) + '...' : tick}
+                  />
+                  <Radar
+                    name="Score"
+                    dataKey="value"
+                    stroke={PALETTE.indigo}
+                    strokeWidth={2}
+                    fill={PALETTE.indigo}
+                    fillOpacity={0.3}
+                    isAnimationActive={true}
+                    animationDuration={1500}
+                    animationBegin={300}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                </RadarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-text-3">No KPI data configured</div>
+            )}
           </div>
         </Panel>
       </div>
@@ -1115,10 +1256,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   </div>
                 ))
               ) : (
-                 <div className="flex flex-col items-center justify-center p-6 text-center h-full">
-                   <GraduationCap className="h-10 w-10 text-text-4 mb-3" />
-                   <p className="text-sm text-text-3 font-medium">No active training metrics</p>
-                 </div>
+                <div className="flex flex-col items-center justify-center p-6 text-center h-full">
+                  <GraduationCap className="h-10 w-10 text-text-4 mb-3" />
+                  <p className="text-sm text-text-3 font-medium">No active training metrics</p>
+                </div>
               )}
             </div>
           </div>
@@ -1145,8 +1286,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               {[
                 { label: 'Overdue CAPA', value: capaStats.overdue, accent: PALETTE.red, page: 'capa' },
                 { label: 'Expiring Certificates', value: certStats.expiringSoon, accent: PALETTE.amber, page: 'certification' },
-                { label: 'Open Complaints', value: complaintsCount, accent: PALETTE.red, page: 'complaints' },
-                { label: 'Logged Risks', value: risksCount, accent: PALETTE.indigo, page: 'risk' },
+                { label: 'Open Complaints', value: recentComplaints.length, accent: PALETTE.red, page: 'complaints' },
+                { label: 'Logged Risks', value: recentRisks.length, accent: PALETTE.indigo, page: 'risk' },
               ].map((item) => (
                 <button
                   key={item.label}

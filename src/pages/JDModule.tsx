@@ -30,8 +30,7 @@ import {
 import { JDRecord, Employee, JDResponsibility, DocumentControlRecord } from '../types';
 import { COMPANIES, LOCATIONS } from '../constants';
 import { cn } from '../lib/utils';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+
 
 // Mock Employee Database (HRMS Integration)
 const MOCK_EMPLOYEES: Employee[] = [
@@ -334,52 +333,51 @@ export function JDModule({ onNavigate }: JDModuleProps) {
   //  Layout: Doc Code & Rev at top-left | Company center bold | Address below
   // ═══════════════════════════════════════════════════════════════════
   const exportToPDF = async (record: JDRecord) => {
-    const {
-      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel,
-      proTable, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
-
-    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Job Description Specification', `Ref: ${record.jdRefNo} \u2022 Rev: ${record.revNo || '01'}`);
-
-    y = drawRecordTable(doc, y, 'Employee & Organizational Mapping', [
-      { label: 'Employee Name',    value: record.employeeName, fullWidth: true },
-      { label: 'Designation',      value: record.designation },
-      { label: 'ERP ID',           value: record.erpId || '\u2014' },
-      { label: 'Department',       value: record.department },
-      { label: 'Section / Unit',   value: `${record.section || '\u2014'} / ${record.unit || '\u2014'}` },
-      { label: 'Joining Date',     value: record.doj || '\u2014' },
-      { label: 'Document Code',    value: record.documentCode || '\u2014' },
-    ]);
-
-    y = drawRecordTable(doc, y, 'Operational Reporting Workflow', [
-      { label: 'Reporting To',     value: record.reportToName || '\u2014' },
-      { label: 'Supervisor Designation', value: record.reportToDesignation || '\u2014' },
-      { label: 'Declaration',      value: 'You are and will remain directly reporting to undersigned regarding all your responsibility matter.', fullWidth: true },
-    ]);
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
     const responsibilitiesBody = record.responsibilities
       .filter(r => r.description.trim())
       .map((r, idx) => [String(idx + 1), r.description]);
 
+    const tables: any[] = [];
+    
     if (responsibilitiesBody.length > 0) {
-      y = drawSectionLabel(doc, y, 'Key Performance Areas & Responsibilities');
-      y = proTable(doc, y, 
-        [['#', 'Key Responsibility / Operational Task Description']], 
-        responsibilitiesBody,
-        { columnStyles: { 0: { cellWidth: 15, halign: 'center' } } }
-      ) + 12;
+      tables.push({
+        title: 'Key Performance Areas & Responsibilities',
+        columns: ['#', 'Key Responsibility / Operational Task Description'],
+        rows: responsibilitiesBody,
+        columnStyles: { 0: { cellWidth: 15, halign: 'center' } }
+      });
     }
 
-    if (record.delegationClause) {
-      y = drawRecordTable(doc, y, 'Authority & Delegation', [
-        { label: 'Delegation Clause', value: 'Authorized to delegate his authority to his subordinate with responsibility and continuous monitoring.', fullWidth: true }
-      ]);
-    }
+    await exportDetailToPDF({
+      moduleName: 'Job Description Specification',
+      moduleId: `Ref: ${record.jdRefNo} \u2022 Rev: ${record.revNo || '01'}`,
+      recordId: record.jdRefNo || 'Unknown',
+      fileName: `JD_${record.employeeName.replace(/\s+/g, '_')}_${record.jdRefNo}`,
+      fields: [
+        { label: 'Employee & Organizational Mapping', value: 'Overview', fullWidth: true },
+        { label: 'Employee Name',    value: record.employeeName, fullWidth: true },
+        { label: 'Designation',      value: record.designation },
+        { label: 'ERP ID',           value: record.erpId || '\u2014' },
+        { label: 'Department',       value: record.department },
+        { label: 'Section / Unit',   value: `${record.section || '\u2014'} / ${record.unit || '\u2014'}` },
+        { label: 'Joining Date',     value: record.doj || '\u2014' },
+        { label: 'Document Code',    value: record.documentCode || '\u2014' },
+        
+        { label: 'Operational Reporting Workflow', value: 'Reporting', fullWidth: true },
+        { label: 'Reporting To',     value: record.reportToName || '\u2014' },
+        { label: 'Supervisor Designation', value: record.reportToDesignation || '\u2014' },
+        { label: 'Declaration',      value: 'You are and will remain directly reporting to undersigned regarding all your responsibility matter.', fullWidth: true },
 
-    y = drawSignatureRow(doc, y, ['Prepared By', "Supervisor's Signature", "Employee's Acknowledgement"]);
-    addPageFooters(doc);
-    doc.save(`JD_${record.employeeName.replace(/\s+/g, '_')}_${record.jdRefNo}.pdf`);
+        ...(record.delegationClause ? [
+          { label: 'Authority & Delegation', value: 'Delegation', fullWidth: true },
+          { label: 'Delegation Clause', value: 'Authorized to delegate his authority to his subordinate with responsibility and continuous monitoring.', fullWidth: true }
+        ] : [])
+      ],
+      tables: tables.length > 0 ? tables : undefined,
+      signatureLabels: ['Prepared By', "Supervisor's Signature", "Employee's Acknowledgement"]
+    });
   };
 
   // ═══════════════════════════════════════════════════════════════════

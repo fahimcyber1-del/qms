@@ -95,6 +95,25 @@ export function ManagementReview({ onNavigate }: Props) {
     });
   };
 
+  const exportSinglePDF = async (record: MRRecord) => {
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    await exportDetailToPDF({
+      moduleName: 'Management Review Report',
+      moduleId: 'management-review',
+      recordId: record.id,
+      fileName: `MR_${record.id}`,
+      fields: [
+        { label: 'Title', value: record.reviewTitle },
+        { label: 'Type', value: record.reviewType },
+        { label: 'Date', value: record.date },
+        { label: 'Chairperson', value: record.chairperson },
+        { label: 'Department', value: record.department },
+        { label: 'Responsible', value: record.responsiblePerson || '—' },
+        { label: 'Status', value: record.status },
+      ]
+    });
+  };
+
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -218,6 +237,9 @@ export function ManagementReview({ onNavigate }: Props) {
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('management-review-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
+                        <Download className="w-4 h-4" />
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />

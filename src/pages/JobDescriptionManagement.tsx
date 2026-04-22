@@ -92,6 +92,25 @@ export function JobDescriptionManagement({ onNavigate }: Props) {
     });
   };
 
+  const exportSinglePDF = async (record: JDRecord) => {
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    await exportDetailToPDF({
+      moduleName: 'Job Description & Role Specification',
+      moduleId: 'jd-management',
+      recordId: record.id,
+      fileName: `JD_${record.jobTitle.replace(/\s+/g, '_')}`,
+      fields: [
+        { label: 'Job Title',        value: record.jobTitle },
+        { label: 'Department',       value: record.department },
+        { label: 'Job Grade',        value: record.grade },
+        { label: 'Reports To',       value: record.reportsTo },
+        { label: 'Revision Number',  value: record.revision },
+        { label: 'Last Updated',     value: record.lastUpdate },
+        { label: 'Current Status',   value: record.status },
+      ]
+    });
+  };
+
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -205,6 +224,9 @@ export function JobDescriptionManagement({ onNavigate }: Props) {
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('job-description-management-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
+                        <Download className="w-4 h-4" />
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />

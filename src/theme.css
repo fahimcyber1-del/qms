@@ -1,0 +1,25 @@
+:root {
+  --color-bg-0: var(--bg-0);
+  --color-bg-1: var(--bg-1);
+  --color-bg-2: var(--bg-2);
+  --color-bg-3: var(--bg-3);
+  --color-bg-4: var(--bg-4);
+  --color-border-main: var(--border);
+  --color-border-bright: var(--border-bright);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-light: var(--accent-light);
+  --color-green-main: var(--green);
+  --color-green-dim: var(--green-dim);
+  --color-amber-main: var(--amber);
+  --color-amber-dim: var(--amber-dim);
+  --color-red-main: var(--red);
+  --color-red-dim: var(--red-dim);
+  --color-purple-main: var(--purple);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-rajdhani: 'Inter', system-ui, sans-serif;
+}

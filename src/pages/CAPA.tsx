@@ -174,61 +174,34 @@ export function CAPA({ onNavigate }: CAPAProps) {
   };
 
   const downloadIndividualPDF = async (capa: CAPARecord) => {
-    const { createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel, proTable, embedAttachments, addPageFooters, drawSignatureRow } = await import('../utils/pdfExport');
-    const doc = createDoc({ orientation: 'p', paperSize: 'a4' });
-    
-    let y = drawPdfHeader(doc, 'CAPA Compliance Report', `Tracking ID: ${capa.id}`);
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
-    // High-level record details
-    y = drawRecordTable(doc, y, 'Record Information', [
-      { label: 'CAPA ID',         value: capa.id },
-      { label: 'Source Audit',    value: capa.auditId || 'Manual Entry' },
-      { label: 'Responsible',     value: capa.responsible },
-      { label: 'Deadline',        value: capa.deadline },
-      { label: 'Current Status',  value: capa.status },
-      { label: 'Created On',      value: new Date(capa.createdAt).toLocaleDateString('en-GB') },
-    ]);
-
-    // Descriptive sections
-    y = drawRecordTable(doc, y, 'Non-Conformity & Root Cause', [
-      { label: 'Issue Detail',    value: capa.nc, fullWidth: true },
-      { label: 'Root Cause',      value: capa.cause || 'Analysis in progress...', fullWidth: true },
-    ]);
-
-    y = drawRecordTable(doc, y, 'Action Plan & Execution', [
-      { label: 'Corrective Action', value: capa.action, fullWidth: true },
-      { label: 'Preventive Plan',   value: capa.preventive, fullWidth: true },
-      { label: 'Internal Notes',    value: capa.description || 'N/A', fullWidth: true },
-    ]);
-
-    if (capa.history && capa.history.length > 0) {
-      y = drawSectionLabel(doc, y, 'Action History & Verification');
-      y = proTable(doc, y,
-        [['Date', 'Event', 'Responsible', 'Status']],
-        capa.history.map(h => [
-          new Date(h.date).toLocaleDateString('en-GB'),
-          h.change, h.responsible || '—', h.status || '—'
-        ]),
-        { 
-          columnStyles: { 
-            0: { cellWidth: 35 }, 
-            1: { cellWidth: 'auto' }, 
-            3: { halign: 'center', cellWidth: 30 } 
-          } 
-        }
-      ) + 12;
-    } else {
-      y += 10;
-    }
-
-    y = drawSignatureRow(doc, y, ['Originator', 'Quality Manager', 'Authorized Signatory']);
-
-    if (capa.attachments && capa.attachments.length > 0) {
-      await embedAttachments(doc, capa.attachments, 'CAPA VERIFICATION EVIDENCE');
-    }
-
-    addPageFooters(doc);
-    doc.save(`${capa.id}_CAPA_Report.pdf`);
+    await exportDetailToPDF({
+      moduleName: 'CAPA Compliance Report',
+      moduleId: 'capa',
+      recordId: capa.id,
+      fileName: `${capa.id}_CAPA_Report`,
+      layout: 'executive',
+      fields: [
+        { label: 'CAPA ID',         value: capa.id },
+        { label: 'Source Audit',    value: capa.auditId || 'Manual Entry' },
+        { label: 'Responsible',     value: capa.responsible },
+        { label: 'Deadline',        value: capa.deadline },
+        { label: 'Current Status',  value: capa.status },
+        { label: 'Created On',      value: new Date(capa.createdAt).toLocaleDateString('en-GB') },
+        { label: 'Issue Detail',    value: capa.nc },
+        { label: 'Root Cause',      value: capa.cause || 'Analysis in progress...' },
+        { label: 'Corrective Action', value: capa.action },
+        { label: 'Preventive Plan',   value: capa.preventive },
+        { label: 'Internal Notes',    value: capa.description || 'N/A' },
+      ],
+      comments: capa.history?.map(h => ({
+        user: h.responsible || 'System',
+        date: h.date,
+        text: `${h.change} (Status: ${h.status})`
+      })),
+      attachments: capa.attachments
+    });
   };
 
   return (

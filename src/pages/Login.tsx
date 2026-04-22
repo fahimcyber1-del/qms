@@ -1,96 +1,175 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence, useMotionValue, useTransform, useSpring } from 'motion/react';
 import {
   ShieldCheck, Eye, EyeOff, LogIn, Lock, User as UserIcon,
   Globe, Award, Activity, AlertCircle, BarChart3,
-  ClipboardList, FileText, Zap, CheckCircle2, ChevronRight,
-  Layers
+  ClipboardList, FileText, Zap, CheckCircle2, Layers, ArrowRight
 } from 'lucide-react';
+
+/* ─────────────────────── types & constants ───────────────────── */
 
 const DEMO_CREDS = { username: 'admin', password: 'qms2026' };
 
 export interface UserProfile {
-  name: string;
-  role: string;
-  email: string;
-  department: string;
-  initials: string;
+  name: string; role: string; email: string;
+  department: string; initials: string;
 }
-
 const DEFAULT_USER: UserProfile = {
-  name: 'System Admin',
-  role: 'Quality Manager',
-  email: 'admin@qmserp.com',
-  department: 'Quality Assurance',
-  initials: 'SA',
+  name: 'System Admin', role: 'Quality Manager',
+  email: 'admin@qmserp.com', department: 'Quality Assurance', initials: 'SA',
 };
-
-interface LoginProps {
-  onLogin: (user: UserProfile) => void;
-}
+interface LoginProps { onLogin: (user: UserProfile) => void; }
 
 const features = [
-  { icon: ShieldCheck, title: 'ISO 9001:2015', text: 'Fully Compliant Architecture' },
-  { icon: BarChart3,   title: 'Real-Time KPIs', text: 'Advanced Analytics Dashboard' },
-  { icon: ClipboardList, title: 'Audit & CAPA', text: 'Comprehensive Tracking System' },
-  { icon: FileText,    title: 'Document Control', text: 'Automated SOP Management' },
-  { icon: Activity,    title: 'Production Quality', text: 'Defect & Inspection Tracking' },
-  { icon: Layers,      title: 'Integrated Modules', text: '32+ Seamless ERP Modules' },
+  { icon: ShieldCheck,   title: 'ISO 9001:2015',      text: 'Fully Compliant',        color: '#3b82f6' },
+  { icon: BarChart3,     title: 'Real-Time KPIs',     text: 'Analytics Dashboard',    color: '#8b5cf6' },
+  { icon: ClipboardList, title: 'Audit & CAPA',       text: 'Comprehensive Tracking', color: '#06b6d4' },
+  { icon: FileText,      title: 'Document Control',   text: 'Automated SOP Mgmt',     color: '#10b981' },
+  { icon: Activity,      title: 'Production Quality', text: 'Defect Tracking',        color: '#f59e0b' },
+  { icon: Layers,        title: '32+ Modules',        text: 'Seamless ERP Suite',     color: '#ec4899' },
 ];
 
-// Grid pattern component
-const IndustrialPattern = () => (
-  <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-[0.03]">
-    <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <pattern id="industrial-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0f172a" strokeWidth="1.5"/>
-        </pattern>
-      </defs>
-      <rect width="100%" height="100%" fill="url(#industrial-grid)" />
-    </svg>
-  </div>
-);
+/* ─────────────────────── cursor glow follower ────────────────── */
 
-// Rotating mechanical elements
-const TechCircle = ({ size, top, left, delay = 0, duration, reverse = false }: any) => (
+const CursorGlow: React.FC = () => {
+  const x = useMotionValue(-200);
+  const y = useMotionValue(-200);
+  const springX = useSpring(x, { stiffness: 120, damping: 20 });
+  const springY = useSpring(y, { stiffness: 120, damping: 20 });
+
+  useEffect(() => {
+    const move = (e: MouseEvent) => { x.set(e.clientX); y.set(e.clientY); };
+    window.addEventListener('mousemove', move);
+    return () => window.removeEventListener('mousemove', move);
+  }, [x, y]);
+
+  return (
+    <motion.div
+      style={{
+        position: 'fixed', zIndex: 0, pointerEvents: 'none',
+        top: 0, left: 0,
+        width: 480, height: 480,
+        borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(99,130,255,0.12) 0%, rgba(168,130,255,0.06) 45%, transparent 70%)',
+        x: useTransform(springX, v => v - 240),
+        y: useTransform(springY, v => v - 240),
+      }}
+    />
+  );
+};
+
+/* ─────────────────────── floating blob orbs ──────────────────── */
+
+const Blob = ({
+  size, color, top, left, delay = 0, dur = 10
+}: { size: number; color: string; top: string; left: string; delay?: number; dur?: number }) => (
   <motion.div
-    initial={{ rotate: 0 }}
-    animate={{ rotate: reverse ? -360 : 360 }}
-    transition={{ duration: duration, repeat: Infinity, ease: "linear", delay }}
-    className="absolute pointer-events-none opacity-[0.04]"
+    animate={{ y: [0, -30, 0], x: [0, 18, 0], scale: [1, 1.1, 1], rotate: [0, 8, 0] }}
+    transition={{ duration: dur, delay, repeat: Infinity, ease: 'easeInOut' }}
     style={{
-      width: size,
-      height: size,
+      position: 'absolute', width: size, height: size,
+      borderRadius: '60% 40% 70% 30% / 50% 60% 40% 50%',
+      background: color, filter: 'blur(55px)', opacity: 0.5,
+      pointerEvents: 'none', zIndex: 0,
       top, left,
-      border: '2px dashed #0f172a',
-      borderRadius: '50%'
     }}
   />
 );
 
+/* ─────────────────────── animated grid lines ─────────────────── */
+const GridLines: React.FC<{ mouseX: number; mouseY: number }> = ({ mouseX, mouseY }) => {
+  const dx = (mouseX / window.innerWidth  - 0.5) * 18;
+  const dy = (mouseY / window.innerHeight - 0.5) * 18;
+  return (
+    <motion.div
+      animate={{ x: dx, y: dy }}
+      transition={{ type: 'spring', stiffness: 40, damping: 18 }}
+      style={{
+        position: 'absolute', inset: '-10%', pointerEvents: 'none', zIndex: 0,
+        backgroundImage: `
+          linear-gradient(rgba(99,102,241,0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(99,102,241,0.06) 1px, transparent 1px)
+        `,
+        backgroundSize: '52px 52px',
+      }}
+    />
+  );
+};
+
+/* ─────────────────────── floating dot particles ──────────────── */
+const Particles: React.FC = () => {
+  const dots = Array.from({ length: 22 }, (_, i) => ({
+    id: i,
+    x: `${Math.random() * 100}%`,
+    y: `${Math.random() * 100}%`,
+    size: Math.random() * 5 + 3,
+    dur: Math.random() * 6 + 5,
+    delay: Math.random() * 4,
+  }));
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 0 }}>
+      {dots.map(d => (
+        <motion.div
+          key={d.id}
+          animate={{ y: [0, -40, 0], opacity: [0.3, 0.7, 0.3] }}
+          transition={{ duration: d.dur, delay: d.delay, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            position: 'absolute', left: d.x, top: d.y,
+            width: d.size, height: d.size, borderRadius: '50%',
+            background: 'linear-gradient(135deg, #818cf8, #c084fc)',
+          }}
+        />
+      ))}
+    </div>
+  );
+};
+
+/* ─────────────────────── parallax card wrapper ───────────────── */
+const ParallaxCard: React.FC<{ children: React.ReactNode; mouseX: number; mouseY: number }> = ({
+  children, mouseX, mouseY
+}) => {
+  const cx = typeof window !== 'undefined' ? window.innerWidth  / 2 : 500;
+  const cy = typeof window !== 'undefined' ? window.innerHeight / 2 : 400;
+  const rotateY = ((mouseX - cx) / cx) * 6;
+  const rotateX = -((mouseY - cy) / cy) * 5;
+
+  return (
+    <motion.div
+      animate={{ rotateX, rotateY }}
+      transition={{ type: 'spring', stiffness: 60, damping: 18 }}
+      style={{ width: '100%', maxWidth: 450, perspective: 1200, transformStyle: 'preserve-3d' }}
+    >
+      {children}
+    </motion.div>
+  );
+};
+
+/* ─────────────────────── main component ─────────────────────── */
+
 export function Login({ onLogin }: LoginProps) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [focusedInput, setFocusedInput] = useState<'username' | 'password' | null>(null);
+  const [username, setUsername]    = useState('');
+  const [password, setPassword]    = useState('');
+  const [showPw,   setShowPw]      = useState(false);
+  const [error,    setError]       = useState('');
+  const [loading,  setLoading]     = useState(false);
+  const [focused,  setFocused]     = useState<'username'|'password'|null>(null);
+  const [mouse,    setMouse]       = useState({ x: 0, y: 0 });
+  const [hovered,  setHovered]     = useState<number|null>(null);
+
+  useEffect(() => {
+    const move = (e: MouseEvent) => setMouse({ x: e.clientX, y: e.clientY });
+    window.addEventListener('mousemove', move);
+    return () => window.removeEventListener('mousemove', move);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) {
-      setError('Please enter both username and password.');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    // Simulate async auth
+    if (!username.trim() || !password.trim()) { setError('Please enter both username and password.'); return; }
+    setLoading(true); setError('');
     await new Promise(r => setTimeout(r, 1200));
-
     if (username === DEMO_CREDS.username && password === DEMO_CREDS.password) {
-      const savedProfile = localStorage.getItem('qms_user_profile');
-      const user: UserProfile = savedProfile ? JSON.parse(savedProfile) : DEFAULT_USER;
+      const saved = localStorage.getItem('qms_user_profile');
+      const user: UserProfile = saved ? JSON.parse(saved) : DEFAULT_USER;
       localStorage.setItem('qms_auth', 'true');
       onLogin(user);
     } else {
@@ -99,257 +178,549 @@ export function Login({ onLogin }: LoginProps) {
     setLoading(false);
   };
 
-  const fillDemo = () => {
-    setUsername('admin');
-    setPassword('qms2026');
-    setError('');
-  };
+  const fillDemo = () => { setUsername('admin'); setPassword('qms2026'); setError(''); };
+
+  /* parallax depth layers offset from mouse centre */
+  const px = typeof window !== 'undefined' ? (mouse.x / window.innerWidth  - 0.5) : 0;
+  const py = typeof window !== 'undefined' ? (mouse.y / window.innerHeight - 0.5) : 0;
 
   return (
-    <div className="min-h-screen flex overflow-hidden bg-white" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        * { box-sizing: border-box; }
 
-      {/* ── Left Panel — Branding & Info ── */}
-      <div className="hidden lg:flex flex-col w-[55%] relative z-10 p-12 xl:p-20 justify-between bg-white border-r border-slate-200">
-        <IndustrialPattern />
-        
-        {/* Logo Section */}
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="flex items-center gap-4 relative z-10"
-        >
-          <div className="relative w-14 h-14 bg-slate-900 rounded-xl flex items-center justify-center border border-slate-800 shadow-xl overflow-hidden">
-             {/* Industrial shine */}
-             <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/10 to-white/0" />
-             <ShieldCheck className="w-7 h-7 text-white" strokeWidth={2.5} />
-          </div>
-          <div>
-            <h1 className="text-slate-900 font-black text-3xl tracking-tight leading-tight uppercase">QMS ERP</h1>
-            <span className="text-slate-500 text-[11px] font-bold tracking-widest uppercase flex items-center gap-2">
-              Enterprise Pro <span className="w-4 h-px bg-slate-300"></span>
-            </span>
-          </div>
-        </motion.div>
+        @keyframes spin        { to { transform: rotate(360deg); } }
+        @keyframes shimmer-btn { 0%{transform:translateX(-150%)} 100%{transform:translateX(150%)} }
+        @keyframes badge-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,0.35)} 50%{box-shadow:0 0 0 8px rgba(99,102,241,0)} }
 
-        {/* Hero Text */}
-        <div className="mt-20 mb-16 relative z-10">
-          <motion.h2 
-            initial={{ opacity: 0, x: -30 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-5xl xl:text-[4rem] font-black text-slate-900 leading-[1.05] mb-6 tracking-tight"
-          >
-            Elevate Your <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-br from-slate-900 to-slate-500">
-              Quality Standards
-            </span>
-          </motion.h2>
-          <motion.p 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-            className="text-slate-500 text-lg max-w-lg leading-relaxed font-medium"
-          >
-            A next-generation enterprise platform engineered for seamless ISO compliance, defect elimination, and multi-tier operational excellence.
-          </motion.p>
-        </div>
+        .lp-root {
+          min-height: 100vh; width: 100%;
+          display: flex; align-items: stretch;
+          font-family: 'Inter','Segoe UI',sans-serif;
+          background: linear-gradient(145deg,#f8f5ff 0%,#eef2ff 40%,#fdf4ff 70%,#f0fdfa 100%);
+          overflow: hidden; position: relative;
+        }
+        /* left panel */
+        .lp-left {
+          flex: 0 0 55%;
+          display: flex; flex-direction: column; justify-content: space-between;
+          padding: clamp(2rem,5vw,5rem);
+          position: relative; z-index: 10;
+          border-right: 1.5px solid rgba(139,92,246,0.12);
+        }
+        /* right panel */
+        .lp-right {
+          flex: 1;
+          display: flex; align-items: center; justify-content: center;
+          padding: clamp(1.5rem,4vw,3rem);
+          position: relative; z-index: 10;
+        }
+        /* card */
+        .lp-card {
+          width: 100%; max-width: 450px;
+          background: rgba(255,255,255,0.72);
+          border: 1.5px solid rgba(139,92,246,0.18);
+          border-radius: 28px;
+          padding: clamp(1.75rem,4vw,2.75rem);
+          backdrop-filter: blur(28px) saturate(160%);
+          -webkit-backdrop-filter: blur(28px) saturate(160%);
+          box-shadow:
+            0 4px 6px rgba(139,92,246,0.04),
+            0 24px 60px rgba(99,102,241,0.12),
+            0 1px 0 rgba(255,255,255,0.9) inset;
+          position: relative; overflow: hidden;
+          transform-style: preserve-3d;
+        }
+        /* input */
+        .lp-input {
+          width: 100%;
+          padding: 13px 14px 13px 46px;
+          background: rgba(248,245,255,0.8);
+          border: 1.5px solid rgba(139,92,246,0.2);
+          border-radius: 12px;
+          color: #1e1b4b; font-size: 14px; font-weight: 600;
+          outline: none; transition: all 0.25s;
+          font-family: inherit;
+        }
+        .lp-input::placeholder { color: #a5b4fc; font-weight: 500; }
+        .lp-input:focus {
+          border-color: rgba(99,102,241,0.6);
+          background: #fff;
+          box-shadow: 0 0 0 4px rgba(99,102,241,0.1);
+        }
+        /* submit button */
+        .lp-btn {
+          width: 100%; padding: 14px;
+          background: linear-gradient(135deg,#6366f1,#8b5cf6,#a855f7);
+          border: none; border-radius: 14px;
+          color: #fff; font-size: 15px; font-weight: 800;
+          cursor: pointer; position: relative; overflow: hidden;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          letter-spacing: -0.01em;
+          box-shadow: 0 8px 28px rgba(99,102,241,0.38);
+          transition: box-shadow 0.3s, opacity 0.2s;
+          font-family: inherit;
+        }
+        .lp-btn:not(:disabled):hover { box-shadow: 0 14px 40px rgba(99,102,241,0.52); }
+        .lp-btn:disabled { opacity: 0.72; cursor: not-allowed; }
+        .lp-btn-shimmer {
+          position: absolute; inset: 0;
+          background: linear-gradient(90deg,transparent,rgba(255,255,255,0.22),transparent);
+          transform: translateX(-150%);
+        }
+        .lp-btn:not(:disabled):hover .lp-btn-shimmer {
+          animation: shimmer-btn 0.7s ease forwards;
+        }
+        /* feature card */
+        .lp-feat {
+          padding: 1.1rem 1.15rem;
+          background: rgba(255,255,255,0.55);
+          border: 1.5px solid rgba(139,92,246,0.12);
+          border-radius: 16px;
+          backdrop-filter: blur(12px);
+          cursor: default; transition: all 0.3s;
+          position: relative; overflow: hidden;
+        }
+        .lp-feat::before {
+          content:''; position:absolute; inset:0;
+          background: linear-gradient(135deg,rgba(255,255,255,0.4),transparent);
+          opacity:0; transition:opacity 0.3s;
+          pointer-events:none;
+        }
+        .lp-feat:hover { transform:translateY(-4px); box-shadow:0 12px 32px rgba(99,102,241,0.14); border-color:rgba(139,92,246,0.28); }
+        .lp-feat:hover::before { opacity:1; }
+        /* demo card */
+        .lp-demo {
+          padding: 0.9rem 1rem; margin-bottom: 1.4rem;
+          background: rgba(238,242,255,0.7);
+          border: 1.5px solid rgba(99,102,241,0.2);
+          border-radius: 14px; cursor: pointer; transition: all 0.25s;
+        }
+        .lp-demo:hover { background:rgba(238,242,255,0.95); border-color:rgba(99,102,241,0.4); box-shadow:0 6px 20px rgba(99,102,241,0.1); }
+        /* scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.3); border-radius: 3px; }
+        /* responsive */
+        @media (max-width: 900px) {
+          .lp-left { display: none !important; }
+          .lp-mobile-logo { display: flex !important; }
+        }
+        @media (min-width: 901px) {
+          .lp-mobile-logo { display: none !important; }
+        }
+        /* badge pulse */
+        .lp-live-badge {
+          animation: badge-pulse 2.2s ease-in-out infinite;
+        }
+      `}</style>
 
-        {/* Features Grid */}
-        <div className="grid grid-cols-2 gap-4 mb-auto pr-10 relative z-10">
-          {features.map((feature, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 + i * 0.1, duration: 0.5 }}
-              className="group p-5 rounded-xl bg-slate-50 border border-slate-200 hover:bg-white hover:shadow-lg transition-all duration-300 relative overflow-hidden"
-            >
-              <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 group-hover:border-slate-300 transition-all duration-300">
-                <feature.icon className="w-5 h-5 text-slate-700" />
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1">{feature.title}</h3>
-              <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{feature.text}</p>
-            </motion.div>
-          ))}
-        </div>
+      <div className="lp-root">
+        {/* cursor glow */}
+        <CursorGlow />
 
-        {/* Bottom Badge */}
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1, delay: 1 }}
-          className="mt-12 flex items-center gap-3 relative z-10"
-        >
-          <div className="flex -space-x-2">
-             {[Award, CheckCircle2, Globe].map((Icon, i) => (
-               <div key={i} className="w-8 h-8 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center z-10">
-                 <Icon className="w-3.5 h-3.5 text-slate-600" />
-               </div>
-             ))}
-          </div>
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Trusted by 500+ Manufacturers</span>
-        </motion.div>
-      </div>
+        {/* animated grid (parallax layer 1 — slow) */}
+        <GridLines mouseX={mouse.x} mouseY={mouse.y} />
 
-      {/* ── Right Panel — Login Form ── */}
-      <div className="w-full lg:w-[45%] flex items-center justify-center p-6 sm:p-12 relative bg-[#F4F5F7] z-0 overflow-hidden">
-        
-        {/* Geometric moving shapes in background of right side */}
-        <TechCircle size="40vw" top="-10%" left="80%" duration={40} />
-        <TechCircle size="25vw" top="70%" left="-10%" duration={35} reverse />
-        <TechCircle size="15vw" top="20%" left="10%" duration={20} />
-
+        {/* floating blobs (parallax layer 2 — medium) */}
         <motion.div
-          initial={{ opacity: 0, x: 30 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.6, type: "spring", bounce: 0.3 }}
-          className="w-full max-w-[420px] relative z-10"
+          animate={{ x: px * -30, y: py * -20 }}
+          transition={{ type: 'spring', stiffness: 30, damping: 12 }}
+          style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:0 }}
         >
-          <div className="bg-white p-8 sm:p-10 rounded-2xl border border-slate-200/80 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.05)] relative overflow-hidden">
-            {/* Top decorative bar */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-slate-900" />
-            
-            {/* Mobile Logo */}
-            <div className="flex items-center gap-3 mb-10 lg:hidden">
-              <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center shadow-md">
-                 <ShieldCheck className="w-5 h-5 text-white" strokeWidth={2.5} />
-              </div>
-              <div>
-                <h1 className="text-slate-900 font-black text-xl uppercase tracking-tight">QMS ERP</h1>
-                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Enterprise Pro</span>
-              </div>
-            </div>
+          <Blob size={420} color="linear-gradient(135deg,#c7d2fe,#e9d5ff)" top="-12%"  left="-8%"  dur={11} />
+          <Blob size={300} color="linear-gradient(135deg,#bfdbfe,#ddd6fe)" top="60%"  left="62%"  dur={13} delay={3} />
+          <Blob size={220} color="linear-gradient(135deg,#bbf7d0,#a5f3fc)" top="35%"  left="35%"  dur={9}  delay={5} />
+        </motion.div>
 
-            <div className="text-center mb-8">
-              <motion.h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">System Login</motion.h2>
-              <p className="text-slate-500 text-sm font-medium">Verify your identity to access the portal</p>
-            </div>
+        {/* floating dust particles (parallax layer 3 — fast) */}
+        <motion.div
+          animate={{ x: px * -60, y: py * -40 }}
+          transition={{ type: 'spring', stiffness: 50, damping: 15 }}
+          style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:0 }}
+        >
+          <Particles />
+        </motion.div>
 
-            {/* Demo Card */}
+        {/* ── LEFT PANEL ── */}
+        <div className="lp-left">
+
+          {/* Logo */}
+          <motion.div
+            initial={{ opacity:0, y:-22 }}
+            animate={{ opacity:1, y:0 }}
+            transition={{ duration:0.7 }}
+            style={{ display:'flex', alignItems:'center', gap:'1rem' }}
+          >
             <motion.div
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              className="mb-8 p-4 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer overflow-hidden relative group transition-colors hover:border-slate-300 hover:bg-slate-100"
-              onClick={fillDemo}
+              animate={{ x: px * -8, y: py * -8 }}
+              transition={{ type:'spring', stiffness:60, damping:18 }}
+              style={{
+                width:54, height:54, borderRadius:16, flexShrink:0,
+                background: 'linear-gradient(135deg,#6366f1,#a855f7)',
+                display:'flex', alignItems:'center', justifyContent:'center',
+                boxShadow:'0 8px 26px rgba(99,102,241,0.38)',
+                position:'relative', overflow:'hidden',
+              }}
             >
-              <div className="flex items-center justify-between mb-2 relative z-10">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-slate-700" />
-                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">Quick Demo Access</span>
+              <div style={{ position:'absolute', inset:0, background:'linear-gradient(135deg,rgba(255,255,255,0.25),transparent)' }} />
+              <ShieldCheck style={{ width:26, height:26, color:'#fff' }} strokeWidth={2.5} />
+            </motion.div>
+            <div>
+              <h1 style={{ fontSize:'clamp(1.5rem,2.5vw,2rem)', fontWeight:900, color:'#1e1b4b', letterSpacing:'-0.04em', margin:0, lineHeight:1 }}>QMS ERP</h1>
+              <p style={{ fontSize:10, fontWeight:700, color:'#6366f1', letterSpacing:'0.2em', textTransform:'uppercase', margin:'4px 0 0' }}>Enterprise Pro</p>
+            </div>
+            {/* live badge */}
+            <div
+              className="lp-live-badge"
+              style={{
+                marginLeft:'auto',
+                display:'flex', alignItems:'center', gap:5,
+                background:'linear-gradient(135deg,#ecfdf5,#d1fae5)',
+                border:'1.5px solid rgba(16,185,129,0.3)',
+                borderRadius:20, padding:'5px 11px',
+              }}
+            >
+              <motion.div
+                animate={{ scale:[1,1.5,1], opacity:[1,0.5,1] }}
+                transition={{ duration:1.5, repeat:Infinity }}
+                style={{ width:7, height:7, borderRadius:'50%', background:'#10b981' }}
+              />
+              <span style={{ fontSize:9.5, fontWeight:800, color:'#065f46', letterSpacing:'0.08em', textTransform:'uppercase' }}>Live System</span>
+            </div>
+          </motion.div>
+
+          {/* Hero text (parallax layer) */}
+          <motion.div
+            animate={{ x: px * -14, y: py * -10 }}
+            transition={{ type:'spring', stiffness:35, damping:14 }}
+            style={{ margin:'clamp(2rem,5vw,4.5rem) 0 2.5rem' }}
+          >
+            <motion.h2
+              initial={{ opacity:0, x:-30 }}
+              animate={{ opacity:1, x:0 }}
+              transition={{ duration:0.8, delay:0.15 }}
+              style={{
+                fontSize:'clamp(2rem,4vw,3.4rem)', fontWeight:900,
+                color:'#1e1b4b', lineHeight:1.05, letterSpacing:'-0.03em', margin:'0 0 1.1rem',
+              }}
+            >
+              Elevate Your<br />
+              <span style={{
+                background:'linear-gradient(90deg,#6366f1,#8b5cf6,#a855f7,#06b6d4)',
+                WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent',
+                backgroundSize:'300%',
+                animation:'hueShift 6s linear infinite',
+              }}>
+                Quality Standards
+              </span>
+            </motion.h2>
+            <motion.p
+              initial={{ opacity:0 }}
+              animate={{ opacity:1 }}
+              transition={{ duration:0.8, delay:0.28 }}
+              style={{ color:'#6b7280', fontSize:'clamp(0.875rem,1.15vw,1rem)', lineHeight:1.7, maxWidth:470 }}
+            >
+              A next-generation enterprise platform engineered for seamless ISO compliance,
+              defect elimination, and multi-tier operational excellence.
+            </motion.p>
+          </motion.div>
+
+          {/* Feature grid (parallax layer) */}
+          <motion.div
+            animate={{ x: px * -20, y: py * -14 }}
+            transition={{ type:'spring', stiffness:40, damping:16 }}
+            style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:'0.85rem', marginBottom:'auto' }}
+          >
+            {features.map((f, i) => (
+              <motion.div
+                key={i}
+                className="lp-feat"
+                initial={{ opacity:0, y:24 }}
+                animate={{ opacity:1, y:0 }}
+                transition={{ delay:0.35 + i * 0.08 }}
+                onHoverStart={() => setHovered(i)}
+                onHoverEnd={() => setHovered(null)}
+              >
+                {/* accent top line on hover */}
+                <motion.div
+                  animate={{ scaleX: hovered === i ? 1 : 0 }}
+                  transition={{ duration:0.25 }}
+                  style={{
+                    position:'absolute', top:0, left:0, right:0, height:2,
+                    background:`linear-gradient(90deg,${f.color},transparent)`,
+                    transformOrigin:'left',
+                  }}
+                />
+                <div style={{
+                  width:36, height:36, borderRadius:10, marginBottom:10,
+                  background:`linear-gradient(135deg,${f.color}22,${f.color}11)`,
+                  border:`1.5px solid ${f.color}33`,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                }}>
+                  <f.icon style={{ width:16, height:16, color:f.color }} />
                 </div>
-                <span className="text-[9px] px-2 py-0.5 bg-slate-200 text-slate-700 rounded-sm font-black tracking-wider uppercase">Auto-Fill</span>
-              </div>
-              <div className="flex gap-4 text-xs font-mono bg-white border border-slate-200 p-2.5 rounded-lg relative z-10">
-                <span className="text-slate-500">User: <strong className="text-slate-900">admin</strong></span>
-                <span className="text-slate-500">Pass: <strong className="text-slate-900">qms2026</strong></span>
+                <p style={{ fontSize:11.5, fontWeight:800, color:'#1e1b4b', margin:'0 0 2px', letterSpacing:'-0.01em' }}>{f.title}</p>
+                <p style={{ fontSize:10.5, color:'#9ca3af', margin:0, lineHeight:1.4, fontWeight:600 }}>{f.text}</p>
+              </motion.div>
+            ))}
+          </motion.div>
+
+          {/* Trust badges */}
+          <motion.div
+            initial={{ opacity:0 }}
+            animate={{ opacity:1 }}
+            transition={{ duration:1, delay:1.1 }}
+            style={{ display:'flex', alignItems:'center', gap:12, marginTop:'2rem' }}
+          >
+            <div style={{ display:'flex' }}>
+              {[Award, CheckCircle2, Globe].map((Icon, i) => (
+                <div key={i} style={{
+                  width:30, height:30, borderRadius:'50%',
+                  background:'linear-gradient(135deg,#eef2ff,#ede9fe)',
+                  border:'1.5px solid rgba(99,102,241,0.2)',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  marginLeft: i===0 ? 0 : -8, zIndex: 3-i,
+                }}>
+                  <Icon style={{ width:13, height:13, color:'#6366f1' }} />
+                </div>
+              ))}
+            </div>
+            <span style={{ fontSize:11, fontWeight:700, color:'#9ca3af', textTransform:'uppercase', letterSpacing:'0.08em' }}>Trusted by 500+ Manufacturers</span>
+          </motion.div>
+        </div>
+
+        {/* ── RIGHT PANEL ── */}
+        <div className="lp-right">
+          <ParallaxCard mouseX={mouse.x} mouseY={mouse.y}>
+            <motion.div
+              initial={{ opacity:0, y:30 }}
+              animate={{ opacity:1, y:0 }}
+              transition={{ duration:0.7, type:'spring', bounce:0.28 }}
+            >
+              <div className="lp-card">
+                {/* top gradient accent */}
+                <div style={{
+                  position:'absolute', top:0, left:0, right:0, height:3,
+                  background:'linear-gradient(90deg,#6366f1,#8b5cf6,#a855f7,#06b6d4)',
+                  borderRadius:'28px 28px 0 0',
+                }} />
+
+                {/* sparkle dots in card */}
+                {[{t:'14%',l:'88%',s:6,c:'#a78bfa'},{t:'82%',l:'5%',s:5,c:'#60a5fa'},{t:'55%',l:'92%',s:4,c:'#34d399'}].map((sp,i)=>(
+                  <motion.div key={i}
+                    animate={{ scale:[1,1.6,1], opacity:[0.5,1,0.5] }}
+                    transition={{ duration:2.5+i*0.8, delay:i*0.6, repeat:Infinity }}
+                    style={{ position:'absolute', top:sp.t, left:sp.l, width:sp.s, height:sp.s,
+                      borderRadius:'50%', background:sp.c, pointerEvents:'none', zIndex:2 }}
+                  />
+                ))}
+
+                {/* mobile logo */}
+                <div className="lp-mobile-logo" style={{ display:'none', alignItems:'center', gap:12, marginBottom:'1.75rem' }}>
+                  <div style={{
+                    width:42, height:42, borderRadius:12,
+                    background:'linear-gradient(135deg,#6366f1,#a855f7)',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    boxShadow:'0 6px 20px rgba(99,102,241,0.35)',
+                  }}>
+                    <ShieldCheck style={{ width:20, height:20, color:'#fff' }} strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <h1 style={{ fontSize:'1.25rem', fontWeight:900, color:'#1e1b4b', letterSpacing:'-0.03em', margin:0 }}>QMS ERP</h1>
+                    <p style={{ fontSize:10, fontWeight:700, color:'#6366f1', letterSpacing:'0.15em', textTransform:'uppercase', margin:'3px 0 0' }}>Enterprise Pro</p>
+                  </div>
+                </div>
+
+                {/* header */}
+                <div style={{ textAlign:'center', marginBottom:'1.5rem' }}>
+                  <motion.h2
+                    initial={{ opacity:0, y:-10 }}
+                    animate={{ opacity:1, y:0 }}
+                    transition={{ delay:0.2 }}
+                    style={{ fontSize:'clamp(1.5rem,2.5vw,1.9rem)', fontWeight:900, color:'#1e1b4b', letterSpacing:'-0.03em', margin:'0 0 6px' }}
+                  >
+                    Welcome Back 👋
+                  </motion.h2>
+                  <p style={{ fontSize:13, color:'#9ca3af', fontWeight:500, margin:0 }}>Sign in to your QMS portal</p>
+                </div>
+
+                {/* demo card */}
+                <motion.div
+                  whileHover={{ scale:1.015 }} whileTap={{ scale:0.985 }}
+                  className="lp-demo"
+                  onClick={fillDemo}
+                >
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <Zap style={{ width:13, height:13, color:'#6366f1' }} />
+                      <span style={{ fontSize:10.5, fontWeight:800, color:'#4338ca', textTransform:'uppercase', letterSpacing:'0.1em' }}>Quick Demo Access</span>
+                    </div>
+                    <span style={{
+                      fontSize:9, padding:'3px 8px', fontWeight:800,
+                      background:'linear-gradient(135deg,#6366f1,#a855f7)',
+                      color:'#fff', borderRadius:6, letterSpacing:'0.05em', textTransform:'uppercase',
+                    }}>Auto-Fill</span>
+                  </div>
+                  <div style={{
+                    display:'flex', gap:16, fontSize:11.5, fontFamily:'monospace',
+                    background:'rgba(238,242,255,0.8)', padding:'7px 12px', borderRadius:8,
+                    color:'#6b7280',
+                  }}>
+                    <span>User:&nbsp;<strong style={{ color:'#4338ca' }}>admin</strong></span>
+                    <span>Pass:&nbsp;<strong style={{ color:'#4338ca' }}>qms2026</strong></span>
+                  </div>
+                </motion.div>
+
+                {/* form */}
+                <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+
+                  {/* username */}
+                  <div>
+                    <label style={{
+                      display:'block', fontSize:10, fontWeight:800,
+                      color: focused==='username' ? '#6366f1' : '#9ca3af',
+                      textTransform:'uppercase', letterSpacing:'0.15em', marginBottom:6,
+                      transition:'color 0.2s',
+                    }}>Username ID</label>
+                    <div style={{ position:'relative' }}>
+                      <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}>
+                        <UserIcon style={{ width:17, height:17, color: focused==='username' ? '#6366f1' : '#c4b5fd' }} />
+                      </span>
+                      <input
+                        className="lp-input"
+                        type="text"
+                        value={username}
+                        onChange={e => { setUsername(e.target.value); setError(''); }}
+                        onFocus={() => setFocused('username')}
+                        onBlur={() => setFocused(null)}
+                        placeholder="Enter admin ID"
+                        style={{ paddingLeft:46 }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* password */}
+                  <div>
+                    <label style={{
+                      display:'block', fontSize:10, fontWeight:800,
+                      color: focused==='password' ? '#6366f1' : '#9ca3af',
+                      textTransform:'uppercase', letterSpacing:'0.15em', marginBottom:6,
+                      transition:'color 0.2s',
+                    }}>Security Key</label>
+                    <div style={{ position:'relative' }}>
+                      <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}>
+                        <Lock style={{ width:17, height:17, color: focused==='password' ? '#6366f1' : '#c4b5fd' }} />
+                      </span>
+                      <input
+                        className="lp-input"
+                        type={showPw ? 'text' : 'password'}
+                        value={password}
+                        onChange={e => { setPassword(e.target.value); setError(''); }}
+                        onFocus={() => setFocused('password')}
+                        onBlur={() => setFocused(null)}
+                        placeholder="••••••••••••"
+                        style={{ paddingLeft:46, paddingRight:48 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPw(!showPw)}
+                        style={{
+                          position:'absolute', right:14, top:'50%', transform:'translateY(-50%)',
+                          background:'none', border:'none', cursor:'pointer',
+                          color:'#c4b5fd', display:'flex', alignItems:'center',
+                          padding:0, transition:'color 0.2s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.color='#6366f1')}
+                        onMouseLeave={e => (e.currentTarget.style.color='#c4b5fd')}
+                      >
+                        {showPw ? <EyeOff style={{ width:17, height:17 }} /> : <Eye style={{ width:17, height:17 }} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* error */}
+                  <AnimatePresence>
+                    {error && (
+                      <motion.div
+                        initial={{ opacity:0, y:-8, height:0 }}
+                        animate={{ opacity:1, y:0,  height:'auto' }}
+                        exit={{ opacity:0, y:-8, height:0 }}
+                        style={{ overflow:'hidden' }}
+                      >
+                        <div style={{
+                          display:'flex', alignItems:'center', gap:8,
+                          padding:'10px 14px',
+                          background:'rgba(254,226,226,0.8)',
+                          border:'1.5px solid rgba(252,165,165,0.5)',
+                          borderRadius:10, color:'#dc2626',
+                          fontSize:12.5, fontWeight:700,
+                        }}>
+                          <AlertCircle style={{ width:15, height:15, flexShrink:0 }} />
+                          {error}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* submit */}
+                  <motion.button
+                    whileHover={{ scale: loading ? 1 : 1.025 }}
+                    whileTap={{ scale: loading ? 1 : 0.97 }}
+                    type="submit"
+                    disabled={loading}
+                    className="lp-btn"
+                    style={{ marginTop:'0.5rem' }}
+                  >
+                    <span className="lp-btn-shimmer" />
+                    {loading ? (
+                      <>
+                        <div style={{
+                          width:18, height:18, border:'2px solid rgba(255,255,255,0.4)',
+                          borderTopColor:'#fff', borderRadius:'50%',
+                          animation:'spin 0.7s linear infinite',
+                        }} />
+                        Authenticating…
+                      </>
+                    ) : (
+                      <>
+                        <LogIn style={{ width:18, height:18 }} />
+                        Secure Sign In
+                        <ArrowRight style={{ width:16, height:16 }} />
+                      </>
+                    )}
+                  </motion.button>
+                </form>
+
+                {/* footer */}
+                <div style={{
+                  marginTop:'1.5rem', paddingTop:'1.25rem',
+                  borderTop:'1.5px solid rgba(139,92,246,0.1)',
+                  display:'flex', flexDirection:'column', alignItems:'center', gap:5,
+                }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:10.5, fontWeight:700, color:'#c4b5fd', textTransform:'uppercase', letterSpacing:'0.1em' }}>
+                    <Lock style={{ width:11, height:11 }} />
+                    End-to-end Encrypted
+                  </div>
+                  <div style={{ fontSize:10, fontWeight:700, color:'#d8b4fe', textTransform:'uppercase', letterSpacing:'0.1em' }}>
+                    Powered by QMS Enterprise v3.4.1
+                  </div>
+                </div>
               </div>
             </motion.div>
+          </ParallaxCard>
+        </div>
 
-            {/* Form */}
-            <form onSubmit={handleLogin} className="space-y-5">
-              
-              {/* Username Input */}
-              <div className="space-y-1.5 relative group">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1 group-focus-within:text-slate-900 transition-colors">Username ID</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <UserIcon className={`w-5 h-5 transition-colors ${focusedInput === 'username' ? 'text-slate-900' : 'text-slate-400'}`} />
-                  </div>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={e => { setUsername(e.target.value); setError(''); }}
-                    onFocus={() => setFocusedInput('username')}
-                    onBlur={() => setFocusedInput(null)}
-                    placeholder="Enter admin ID"
-                    className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-semibold outline-none focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 transition-all"
-                  />
-                </div>
-              </div>
-
-              {/* Password Input */}
-              <div className="space-y-1.5 relative group">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1 group-focus-within:text-slate-900 transition-colors">Security Key</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Lock className={`w-5 h-5 transition-colors ${focusedInput === 'password' ? 'text-slate-900' : 'text-slate-400'}`} />
-                  </div>
-                  <input
-                    type={showPw ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => { setPassword(e.target.value); setError(''); }}
-                    onFocus={() => setFocusedInput('password')}
-                    onBlur={() => setFocusedInput(null)}
-                    placeholder="••••••••••••"
-                    className="w-full pl-12 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-semibold outline-none focus:border-slate-900 focus:bg-white focus:ring-4 focus:ring-slate-900/5 transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw(!showPw)}
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-700 transition-colors"
-                  >
-                    {showPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Error MSG */}
-              <AnimatePresence>
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10, height: 0 }}
-                    animate={{ opacity: 1, y: 0, height: 'auto' }}
-                    exit={{ opacity: 0, y: -10, height: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="flex items-center gap-2 p-3 mt-2 rounded-lg bg-red-50 border border-red-100 text-red-600 text-[13px] font-bold">
-                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                      {error}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Submit Button */}
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                type="submit"
-                disabled={loading}
-                className="w-full mt-8 relative group overflow-hidden rounded-xl font-bold text-[15px] py-4 flex items-center justify-center gap-2 text-white bg-slate-900 disabled:opacity-80 transition-all shadow-[0_8px_20px_-6px_rgba(15,23,42,0.4)]"
-              >
-                {/* Shine effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-[150%] group-hover:translate-x-[150%] transition-transform duration-700 ease-in-out" />
-                
-                {loading ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-slate-500 border-t-white rounded-full animate-spin" />
-                    Authenticating...
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="w-5 h-5" />
-                    Secure Login
-                    <ChevronRight className="w-4 h-4 opacity-50 group-hover:translate-x-1 group-hover:opacity-100 transition-all" />
-                  </>
-                )}
-              </motion.button>
-            </form>
-            
-            {/* Footer context */}
-            <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col items-center gap-2">
-              <div className="flex items-center gap-1.5 text-slate-400 text-[11px] font-bold tracking-wide uppercase">
-                <Lock className="w-3.5 h-3.5" /> End-to-end Encrypted
-              </div>
-              <div className="text-[10px] text-slate-400 font-semibold tracking-widest uppercase mt-1">Powered by QMS Enterprise v3.4.1</div>
-            </div>
-
-          </div>
-        </motion.div>
+        {/* gradient hue keyframe */}
+        <style>{`
+          @keyframes hueShift {
+            0%   { background-position: 0%   50%; }
+            50%  { background-position: 100% 50%; }
+            100% { background-position: 0%   50%; }
+          }
+        `}</style>
       </div>
-
-    </div>
+    </>
   );
 }
-

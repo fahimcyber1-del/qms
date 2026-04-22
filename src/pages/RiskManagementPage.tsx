@@ -6,6 +6,7 @@ import {
   MessageSquare, User, Calendar, Clock, Download, FileSpreadsheet, Send, Save
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { AttachmentList } from '../components/AttachmentList';
 
 // ── Types ──
 export type RiskCategory = 'Product' | 'Process' | 'Critical Process';
@@ -46,21 +47,24 @@ const DEFAULT_RECORDS: RiskManagementRecord[] = [
     severity: 4, likelihood: 3, score: 12, level: 'High', department: 'Washing',
     identifiedDate: '2026-03-10', targetDate: '2026-03-25', responsiblePerson: 'Mr. Rafiq (Wash Manager)',
     existingControls: 'Random sample wash test', mitigationPlan: '100% lab dip approval and mandatory bulk wash test before cutting approval.',
-    status: 'Open', comments: [{ id: 'c1', user: 'Admin', text: 'Supplier notified about fastness issue.', date: '2026-03-11T10:00' }]
+    status: 'Open', comments: [{ id: 'c1', user: 'Admin', text: 'Supplier notified about fastness issue.', date: '2026-03-11T10:00' }],
+    attachments: []
   },
   {
     id: 2, code: 'RM-002', title: 'Needle Breakage causing Metal Contamination', category: 'Critical Process',
     severity: 5, likelihood: 2, score: 10, level: 'Medium', department: 'Sewing',
     identifiedDate: '2026-03-15', targetDate: '2026-03-20', responsiblePerson: 'Ms. Salma (Line Sup)',
     existingControls: 'Metal detector at packing', mitigationPlan: 'Strict needle control policy: 1-to-1 broken needle exchange logged in ledger.',
-    status: 'Pending', comments: []
+    status: 'Pending', comments: [],
+    attachments: []
   },
   {
     id: 3, code: 'RM-003', title: 'Delayed Trim Sourcing', category: 'Process',
     severity: 3, likelihood: 4, score: 12, level: 'High', department: 'Supply Chain',
     identifiedDate: '2026-01-05', targetDate: '2026-01-25', responsiblePerson: 'Mr. Tariq (Procurement)',
     existingControls: 'Follow-ups via email', mitigationPlan: 'Engage alternative local trims supplier to act as a buffer.',
-    status: 'Closed', comments: [{ id: 'c2', user: 'Director', text: 'Buffer stock established.', date: '2026-01-20T14:30' }]
+    status: 'Closed', comments: [{ id: 'c2', user: 'Director', text: 'Buffer stock established.', date: '2026-01-20T14:30' }],
+    attachments: []
   }
 ];
 
@@ -267,87 +271,91 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
   };
 
   const handleExportPDF = async (record?: RiskManagementRecord) => {
-    const {
-      createDoc, drawPdfHeader, drawInfoGrid, drawSectionLabel, proTable, addPageFooters, drawSignatureRow
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
     if (record) {
-      const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
-      let y = drawPdfHeader(doc, 'Risk Assessment Report', `Reference: ${record.code}`);
+      const levelColorMap: Record<RiskLevel, string> = {
+        'Critical': '#ec4899', 'High': '#dc2626',
+        'Medium': '#f59e0b', 'Low': '#16a34a'
+      };
+      const statusColorMap: Record<RiskStatus, string> = {
+        'Open': '#dc2626', 'Pending': '#f59e0b', 'Closed': '#16a34a'
+      };
+      const bars = Math.min(record.score, 25);
+      const riskBar = '█'.repeat(bars) + '░'.repeat(25 - bars);
 
-      y = drawInfoGrid(doc, y, [
-        { label: 'Risk Code',        value: record.code },
-        { label: 'Title / Hazard',   value: record.title },
-        { label: 'Category',         value: record.category },
-        { label: 'Department',       value: record.department },
-        { label: 'Severity (1-5)',   value: String(record.severity) },
-        { label: 'Likelihood (1-5)', value: String(record.likelihood) },
-        { label: 'Risk Score',       value: String(record.score) },
-        { label: 'Risk Level',       value: record.level },
-        { label: 'Responsible',      value: record.responsiblePerson },
-        { label: 'Identified Date',  value: record.identifiedDate },
-        { label: 'Target Date',      value: record.targetDate || '—' },
-        { label: 'Status',           value: record.status },
+      const commentRows = (record.comments || []).map(c => [
+        new Date(c.date).toLocaleDateString('en-GB'),
+        c.user,
+        c.text
       ]);
 
-      y = drawSectionLabel(doc, y, 'Risk Control & Mitigation');
-      y = proTable(doc, y,
-        [['Field', 'Details']],
-        [
-          ['Existing Preventive Controls', record.existingControls || '—'],
-          ['Mitigation / Corrective Action Plan', record.mitigationPlan || '—'],
-        ],
-        { columnStyles: { 0: { cellWidth: 70, fontStyle: 'bold' } } }
-      ) + 6;
-
-      if (record.comments && record.comments.length > 0) {
-        y = drawSectionLabel(doc, y, 'Activity Log');
-        y = proTable(doc, y,
-          [['Date', 'User', 'Comment']],
-          record.comments.map(c => [
-            new Date(c.date).toLocaleDateString('en-GB'),
-            c.user, c.text
-          ]),
-          { columnStyles: { 0: { cellWidth: 30 }, 1: { cellWidth: 35 } } }
-        ) + 6;
-      }
-
-      if (record.attachments && record.attachments.length > 0) {
-        const { embedAttachments } = await import('../utils/pdfExport');
-        const rawData = record.attachments.map(a => typeof a === 'string' ? a : a.data);
-        await embedAttachments(doc, rawData, 'RISK MITIGATION EVIDENCE PHOTOS');
-      }
-
-      drawSignatureRow(doc, y, ['Risk Owner', 'QA Manager', 'Dept. Head', 'Authorized By']);
-      addPageFooters(doc);
-      doc.save(`${record.code}_Risk_Report.pdf`);
-
-    } else {
-      const dataToExport = selectedIds.length > 0 ? records.filter(r => selectedIds.includes(r.id)) : filtered;
-      const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
-      let y = drawPdfHeader(doc, 'Risk Management Register', `${dataToExport.length} records`);
-
-      y = drawSectionLabel(doc, y, 'Risk Register');
-      y = proTable(doc, y,
-        [['Code', 'Title', 'Category', 'Dept.', 'Severity', 'Likelihood', 'Score', 'Level', 'Status']],
-        dataToExport.map(r => [
-          r.code, r.title, r.category, r.department,
-          String(r.severity), String(r.likelihood), String(r.score),
-          r.level, r.status
-        ]),
-        {
-          columnStyles: {
-            0: { cellWidth: 22 },
-            7: { halign: 'center', fontStyle: 'bold' },
-            8: { halign: 'center', fontStyle: 'bold' },
+      await exportDetailToPDF({
+        moduleName: 'Risk Assessment Report',
+        moduleId: 'risk-assessment',
+        recordId: record.code,
+        fileName: `Risk_${record.code}`,
+        orientation: 'landscape',
+        sections: [
+          {
+            title: '1. Risk Identification',
+            fields: [
+              { label: 'Risk Reference Code', value: record.code },
+              { label: 'Risk Category', value: record.category },
+              { label: 'Risk Title / Hazard', value: record.title, fullWidth: true },
+              { label: 'Department / Area', value: record.department },
+              { label: 'Responsible Person', value: record.responsiblePerson || '—' },
+              { label: 'Date Identified', value: record.identifiedDate },
+              { label: 'Target Resolution Date', value: record.targetDate || '—' },
+              { label: 'Current Status', value: record.status },
+            ]
+          },
+          {
+            title: '2. Risk Matrix Assessment (ISO 31000)',
+            fields: [
+              { label: 'Severity Score (1–5)', value: `${record.severity} / 5` },
+              { label: 'Likelihood Score (1–5)', value: `${record.likelihood} / 5` },
+              { label: 'Calculated Risk Score', value: `${record.score} / 25` },
+              { label: 'Risk Level', value: record.level },
+              { label: 'Risk Score Visualization', value: `${riskBar} [${record.score}/25]`, fullWidth: true },
+              { label: 'ISO Reference', value: 'ISO 9001:2015 — Clause 6.1 & ISO 31000' },
+            ]
+          },
+          {
+            title: '3. Control & Mitigation Plan',
+            fields: [
+              { label: 'Existing Preventive Controls', value: record.existingControls || 'No controls documented.', fullWidth: true },
+              { label: 'Mitigation / Corrective Action Plan', value: record.mitigationPlan || 'No mitigation plan documented.', fullWidth: true },
+            ]
           }
-        }
-      ) + 6;
-
-      addPageFooters(doc);
-      doc.save(`Risk_Register_Bulk.pdf`);
+        ],
+        tables: commentRows.length > 0 ? [
+          {
+            title: '4. Activity Log & Comments',
+            columns: ['Date', 'Logged By', 'Comment / Update'],
+            rows: commentRows,
+            columnStyles: {
+              0: { cellWidth: 30 },
+              1: { cellWidth: 35, fontStyle: 'bold' },
+              2: { cellWidth: 120 },
+            }
+          }
+        ] : undefined,
+        summary: [
+          `Risk Level: ${record.level} (Score: ${record.score}/25)`,
+          record.status === 'Closed'
+            ? 'Risk has been mitigated and closed. No further action required.'
+            : `Risk is ${record.status}. Target resolution date: ${record.targetDate || 'Not set'}. Responsible: ${record.responsiblePerson || 'Not assigned'}.`
+        ],
+        signatureLabels: ['Risk Owner', 'Dept. Head', 'QA Manager', 'Top Management'],
+        styleOverrides: { accentColor: statusColorMap[record.status] || levelColorMap[record.level] }
+      });
+    } else {
+      alert("Please select a specific record to export a detailed report.");
     }
   };
+
+
 
   const inputClass = "w-full px-4 py-2.5 bg-bg-2 border border-border-main rounded-xl text-sm text-text-1 placeholder:text-text-3 focus:ring-2 focus:ring-accent/30 focus:border-accent outline-none transition-all";
   const labelClass = "block text-xs font-semibold text-text-2 mb-1.5 uppercase tracking-wide";
@@ -565,20 +573,7 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
                 {!selectedRecord.attachments || selectedRecord.attachments.length === 0 ? (
                   <div className="text-xs text-text-3 italic opacity-50">No evidence photos attached.</div>
                 ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                    {selectedRecord.attachments.map((file, i) => (
-                      <div key={i} className="aspect-square bg-bg-2 rounded-xl border border-border-main overflow-hidden group relative">
-                        {file.data && file.data.startsWith('data:image') ? (
-                          <img src={file.data} alt={file.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-accent"><Download className="w-6 h-6" /></div>
-                        )}
-                        <div className="absolute inset-x-0 bottom-0 bg-black/60 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <p className="text-[9px] text-white truncate font-medium">{file.name}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <AttachmentList attachments={selectedRecord.attachments} />
                 )}
               </div>
             </div>
@@ -755,22 +750,16 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
                  </label>
                </div>
                
-               {!formData.attachments || formData.attachments.length === 0 ? (
-                 <div className="text-xs text-text-3 italic text-center py-6 bg-bg-2 rounded-xl border border-dashed border-border-main">
-                   No evidence attached.
-                 </div>
-               ) : (
-                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {formData.attachments.map((file, i) => (
-                      <div key={i} className="flex items-center justify-between bg-bg-2 p-2.5 rounded-lg border border-border-main group">
-                        <span className="text-xs font-medium text-text-1 truncate pr-2">{file.name}</span>
-                        <button type="button" onClick={() => setFormData(p => ({ ...p, attachments: (p.attachments || []).filter((_, idx) => idx !== i) }))} className="text-red-500 hover:bg-red-50 rounded p-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                 </div>
-               )}
+                {!formData.attachments || formData.attachments.length === 0 ? (
+                  <div className="text-xs text-text-3 italic text-center py-6 bg-bg-2 rounded-xl border border-dashed border-border-main">
+                    No evidence attached.
+                  </div>
+                ) : (
+                  <AttachmentList 
+                    attachments={formData.attachments || []} 
+                    onRemove={(i) => setFormData(p => ({ ...p, attachments: (p.attachments || []).filter((_, idx) => idx !== i) }))}
+                  />
+                )}
             </div>
           </div>
         </div>

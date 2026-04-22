@@ -102,6 +102,56 @@ export function Calibration({ onNavigate }: Props) {
     });
   };
 
+  const exportSinglePDF = async (record: CalibrationRecord) => {
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    const isValid = record.status === 'Valid';
+    const today = new Date();
+    const nextDue = record.nextCalibrationDate ? new Date(record.nextCalibrationDate) : null;
+    const daysRemaining = nextDue ? Math.ceil((nextDue.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
+    const dueStatus = daysRemaining === null ? '—'
+      : daysRemaining < 0 ? `OVERDUE by ${Math.abs(daysRemaining)} days`
+      : daysRemaining <= 30 ? `DUE SOON — ${daysRemaining} days remaining`
+      : `${daysRemaining} days remaining`;
+
+    await exportDetailToPDF({
+      moduleName: 'Equipment Calibration Certificate',
+      moduleId: 'calibration',
+      recordId: record.equipmentId,
+      fileName: `CalibrationCert_${record.equipmentId}`,
+      sections: [
+        {
+          title: '1. Instrument Identification',
+          fields: [
+            { label: 'Equipment Name', value: record.equipmentName },
+            { label: 'Equipment Tag ID', value: record.equipmentId },
+            { label: 'Custodian Department', value: record.department },
+            { label: 'Responsible Custodian', value: record.responsiblePerson },
+            { label: 'Integrity Status', value: record.status },
+            { label: 'Days Until Next Due', value: dueStatus },
+          ]
+        },
+        {
+          title: '2. Calibration Details & Certificate',
+          fields: [
+            { label: 'Certificate Number', value: record.certificateNumber },
+            { label: 'Calibration Agency / Lab', value: record.calibrationAgency },
+            { label: 'Last Calibration Date', value: record.lastCalibrationDate },
+            { label: 'Next Calibration Due', value: record.nextCalibrationDate },
+            { label: 'ISO Reference', value: 'ISO 9001:2015 — Clause 7.1.5' },
+          ]
+        }
+      ],
+      summary: [
+        `Calibration Result: ${record.status}`,
+        isValid
+          ? `Equipment is in calibrated service. Next due: ${record.nextCalibrationDate || 'N/A'}.`
+          : `Equipment is ${record.status}. Immediate recalibration or withdrawal from service required.`
+      ],
+      signatureLabels: ['Calibration Technician', 'QA Approval', 'Custodian', 'Valid Until'],
+      styleOverrides: { accentColor: isValid ? '#16a34a' : '#dc2626' }
+    });
+  };
+
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -220,6 +270,9 @@ export function Calibration({ onNavigate }: Props) {
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('calibration-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
+                        <Download className="w-4 h-4" />
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />

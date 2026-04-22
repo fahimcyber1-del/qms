@@ -99,7 +99,7 @@ export function Sidebar({
       className={cn(
         collapsed ? 'w-[56px] collapsed' : 'w-[264px]',
         sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
-        'flex flex-col h-full bg-bg-1 border-r border-border-main transition-all duration-200 z-50 fixed lg:relative'
+        'flex flex-col h-full transition-all duration-200 z-50 fixed lg:relative'
       )}
     >
       {/* ── Logo / Brand ── */}
@@ -154,13 +154,12 @@ export function Sidebar({
                   <button
                     key={item.id}
                     className={cn(
-                      'w-full flex items-center gap-2.5 py-[7px] transition-all duration-150 group relative',
+                      'w-full flex items-center gap-2.5 py-[7px] transition-all duration-150 group relative nav-item',
                       collapsed ? 'px-0 justify-center' : 'px-5',
                       isActive
-                        ? 'bg-accent-light font-semibold'
+                        ? 'bg-accent-light font-semibold nav-active-item'
                         : 'hover:bg-bg-2'
                     )}
-                    style={isActive ? { color: 'var(--accent)' } : { color: 'var(--text-2)' }}
                     onClick={() => { onNavigate(item.id); onCloseSidebar(); }}
                     aria-label={item.label}
                     title={collapsed ? item.label : undefined}
@@ -175,9 +174,8 @@ export function Sidebar({
                     )}
                     <div className="flex items-center justify-center w-5 h-5 flex-shrink-0">
                       <Icon
-                        className="w-[18px] h-[18px]"
+                        className="w-[18px] h-[18px] nav-icon"
                         strokeWidth={isActive ? 2.2 : 1.8}
-                        style={isActive ? { color: 'var(--accent)' } : { color: 'var(--text-3)' }}
                       />
                     </div>
                     {!collapsed && (

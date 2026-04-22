@@ -114,10 +114,31 @@ export function QualityGoals({ onNavigate }: Props) {
 
   const exportPDF = () => {
     exportTableToPDF({
-      moduleName: 'Quality Goals',
-      columns: ['ID', 'Title', 'Dept', 'Target', 'Actual', 'Status'],
-      rows: filteredRecords.map(r => [r.id, r.goalTitle, r.department, r.targetValue.toString(), r.actualValue.toString(), r.status]),
+      moduleName: 'Quality Goals & Objectives (ISO 9001:2015)',
+      columns: ['Goal Title', 'Dept', 'Responsible', 'Target', 'Actual', 'UOM', 'Status'],
+      rows: filteredRecords.map(r => [r.goalTitle, r.department, r.responsiblePerson, String(r.targetValue), String(r.actualValue), r.uom, r.status]),
       fileName: 'Quality_Goals_Report'
+    });
+  };
+
+  const exportSinglePDF = async (record: QualityGoalRecord) => {
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
+    await exportDetailToPDF({
+      moduleName: 'Quality Objective Specification',
+      moduleId: 'quality-goals',
+      recordId: record.id,
+      fileName: `Goal_${record.goalTitle.replace(/\s+/g, '_')}`,
+      fields: [
+        { label: 'Objective Title',      value: record.goalTitle },
+        { label: 'Category',             value: record.category },
+        { label: 'Department',           value: record.department },
+        { label: 'Responsible Person',   value: record.responsiblePerson },
+        { label: 'Target Value',         value: `${record.targetValue} ${record.uom}` },
+        { label: 'Actual Achievement',   value: `${record.actualValue} ${record.uom}` },
+        { label: 'Project Start',        value: record.startDate },
+        { label: 'Project End / Target', value: record.endDate },
+        { label: 'Current Status',       value: record.status },
+      ]
     });
   };
 
@@ -261,6 +282,9 @@ export function QualityGoals({ onNavigate }: Props) {
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('quality-goals-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
+                        <Download className="w-4 h-4" />
                       </button>
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />

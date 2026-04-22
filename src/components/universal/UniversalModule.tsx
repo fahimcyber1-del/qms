@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronUp, X, FileText, FileSpreadsheet, File,
   CheckSquare, Square, ArrowLeft, Clock, User, Paperclip, Send,
   AlertTriangle, Copy, Check, BarChart3, CheckCircle2, XCircle,
-  FileDown, Calendar, Activity, Layers
+  FileDown, Calendar, Activity, Layers, Palette
 } from 'lucide-react';
 import { getTable } from '../../db/db';
 import { ModuleConfigDef } from '../../config/moduleConfigs';
@@ -318,11 +318,45 @@ export function UniversalModule({ config, onNavigate, params }: UniversalModuleP
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none opacity-70" />
             </div>
+
             <button onClick={() => openEdit(currentRecord)}
               className="btn btn-ghost border border-border-main flex items-center gap-2">
-              <Edit2 className="w-4 h-4 mr-1" /> Edit Record
+              <Edit2 className="w-4 h-4 mr-1" /> Edit
             </button>
-            <button onClick={() => exportSinglePDF(currentRecord)}
+
+            <div className="relative">
+              <select 
+                value={(currentRecord as any).pdfLayout || 'premium'}
+                onChange={e => {
+                  if (currentRecord) {
+                    const updated = { ...currentRecord, pdfLayout: e.target.value };
+                    setCurrentRecord(updated);
+                  }
+                }}
+                className="text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border border-border-main bg-bg-2 text-text-2 appearance-none cursor-pointer pr-10 outline-none hover:border-accent transition-colors">
+                <option value="standard">Standard PDF</option>
+                <option value="premium">Premium PDF</option>
+                <option value="executive">Executive PDF</option>
+                <option value="technical">Technical PDF</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-text-3">
+                <Palette className="w-3.5 h-3.5" />
+              </div>
+            </div>
+
+            <button onClick={() => {
+              exportDetailToPDF({
+                moduleName: config.title, 
+                moduleId: config.key, 
+                recordId: currentRecord.id, 
+                fileName: `${currentRecord.id}_detail`,
+                layout: (currentRecord as any).pdfLayout || 'premium',
+                fields: detailFields.map(f => ({ label: f.label, value: String(currentRecord[f.key] || '—') }))
+                  .concat([{ label: 'Status', value: currentRecord.status }, { label: 'Created By', value: currentRecord.createdBy || '—' }, { label: 'Created At', value: formatDate(currentRecord.createdAt) }]),
+                comments: (currentRecord.comments || []).map((c: any) => ({ user: c.userName, date: formatDate(c.createdAt), text: c.text })),
+                attachments: currentRecord.attachments,
+              });
+            }}
               className="btn btn-primary shadow-md flex items-center gap-2">
               <FileDown className="w-4 h-4 mr-1" /> Download Report
             </button>

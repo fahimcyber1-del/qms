@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { ChevronLeft, X, Plus, Trash2, Save, AlertTriangle, Shield, Activity, Info, Eye, FileDown } from 'lucide-react';
 import { RiskAssessmentRecord, RiskItem } from '../types';
 import { getRiskAssessments, saveRiskAssessments, calculateRiskScore, determineRiskLevel } from '../utils/riskUtils';
+import { AttachmentList } from '../components/AttachmentList';
 
 interface RiskFormProps {
   params: {
@@ -120,38 +121,44 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
   };
 
   const handleExportPDF = async () => {
-    const { 
-      createDoc, drawPdfHeader, drawRecordTable, drawSectionLabel, 
-      proTable, addPageFooters, drawSignatureRow 
-    } = await import('../utils/pdfExport');
+    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
 
-    const doc = createDoc({ orientation: 'l', paperSize: 'a4' });
-    let y = drawPdfHeader(doc, 'Risk Assessment & Hazard Analysis', `ID: ${formData.id || 'Draft'} \u2022 ${formData.styleNumber || '01'}`);
-
-    y = drawRecordTable(doc, y, 'Assessment Metadata & Context', [
-      { label: 'Product Name',     value: formData.productName || '\u2014', fullWidth: true },
-      { label: 'Style / Model No', value: formData.styleNumber || '\u2014' },
-      { label: 'Major Client',     value: formData.buyer || '\u2014' },
-      { label: 'Order / Job No',   value: formData.orderNumber || '\u2014' },
-      { label: 'Product Category', value: formData.productCategory || '\u2014' },
-      { label: 'Assessment Date',  value: formData.createdAt ? new Date(formData.createdAt).toLocaleDateString('en-GB') : '\u2014' },
-    ]);
-
+    let matrixRows: string[][] = [];
     if (formData.risks && formData.risks.length > 0) {
-      y = drawSectionLabel(doc, y, 'Risk Identification & Mitigation Matrix');
-      y = proTable(doc, y,
-        [['Process / Operation', 'Hazard Identified', 'Risk Desc.', 'L', 'S', 'Score', 'Level', 'Status']],
-        formData.risks.map(r => [
-          r.processName || '\u2014',
-          r.hazard || '\u2014',
-          r.riskDescription || '\u2014',
-          String(r.likelihood),
-          String(r.severity),
-          String(r.riskScore),
-          r.riskLevel || 'Low',
-          r.status || 'Open'
-        ]),
+      matrixRows = formData.risks.map(r => [
+        r.processName || '\u2014',
+        r.hazard || '\u2014',
+        r.riskDescription || '\u2014',
+        String(r.likelihood),
+        String(r.severity),
+        String(r.riskScore),
+        r.riskLevel || 'Low',
+        r.status || 'Open'
+      ]);
+    }
+
+    const rawData = formData.attachments?.map((a: any) => typeof a === 'string' ? a : a.data);
+
+    await exportDetailToPDF({
+      moduleName: 'Risk Assessment & Hazard Analysis',
+      moduleId: `ID: ${formData.id || 'Draft'} \u2022 ${formData.styleNumber || '01'}`,
+      recordId: formData.id || 'Draft',
+      fileName: `Risk_Assessment_${formData.styleNumber || 'Report'}`,
+      orientation: 'landscape',
+      fields: [
+        { label: 'Assessment Metadata & Context', value: 'Overview', fullWidth: true },
+        { label: 'Product Name',     value: formData.productName || '\u2014', fullWidth: true },
+        { label: 'Style / Model No', value: formData.styleNumber || '\u2014' },
+        { label: 'Major Client',     value: formData.buyer || '\u2014' },
+        { label: 'Order / Job No',   value: formData.orderNumber || '\u2014' },
+        { label: 'Product Category', value: formData.productCategory || '\u2014' },
+        { label: 'Assessment Date',  value: formData.createdAt ? new Date(formData.createdAt).toLocaleDateString('en-GB') : '\u2014' },
+      ],
+      tables: matrixRows.length > 0 ? [
         {
+          title: 'Risk Identification & Mitigation Matrix',
+          columns: ['Process / Operation', 'Hazard Identified', 'Risk Desc.', 'L', 'S', 'Score', 'Level', 'Status'],
+          rows: matrixRows,
           columnStyles: {
             0: { cellWidth: 35, fontStyle: 'bold' },
             1: { cellWidth: 40 },
@@ -163,18 +170,10 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
             7: { cellWidth: 20, halign: 'center' },
           }
         }
-      ) + 12;
-    }
-
-    if (formData.attachments && formData.attachments.length > 0) {
-       const { embedAttachments } = await import('../utils/pdfExport');
-       const rawData = formData.attachments.map((a: any) => typeof a === 'string' ? a : a.data);
-       await embedAttachments(doc, rawData, 'RISK ASSESSMENT EVIDENCE PHOTOS');
-    }
-
-    y = drawSignatureRow(doc, y, ['Prepared By (QE)', 'HOD Manufacturing', 'Compliance Lead', 'Certified Risk Officer']);
-    addPageFooters(doc);
-    doc.save(`Risk_Assessment_${formData.styleNumber || 'Report'}.pdf`);
+      ] : undefined,
+      signatureLabels: ['Prepared By (QE)', 'HOD Manufacturing', 'Compliance Lead', 'Certified Risk Officer'],
+      attachments: rawData && rawData.length > 0 ? rawData : undefined
+    });
   };
 
   return (
@@ -506,23 +505,10 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
                    <p className="text-text-3 italic text-sm">No evidence files attached to this assessment.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                   {formData.attachments.map((file: any, i: number) => (
-                     <div key={i} className="flex items-center justify-between bg-bg-2 p-3 rounded-xl border border-border-main group">
-                       <div className="flex items-center gap-3 overflow-hidden">
-                         <div className="w-8 h-8 bg-accent/10 rounded flex items-center justify-center text-accent">
-                           <Shield className="w-4 h-4" />
-                         </div>
-                         <span className="text-sm font-semibold text-text-1 truncate">{typeof file === 'string' ? file : file.name}</span>
-                       </div>
-                       {!isReadOnly && (
-                         <button type="button" onClick={() => setFormData(p => ({ ...p, attachments: p.attachments?.filter((_, idx) => idx !== i) }))} className="p-1.5 text-red-500 hover:bg-red-500/10 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                           <Trash2 className="w-4 h-4" />
-                         </button>
-                       )}
-                     </div>
-                   ))}
-                </div>
+                <AttachmentList
+                  attachments={formData.attachments}
+                  onRemove={!isReadOnly ? (i) => setFormData(p => ({ ...p, attachments: p.attachments?.filter((_, idx) => idx !== i) })) : undefined}
+                />
               )}
             </div>
           </div>

@@ -13,7 +13,7 @@ import {
   ACCENT_PALETTES, HEADER_STYLE_META, MODULE_META, DEFAULT_PDF_SETTINGS
 } from '../utils/pdfHeader';
 import { exportFullBackup, importRestoreBackup, downloadBackupFile, BackupData } from '../utils/backupRestore';
-import { jsPDF } from 'jspdf';
+
 import {
   AppearanceSettings as AppSettings,
   COLOR_PRESETS, BG_PATTERNS, BG_IMAGES, RADIUS_OPTIONS, DENSITY_OPTIONS,
@@ -46,7 +46,6 @@ interface GlobalSettings {
     smsGateway?: string;
     smsApiKey?: string;
     smsTargetNumber?: string;
-    smsAlerts: boolean;
     workflowAlerts: boolean;
     actionItemAlerts: boolean;
     kpiAlerts: boolean;
@@ -311,45 +310,30 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
     }
   };
 
-  const dlSecurityLogs = () => {
-     const doc = new jsPDF();
+  const dlSecurityLogs = async () => {
      const now = new Date();
-     const orgName = org.name || 'QMS ERP Pro';
-
-     doc.setFontSize(14);
-     doc.text(`${orgName} — Security Audit Logs`, 14, 20);
-     doc.setFontSize(10);
-     doc.text(`Generated on: ${now.toLocaleString()}`, 14, 28);
-     doc.text('─'.repeat(60), 14, 33);
-
-     // Build real log entries from session storage
-     const entries: string[] = [];
-     const userProfile = localStorage.getItem('qms_user_profile');
-     const userName = userProfile ? JSON.parse(userProfile).name || 'Admin' : 'Admin';
+     const userName = localStorage.getItem('qms_user_profile') ? JSON.parse(localStorage.getItem('qms_user_profile')!).name || 'Admin' : 'Admin';
      const sessionStart = now.toLocaleString();
 
-     entries.push(`[${sessionStart}] [SESSION_START] User "${userName}" authenticated successfully.`);
+     const entries: string[][] = [
+       ['1', sessionStart, 'SESSION_START', `User "${userName}" authenticated successfully.`],
+     ];
 
-     const companySettingsSaved = localStorage.getItem('companySettings');
-     if (companySettingsSaved) entries.push(`[${sessionStart}] [CONFIG_CHANGE] Company settings were saved by ${userName}.`);
+     if (localStorage.getItem('companySettings')) entries.push(['2', sessionStart, 'CONFIG_CHANGE', `Company settings were saved by ${userName}.`]);
+     if (localStorage.getItem('qms_pdf_settings')) entries.push(['3', sessionStart, 'CONFIG_CHANGE', `PDF export settings were modified by ${userName}.`]);
+     if (localStorage.getItem('qms_org_settings')) entries.push(['4', sessionStart, 'CONFIG_CHANGE', `Organization profile was updated by ${userName}.`]);
 
-     const pdfSettingsSaved = localStorage.getItem('qms_pdf_settings');
-     if (pdfSettingsSaved) entries.push(`[${sessionStart}] [CONFIG_CHANGE] PDF export settings were modified by ${userName}.`);
+     entries.push([String(entries.length + 1), sessionStart, 'SYSTEM_INFO', 'ISO 9001:2015 compliance modules operational.']);
+     entries.push([String(entries.length + 1), sessionStart, 'SYSTEM_INFO', 'Data stored in local IndexedDB — no external transmission.']);
 
-     const orgSettingsSaved = localStorage.getItem('qms_org_settings');
-     if (orgSettingsSaved) entries.push(`[${sessionStart}] [CONFIG_CHANGE] Organization profile was updated by ${userName}.`);
-
-     entries.push(`[${sessionStart}] [SYSTEM_INFO] ISO 9001:2015 compliance modules operational.`);
-     entries.push(`[${sessionStart}] [SYSTEM_INFO] Data stored in local IndexedDB — no external transmission.`);
-
-     let y = 40;
-     entries.forEach((entry, i) => {
-       const lines = doc.splitTextToSize(`${i + 1}. ${entry}`, 180);
-       doc.text(lines, 14, y);
-       y += lines.length * 6 + 2;
+     const { exportTableToPDF } = await import('../utils/pdfExportUtils');
+     await exportTableToPDF({
+       moduleName: 'Security Audit Logs',
+       fileName: `qms_security_audit_${now.toISOString().split('T')[0]}`,
+       columns: ['#', 'Timestamp', 'Event Type', 'Message'],
+       rows: entries,
+       orientation: 'landscape'
      });
-
-     doc.save(`qms_security_audit_${now.toISOString().split('T')[0]}.pdf`);
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -623,6 +607,42 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
 
                  {/* Header style theme */}
                  <div className="bg-bg-1 border border-border-main rounded-xl p-6 transition-opacity" style={{ opacity: pdfSettings.globalEnableHeader ? 1 : 0.45 }}>
+                    <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-3">Report Structure Option</h3>
+                    <div className="space-y-2 mb-6">
+                      {[
+                        { id: 'standard', label: 'Standard Grid', desc: 'Default enterprise layout' },
+                         { id: 'refined',  label: 'Refined / Audit', desc: 'Boxed cells with clear hierarchy' },
+                         { id: 'compact',  label: 'Compact / Simple', desc: 'Maximum data density, small fonts' },
+                         { id: 'modern',   label: 'Modern Minimal', desc: 'Sleek, light borders, ample whitespace' },
+                         { id: 'premium',  label: 'Premium Document', desc: 'Rich layout with info bars & better spacing' },
+                         { id: 'executive', label: 'Executive Serif', desc: 'Formal, high-contrast serif typography' },
+                         { id: 'technical', label: 'Technical Striped', desc: 'High-contrast striped layout for data' }
+                       ].map(st => (
+                         <button key={st.id} onClick={() => updatePdf({ pdfStructure: st.id as any })}
+                          className={`w-full flex items-center justify-between p-2.5 rounded-lg border text-xs transition-all ${pdfSettings.pdfStructure === st.id ? 'border-accent bg-accent/5 font-bold' : 'border-border-main'}`}>
+                          {st.label}
+                          {pdfSettings.pdfStructure === st.id && <Check className="w-3 h-3 text-accent" />}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                       <div>
+                         <label className="text-[11px] font-bold text-text-3 uppercase tracking-wide block mb-2">Paper Orientation</label>
+                         <div className="flex bg-bg-2 p-1 rounded-lg border border-border-main">
+                           <button onClick={() => updatePdf({ orientation: 'portrait' })} className={`flex-1 text-[11px] font-bold py-1.5 rounded transition-all ${pdfSettings.orientation === 'portrait' ? 'bg-bg-0 text-accent shadow-sm' : 'text-text-2'}`}>Portrait</button>
+                           <button onClick={() => updatePdf({ orientation: 'landscape' })} className={`flex-1 text-[11px] font-bold py-1.5 rounded transition-all ${pdfSettings.orientation === 'landscape' ? 'bg-bg-0 text-accent shadow-sm' : 'text-text-2'}`}>Landscape</button>
+                         </div>
+                       </div>
+                       <div>
+                         <label className="text-[11px] font-bold text-text-3 uppercase tracking-wide block mb-2">Paper Size</label>
+                         <div className="flex bg-bg-2 p-1 rounded-lg border border-border-main">
+                           <button onClick={() => updatePdf({ paperSize: 'a4' })} className={`flex-1 text-[11px] font-bold py-1.5 rounded transition-all ${pdfSettings.paperSize === 'a4' ? 'bg-bg-0 text-accent shadow-sm' : 'text-text-2'}`}>A4 Size</button>
+                           <button onClick={() => updatePdf({ paperSize: 'letter' })} className={`flex-1 text-[11px] font-bold py-1.5 rounded transition-all ${pdfSettings.paperSize === 'letter' ? 'bg-bg-0 text-accent shadow-sm' : 'text-text-2'}`}>Letter</button>
+                         </div>
+                       </div>
+                    </div>
+
                     <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4">Header Style Theme</h3>
                     <div className="space-y-2">
                       {(Object.keys(HEADER_STYLE_META) as PdfHeaderStyle[]).map(id => {
@@ -643,6 +663,26 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
               <div className="space-y-6 transition-opacity" style={{ opacity: pdfSettings.globalEnableHeader ? 1 : 0.45 }}>
                  {/* Colors & fonts */}
                  <div className="bg-bg-1 border border-border-main rounded-xl p-6">
+                    <div className="bg-bg-1 border border-border-main rounded-xl p-6 mb-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide">Signatures</h3>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                           <input type="checkbox" checked={pdfSettings.showSignatures} onChange={e => updatePdf({ showSignatures: e.target.checked })} className="sr-only peer" />
+                           <div className="w-8 h-4 bg-bg-3 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-accent"></div>
+                        </label>
+                      </div>
+                      <div className={`grid grid-cols-2 gap-2 transition-opacity ${!pdfSettings.showSignatures ? 'opacity-40 pointer-events-none' : ''}`}>
+                         {pdfSettings.signatureLabels.map((lbl, idx) => (
+                           <input key={idx} className="bg-bg-2 border border-border-main rounded px-2 py-1 text-[11px] outline-none focus:border-accent"
+                             value={lbl} onChange={e => {
+                               const nl = [...pdfSettings.signatureLabels];
+                               nl[idx] = e.target.value;
+                               updatePdf({ signatureLabels: nl });
+                             }} />
+                         ))}
+                      </div>
+                    </div>
+
                     <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4">Color Palette & Fonts</h3>
                     <label className="text-[11px] font-bold text-text-3 uppercase block mb-2">Accent Color</label>
                     <div className="flex flex-wrap gap-2 mb-5">
@@ -1333,7 +1373,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
             </div>
           </div>
 
-          {/* â”€â”€ TYPOGRAPHY â”€â”€ */}
+          {/* ─── TYPOGRAPHY ─── */}
           <div className="bg-bg-1 border border-border-main rounded-xl p-6">
             <h2 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4 flex items-center gap-2">
               <Type className="w-4 h-4 text-accent" /> Typography
@@ -1357,14 +1397,17 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-bg-1 border border-border-main rounded-xl p-5">
               <h3 className="text-xs font-bold text-text-1 uppercase tracking-wide mb-3 flex items-center gap-2"><Circle className="w-3.5 h-3.5 text-accent" /> Corner Style</h3>
-              <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {RADIUS_OPTIONS.map(opt => {
                   const active = appearance.borderRadius === opt.id;
                   return (
                     <button key={opt.id} onClick={() => updateAppearance({ borderRadius: opt.id as any })}
-                      className={`flex items-center justify-between p-2.5 rounded-lg border ${active ? 'border-accent bg-accent/5' : 'border-border-main hover:bg-bg-2'}`}>
-                      <span className={`text-xs font-bold ${active ? 'text-accent' : 'text-text-1'}`}>{opt.name}</span>
-                      <div className="w-6 h-6 bg-accent/20 border border-accent/40" style={{ borderRadius: opt.value }} />
+                      className={`flex flex-col items-center justify-between p-2 rounded-lg border text-center transition-all ${active ? 'border-accent bg-accent/5 ring-1 ring-accent/20' : 'border-border-main hover:bg-bg-2'}`}>
+                      <div className="w-10 h-10 bg-accent/10 border border-accent/20 mb-2 flex items-center justify-center overflow-hidden" style={{ borderRadius: opt.value }}>
+                        <div className="w-6 h-6 bg-accent/40" style={{ borderRadius: opt.value }} />
+                      </div>
+                      <div className={`text-[11px] font-bold leading-tight ${active ? 'text-accent' : 'text-text-1'}`}>{opt.name}</div>
+                      <div className="text-[8px] text-text-3 mt-0.5">{opt.description}</div>
                     </button>
                   );
                 })}
@@ -1391,10 +1434,17 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
             <div className="bg-bg-1 border border-border-main rounded-xl p-5">
               <h3 className="text-xs font-bold text-text-1 uppercase tracking-wide mb-3 flex items-center gap-2"><Monitor className="w-3.5 h-3.5 text-accent" /> UI Text Scale</h3>
               <div className="flex flex-col gap-2">
-                {([{ id: 'sm', label: 'Small', desc: '13px base' }, { id: 'md', label: 'Medium', desc: '14px base (default)' }, { id: 'lg', label: 'Large', desc: '15px base' }] as const).map(opt => {
+                {([
+                  { id: 'xs',  label: 'Extra Small', desc: '12px base' },
+                  { id: 'sm',  label: 'Small',       desc: '13px base' },
+                  { id: 'md',  label: 'Medium',      desc: '14px base (default)' },
+                  { id: 'lg',  label: 'Large',       desc: '15px base' },
+                  { id: 'xl',  label: 'Extra Large', desc: '16px base' },
+                  { id: '2xl', label: 'Huge',        desc: '18px base' }
+                ] as const).map(opt => {
                   const active = (appearance.uiScale ?? 'md') === opt.id;
                   return (
-                    <button key={opt.id} onClick={() => updateAppearance({ uiScale: opt.id })}
+                    <button key={opt.id} onClick={() => updateAppearance({ uiScale: opt.id as any })}
                       className={`flex items-center justify-between p-2.5 rounded-lg border ${active ? 'border-accent bg-accent/5' : 'border-border-main hover:bg-bg-2'}`}>
                       <div>
                         <div className={`text-xs font-bold ${active ? 'text-accent' : 'text-text-1'}`}>{opt.label}</div>
@@ -1431,7 +1481,22 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
             <div className="bg-bg-1 border border-border-main rounded-xl p-5">
               <h3 className="text-xs font-bold text-text-1 uppercase tracking-wide mb-3 flex items-center gap-2"><Layers className="w-3.5 h-3.5 text-accent" /> Sidebar Style</h3>
               <div className="flex flex-col gap-2">
-                {([{id:'solid',label:'Solid',desc:'Opaque background'},{id:'transparent',label:'Transparent',desc:'See-through sidebar'},{id:'glass',label:'Glass',desc:'Frosted glass blur'},{id:'gradient',label:'Gradient',desc:'Gradient accent bar'}] as const).map(opt => {
+                {([
+                  {id:'solid',label:'Solid',desc:'Opaque background'},
+                  {id:'transparent',label:'Transparent',desc:'See-through sidebar'},
+                  {id:'glass',label:'Glass',desc:'Frosted glass blur'},
+                  {id:'glass-accent',label:'Glass Accent',desc:'Frosted with brand tint'},
+                  {id:'gradient',label:'Gradient',desc:'Gradient accent bar'},
+                  {id:'accent',label:'Accent',desc:'Full brand color'},
+                  {id:'dark',label:'Dark',desc:'Enterprise night mode'},
+                  {id:'neon',label:'Neon',desc:'Glow with deep shadows'},
+                  {id:'neon-dark',label:'Neon Dark',desc:'Pure black with glow'},
+                  {id:'floating',label:'Floating',desc:'Detached pill sidebar'},
+                  {id:'minimal',label:'Minimal',desc:'Flat clean layout'},
+                  {id:'bordered',label:'Bordered',desc:'Strong side border'},
+                  {id:'brutalist',label:'Brutalist',desc:'Bold strokes & sharp'},
+                  {id:'3d',label:'3D Lift',desc:'Tactile raised effect'}
+                ] as const).map(opt => {
                   const active = (appearance.sidebarStyle ?? 'solid') === opt.id;
                   return (
                     <button key={opt.id} onClick={() => updateAppearance({ sidebarStyle: opt.id })}
@@ -1449,7 +1514,17 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
             <div className="bg-bg-1 border border-border-main rounded-xl p-5">
               <h3 className="text-xs font-bold text-text-1 uppercase tracking-wide mb-3 flex items-center gap-2"><Monitor className="w-3.5 h-3.5 text-accent" /> Topbar Style</h3>
               <div className="flex flex-col gap-2">
-                {([{id:'default',label:'Default',desc:'Matches background'},{id:'accent',label:'Accent',desc:'Brand color topbar'},{id:'dark',label:'Dark',desc:'Always dark header'},{id:'glass',label:'Glass',desc:'Frosted glass blur'}] as const).map(opt => {
+                {([
+                  {id:'default',label:'Default',desc:'Matches background'},
+                  {id:'accent',label:'Accent',desc:'Brand color topbar'},
+                  {id:'dark',label:'Dark',desc:'Always dark header'},
+                  {id:'glass',label:'Glass',desc:'Frosted glass blur'},
+                  {id:'gradient',label:'Gradient',desc:'Soft side-to-side fade'},
+                  {id:'neon',label:'Neon',desc:'Pure black with glow'},
+                  {id:'floating',label:'Floating',desc:'Detached pill topbar'},
+                  {id:'brutalist',label:'Brutalist',desc:'Bold strokes & sharp'},
+                  {id:'3d',label:'3D Lift',desc:'Tactile raised effect'}
+                ] as const).map(opt => {
                   const active = ((appearance as any).topbarStyle ?? 'default') === opt.id;
                   return (
                     <button key={opt.id} onClick={() => updateAppearance({ ...appearance, topbarStyle: opt.id } as any)}
@@ -1623,10 +1698,18 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
             <div className="bg-bg-1 border border-border-main rounded-xl p-5">
               <h3 className="text-xs font-bold text-text-1 uppercase tracking-wide mb-3 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 text-accent" /> Animations</h3>
               <div className="flex flex-col gap-2">
-                {([{id:'none',label:'Disabled',desc:'No motion — max performance'},{id:'subtle',label:'Subtle',desc:'Micro-transitions (recommended)'},{id:'full',label:'Full',desc:'Rich animations & hover effects'}] as const).map(opt => {
+                {([
+                  {id:'none',label:'Disabled',desc:'Instant state changes'},
+                  {id:'subtle',label:'Subtle',desc:'Micro-transitions (150ms)'},
+                  {id:'standard',label:'Standard',desc:'Natural balance (300ms)'},
+                  {id:'smooth',label:'Smooth',desc:'Silky transitions (450ms)'},
+                  {id:'dynamic',label:'Dynamic',desc:'Fluid motion (600ms)'},
+                  {id:'playful',label:'Playful',desc:'Bouncy & alive (800ms)'},
+                  {id:'heavy',label:'Cinematic',desc:'Slow & dramatic (1.2s)'}
+                ] as const).map(opt => {
                   const active = (appearance.animationLevel ?? 'subtle') === opt.id;
                   return (
-                    <button key={opt.id} onClick={() => updateAppearance({ animationLevel: opt.id })}
+                    <button key={opt.id} onClick={() => updateAppearance({ animationLevel: opt.id as any })}
                       className={`flex items-center justify-between p-2.5 rounded-lg border ${active ? 'border-accent bg-accent/5' : 'border-border-main hover:bg-bg-2'}`}>
                       <div>
                         <div className={`text-xs font-bold ${active ? 'text-accent' : 'text-text-1'}`}>{opt.label}</div>
@@ -1641,7 +1724,17 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
             <div className="bg-bg-1 border border-border-main rounded-xl p-5">
               <h3 className="text-xs font-bold text-text-1 uppercase tracking-wide mb-3 flex items-center gap-2"><Layers className="w-3.5 h-3.5 text-accent" /> Shadow Depth</h3>
               <div className="flex flex-col gap-2">
-                {([{id:'none',label:'Flat',desc:'No shadows at all'},{id:'soft',label:'Soft',desc:'Subtle depth (default)'},{id:'medium',label:'Medium',desc:'Visible elevation'},{id:'strong',label:'Strong',desc:'Bold dramatic shadows'}] as const).map(opt => {
+                {([
+                  {id:'none',label:'Flat',desc:'Industrial minimal'},
+                  {id:'flat',label:'Paper',desc:'Ultra-subtle lift'},
+                  {id:'soft',label:'Soft',desc:'Gentle depth (default)'},
+                  {id:'medium',label:'Medium',desc:'Visible elevation'},
+                  {id:'deep',label:'Deep',desc:'Strong shadows'},
+                  {id:'extra-deep',label:'Extra Deep',desc:'Dramatic cinematic depth'},
+                  {id:'floating',label:'Floating',desc:'High altitude lift'},
+                  {id:'inner',label:'Pressed',desc:'Tactile inner shadow'},
+                  {id:'brutalist',label:'Stroked',desc:'Bold solid borders'}
+                ] as const).map(opt => {
                   const active = ((appearance as any).shadowIntensity ?? 'soft') === opt.id;
                   return (
                     <button key={opt.id} onClick={() => updateAppearance({ ...appearance, shadowIntensity: opt.id } as any)}
@@ -1662,21 +1755,45 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
                 {[
                   { key: 'sidebarAccent', label: 'Sidebar Accent Fill', desc: 'Active nav items use solid accent bg' },
                   { key: 'compactTables', label: 'Compact Tables', desc: 'Reduce row padding globally' },
+                  { key: 'showBreadcrumbs', label: 'Breadcrumbs', desc: 'Show navigation path at top' },
+                  { key: 'glassNavbar', label: 'Glass Topbar', desc: 'Frosted blur effect on header' },
+                  { key: 'animatePageTransitions', label: 'Page Transitions', desc: 'Animate between modules' },
+                  { key: 'hoverEffects', label: '3D Hover Effects', desc: 'Lift cards on mouse hover' },
+                  { key: 'frostedOverlays', label: 'Frosted Overlays', desc: 'Blur backgrounds behind modals' },
+                  { key: 'highContrast', label: 'High Contrast', desc: 'Maximum readability mode' },
                 ].map(item => {
                   const val = !!((appearance as any)[item.key]);
                   return (
                     <div key={item.key} className="flex items-start justify-between p-2.5 rounded-lg border border-border-main">
                       <div className="flex-1 pr-3">
-                        <div className="text-xs font-bold text-text-1">{item.label}</div>
-                        <div className="text-[10px] text-text-3">{item.desc}</div>
+                        <div className="text-xs font-bold text-text-1 leading-tight">{item.label}</div>
+                        <div className="text-[9px] text-text-3 mt-0.5">{item.desc}</div>
                       </div>
-                      <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-0.5">
                         <input type="checkbox" checked={val} onChange={e => updateAppearance({ ...appearance, [item.key]: e.target.checked } as any)} className="sr-only peer" />
-                        <div className="w-9 h-5 bg-bg-3 peer-focus:ring-2 peer-focus:ring-accent/30 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
+                        <div className="w-8 h-4.5 bg-bg-3 peer-focus:ring-2 peer-focus:ring-accent/30 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-accent"></div>
                       </label>
                     </div>
                   );
                 })}
+                <div className="pt-2 border-t border-border-main mt-1">
+                  <label className="text-[10px] font-bold text-text-3 uppercase tracking-wider mb-2 block">Content Spacing</label>
+                  <div className="flex bg-bg-2 p-1 rounded-lg border border-border-main gap-1">
+                    {[
+                      { id: 'compact', label: 'Compact' },
+                      { id: 'standard', label: 'Standard' },
+                      { id: 'wide', label: 'Wide' }
+                    ].map(s => {
+                      const active = (appearance.contentSpacing ?? 'standard') === s.id;
+                      return (
+                        <button key={s.id} onClick={() => updateAppearance({ contentSpacing: s.id as any })}
+                          className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${active ? 'bg-bg-1 text-accent shadow-sm' : 'text-text-3 hover:text-text-1'}`}>
+                          {s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -16,7 +16,11 @@ export type PdfHeaderStyle =
   | 'modern_split'
   | 'minimal_line'
   | 'corporate_box'
-  | 'gradient_wave';
+  | 'gradient_wave'
+  | 'executive_banner'
+  | 'industrial_box';
+
+export type PdfDetailLayout = 'standard' | 'premium' | 'executive' | 'technical';
 
 export type PdfFontStyle = 'helvetica' | 'times' | 'courier';
 
@@ -51,6 +55,17 @@ export interface PdfExportSettings {
   globalHeaderTitle: string;
   showPageNumber: boolean;
   watermarkText: string;
+  // Signatures
+  showSignatures: boolean;
+  signatureLabels: string[]; // e.g. ["Prepared By", "Verified By", "Approved By"]
+  // Structure
+  pdfStructure: 'standard' | 'compact' | 'refined' | 'modern' | 'premium' | 'executive' | 'technical';
+  orientation: 'portrait' | 'landscape';
+  paperSize: 'a4' | 'letter';
+  // Detail Specific
+  detailShowSummary: boolean;
+  detailShowAuditTrail: boolean;
+  detailShowSections: boolean;
   // Per-module overrides
   enabledModules: PdfModuleId[];
   modules: Record<PdfModuleId, PdfModuleOverride>;
@@ -77,11 +92,13 @@ export const ACCENT_PALETTES: Record<PdfColorAccent, {
 };
 
 export const HEADER_STYLE_META: Record<PdfHeaderStyle, { label: string; desc: string }> = {
-  dark_banner:  { label: 'Dark Banner',    desc: 'Full-width dark bar — logo left, title right'       },
-  modern_split: { label: 'Modern Split',   desc: 'Colored logo panel + white info panel'              },
-  minimal_line: { label: 'Minimal Line',   desc: 'Clean white header with accent underline'           },
-  corporate_box:{ label: 'Corporate Box',  desc: 'Light-toned boxed layout, split left/right columns' },
-  gradient_wave:{ label: 'Gradient Wave',  desc: 'Bold gradient across full header width'             },
+  dark_banner:      { label: 'Dark Banner',    desc: 'Full-width dark bar — logo left, title right'       },
+  modern_split:     { label: 'Modern Split',   desc: 'Colored logo panel + white info panel'              },
+  minimal_line:     { label: 'Minimal Line',   desc: 'Clean white header with accent underline'           },
+  corporate_box:    { label: 'Corporate Box',  desc: 'Light-toned boxed layout, split left/right columns' },
+  gradient_wave:    { label: 'Gradient Wave',  desc: 'Bold gradient across full header width'             },
+  executive_banner: { label: 'Executive Gold', desc: 'Heavy dark theme with gold accents & serif style'    },
+  industrial_box:   { label: 'Industrial',     desc: 'Bold, sharp corners, heavy grey & high contrast'      },
 };
 
 interface PdfModuleMeta {
@@ -94,102 +111,190 @@ const CORE_MODULE_META: Record<string, PdfModuleMeta> = {
   production_quality: {
     label: 'Production Quality',
     icon: 'PQ',
-    aliases: ['Production Quality Report', 'Production Quality Data Dump'],
+    aliases: [
+      'Production Quality Report', 'Production Quality Data Dump',
+      'production-quality', 'production_quality', 'ProductionQuality'
+    ],
   },
   inspection: {
     label: 'Inspection',
     icon: 'IN',
-    aliases: ['AQL Inspection Certificate', 'AQL Inspection Report', 'Global Inspection Data'],
+    aliases: [
+      'AQL Inspection Certificate', 'AQL Inspection Report', 'Global Inspection Data',
+      'inspection', 'final-inspection'
+    ],
   },
   defect_library: {
     label: 'Defect Library',
     icon: 'DL',
-    aliases: ['Defect Specification Report', 'Defect Library'],
+    aliases: ['Defect Specification Report', 'Defect Library', 'defect-library', 'defect_library'],
   },
   audit: {
     label: 'Audit Management',
     icon: 'AU',
-    aliases: ['Audit Compliance Report', 'Audit Report'],
+    aliases: ['Audit Compliance Report', 'Audit Report', 'audit', 'audit-management'],
   },
   capa: {
     label: 'CAPA',
     icon: 'CA',
-    aliases: ['CAPA Compliance Report'],
+    aliases: ['CAPA Compliance Report', 'capa', 'CAPA', 'corrective-action'],
+  },
+  ncr: {
+    label: 'Non-Conformance Report',
+    icon: 'NC',
+    aliases: ['NCR', 'Non-Conformance Report', 'ncr', 'non-conformance'],
   },
   follow_up_audit: {
     label: 'Follow-Up Audit',
     icon: 'FU',
-    aliases: ['Follow-Up Audit Report', 'Follow-up Audit Verification Data'],
+    aliases: ['Follow-Up Audit Report', 'Follow-up Audit Verification Data', 'follow-up-audit', 'follow_up_audit'],
   },
   certification: {
     label: 'Certification',
     icon: 'CF',
-    aliases: ['Compliance Certification Report', 'Certification Report'],
-  },
-  risk: {
-    label: 'Risk Management',
-    icon: 'RK',
-    aliases: ['Risk Assessment Report', 'Risk Assessment & Hazard Analysis', 'Risk Management Register'],
-  },
-  traceability: {
-    label: 'Product Traceability',
-    icon: 'TR',
-    aliases: ['Traceability Report', 'Traceability Register'],
-  },
-  sop: {
-    label: 'SOP Management',
-    icon: 'SO',
-    aliases: ['Standard Operating Procedure', 'SOP Register'],
-  },
-  operational_guidelines: {
-    label: 'Operational Guidelines',
-    icon: 'OG',
-    aliases: ['OPERATIONAL GUIDELINE', 'Operational Guideline'],
-  },
-  procedure: {
-    label: 'Procedure Management',
-    icon: 'PR',
-    aliases: ['Procedure Management'],
-  },
-  jd: {
-    label: 'Job Descriptions',
-    icon: 'JD',
-    aliases: ['Job Description Specification'],
-  },
-  flow_chart: {
-    label: 'Flow Chart',
-    icon: 'FC',
-    aliases: ['Flow Chart', 'Process Flow Chart'],
-  },
-  organogram: {
-    label: 'Organogram',
-    icon: 'OGM',
-    aliases: ['Organogram'],
-  },
-  kpi: {
-    label: 'KPI Management',
-    icon: 'KP',
-    aliases: ['KPI Management Report', 'KPI Management'],
-  },
-  reports: {
-    label: 'Reports & Analytics',
-    icon: 'RP',
-    aliases: ['Quality Performance Report'],
+    aliases: ['Compliance Certification Report', 'Certification Report', 'certification'],
   },
   calibration: {
     label: 'Calibration',
     icon: 'CL',
-    aliases: ['Calibration Report'],
+    aliases: ['Calibration Report', 'Calibration Certificate', 'calibration', 'ISO 17025 Calibration Certificate'],
+  },
+  risk: {
+    label: 'Risk Management',
+    icon: 'RK',
+    aliases: [
+      'Risk Assessment Report', 'Risk Assessment & Hazard Analysis', 'Risk Management Register',
+      'risk-assessment', 'risk', 'risk-management', 'risk_assessment'
+    ],
+  },
+  traceability: {
+    label: 'Product Traceability',
+    icon: 'TR',
+    aliases: ['Traceability Report', 'Traceability Register', 'traceability'],
+  },
+  sop: {
+    label: 'SOP Management',
+    icon: 'SO',
+    aliases: ['Standard Operating Procedure', 'SOP Register', 'sop', 'sop-management'],
+  },
+  operational_guidelines: {
+    label: 'Operational Guidelines',
+    icon: 'OG',
+    aliases: ['OPERATIONAL GUIDELINE', 'Operational Guideline', 'operational-guideline', 'operational_guidelines'],
+  },
+  procedure: {
+    label: 'Procedure Management',
+    icon: 'PR',
+    aliases: ['Procedure Management', 'procedure', 'procedure-management'],
+  },
+  jd: {
+    label: 'Job Descriptions',
+    icon: 'JD',
+    aliases: ['Job Description Specification', 'jd', 'jd-management', 'job-description', 'job_description'],
+  },
+  flow_chart: {
+    label: 'Flow Chart',
+    icon: 'FC',
+    aliases: ['Flow Chart', 'Process Flow Chart', 'flow-chart', 'flow_chart'],
+  },
+  organogram: {
+    label: 'Organogram',
+    icon: 'OGM',
+    aliases: ['Organogram', 'organogram'],
+  },
+  kpi: {
+    label: 'KPI Management',
+    icon: 'KP',
+    aliases: ['KPI Management Report', 'KPI Management', 'kpi'],
+  },
+  reports: {
+    label: 'Reports & Analytics',
+    icon: 'RP',
+    aliases: ['Quality Performance Report', 'reports', 'analytics'],
   },
   training: {
     label: 'Training Management',
     icon: 'TN',
-    aliases: ['Master Training Schedule'],
+    aliases: ['Master Training Schedule', 'Personnel Training Record', 'training', 'training-management'],
   },
   subSupplierManagement: {
     label: 'Sub Supplier Masterlist',
     icon: 'SS',
-    aliases: ['Sub-Supplier Evaluation Report'],
+    aliases: [
+      'Sub-Supplier Evaluation Report', 'sub-supplier', 'sub_supplier',
+      'subSupplierManagement', 'supplier-evaluation', 'supplier-multi-tier'
+    ],
+  },
+  // ── Additional modules used across the app ──
+  doc_control: {
+    label: 'Document Control',
+    icon: 'DC',
+    aliases: ['Document Control', 'doc-control', 'doc_control', 'document-control'],
+  },
+  incoming_qc: {
+    label: 'Incoming QC',
+    icon: 'IQ',
+    aliases: ['Incoming QC Report', 'incoming-qc', 'incoming_qc'],
+  },
+  customer_complaint: {
+    label: 'Customer Complaint',
+    icon: 'CC',
+    aliases: ['Customer Complaint', 'customer-complaint', 'customer_complaint', 'complaint'],
+  },
+  continuous_improvement: {
+    label: 'Continuous Improvement',
+    icon: 'CI',
+    aliases: ['Continuous Improvement', 'continuous-improvement', 'continuous_improvement'],
+  },
+  equipment_maintenance: {
+    label: 'Equipment Maintenance',
+    icon: 'EM',
+    aliases: ['Equipment Maintenance', 'maintenance', 'equipment-maintenance', 'equipment_maintenance'],
+  },
+  product_safety: {
+    label: 'Product Safety',
+    icon: 'PS',
+    aliases: ['Product Safety', 'product-safety', 'product_safety'],
+  },
+  quality_goals: {
+    label: 'Quality Goals',
+    icon: 'QG',
+    aliases: ['Quality Goals', 'quality-goals', 'quality_goals', 'Quality Objectives'],
+  },
+  quality_manuals: {
+    label: 'Quality Manuals',
+    icon: 'QM',
+    aliases: ['Quality Manual', 'quality-manual', 'quality_manual', 'quality-manuals'],
+  },
+  record_retention: {
+    label: 'Record Retention',
+    icon: 'RR',
+    aliases: ['Record Retention', 'record-retention', 'record_retention'],
+  },
+  management_review: {
+    label: 'Management Review',
+    icon: 'MR',
+    aliases: ['Management Review', 'management-review', 'management_review'],
+  },
+  meeting_minutes: {
+    label: 'Meeting Minutes',
+    icon: 'MM',
+    aliases: ['Meeting Minutes', 'meeting-minutes', 'meeting_minutes'],
+  },
+  testing: {
+    label: 'Testing Management',
+    icon: 'TM',
+    aliases: ['Testing Management', 'testing', 'testing-management'],
+  },
+  rca: {
+    label: 'Root Cause Analysis',
+    icon: 'RC',
+    aliases: ['Root Cause Analysis', 'rca', 'root-cause-analysis', 'root_cause_analysis'],
+  },
+  process_matrix: {
+    label: 'Process Interaction Matrix',
+    icon: 'PM',
+    aliases: ['Process Interaction Matrix', 'process-matrix', 'process_matrix', 'process-interaction'],
   },
 };
 
@@ -257,6 +362,14 @@ export const DEFAULT_PDF_SETTINGS: PdfExportSettings = {
   globalHeaderTitle: '',
   showPageNumber: true,
   watermarkText:'',
+  showSignatures: true,
+  signatureLabels: ['Prepared By', 'Verified By', 'Quality Manager', 'Authorized Signatory'],
+  pdfStructure: 'standard',
+  orientation: 'portrait',
+  paperSize: 'a4',
+  detailShowSummary: true,
+  detailShowAuditTrail: true,
+  detailShowSections: true,
   enabledModules: Object.keys(MODULE_META) as PdfModuleId[],
   modules: buildDefaultModules(),
 };
@@ -517,14 +630,73 @@ function _gradientWave(doc: jsPDF, title: string, subtitle: string | undefined, 
   const tX = s.showLogo ? 10+L+6 : 14;
   doc.setTextColor(255,255,255); doc.setFontSize(13); doc.setFont(s.fontStyle,'bold'); doc.text(org.name||DEFAULT_ORG.name, tX, 18);
   if (s.showAddress) { doc.setFontSize(7.5); doc.setFont(s.fontStyle,'normal'); doc.setTextColor(200,220,255); doc.text(doc.splitTextToSize(org.address||DEFAULT_ORG.address, 100), tX, 25); }
-  const pW = 65; const pH2 = 20; const pX = pageW-pW-10; const pY = (H-pH2)/2;
-  doc.setFillColor(255,255,255); doc.roundedRect(pX, pY, pW, pH2, 4, 4, 'F');
-  doc.setTextColor(...s.palette.dark); doc.setFontSize(8); doc.setFont(s.fontStyle,'bold');
-  const ttl = doc.splitTextToSize(title, pW-4); doc.text(ttl, pX+pW/2, pY+7, {align:'center'});
-  if (subtitle) { doc.setFontSize(6.5); doc.setFont(s.fontStyle,'normal'); doc.setTextColor(...s.palette.mid); doc.text(subtitle, pX+pW/2, pY+13, {align:'center'}); }
   if (s.showDate) { doc.setFontSize(7); doc.setFont(s.fontStyle,'normal'); doc.setTextColor(200,220,255); doc.text(new Date().toLocaleDateString('en-GB'), pageW-12, H-4, {align:'right'}); }
   doc.setDrawColor(255,255,255); doc.setLineWidth(0.4); doc.line(0,H,pageW,H);
   return H + 10;
+}
+
+function _executiveBanner(doc: jsPDF, title: string, subtitle: string | undefined, org: OrgSettings, s: EffectiveSettings, pageW: number): number {
+  const H = 55; const L = 38;
+  doc.setFillColor(10, 15, 25); doc.rect(0, 0, pageW, H, 'F');
+  // Decorative lines
+  doc.setDrawColor(180, 150, 80); doc.setLineWidth(0.3);
+  doc.line(10, 5, pageW - 10, 5);
+  doc.line(10, H - 5, pageW - 10, H - 5);
+
+  if (s.showLogo) _tryAddLogo(doc, org.logo, 14, 10, L, L, s.palette, org.name);
+  const tX = s.showLogo ? 14 + L + 10 : 20;
+
+  doc.setTextColor(180, 150, 80); // Gold-ish
+  doc.setFont('times', 'bold'); doc.setFontSize(16);
+  doc.text(org.name || DEFAULT_ORG.name, tX, 22);
+
+  if (s.showAddress) {
+    doc.setTextColor(160, 170, 180); doc.setFont('times', 'normal'); doc.setFontSize(8.5);
+    doc.text(doc.splitTextToSize(org.address || DEFAULT_ORG.address, 100), tX, 29);
+  }
+
+  doc.setFillColor(180, 150, 80);
+  doc.rect(pageW - 80, 0, 80, H, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFont('times', 'bold'); doc.setFontSize(14);
+  const ttl = doc.splitTextToSize(title.toUpperCase(), 70);
+  doc.text(ttl, pageW - 40, 22, { align: 'center' });
+
+  if (subtitle) {
+    doc.setFontSize(8); doc.setFont('times', 'normal');
+    doc.text(doc.splitTextToSize(subtitle, 70), pageW - 40, 22 + (ttl.length * 5), { align: 'center' });
+  }
+
+  if (s.showDate) {
+    doc.setFontSize(8); doc.text(`REF: ${new Date().getFullYear()}/QMS/${Math.floor(Math.random()*900)+100}`, pageW - 40, H - 10, { align: 'center' });
+  }
+
+  return H + 12;
+}
+
+function _industrialBox(doc: jsPDF, title: string, subtitle: string | undefined, org: OrgSettings, s: EffectiveSettings, pageW: number): number {
+  const H = 45;
+  doc.setFillColor(230, 235, 240); doc.rect(10, 10, pageW - 20, H - 10, 'F');
+  doc.setDrawColor(30, 40, 50); doc.setLineWidth(1.2); doc.rect(10, 10, pageW - 20, H - 10, 'D');
+
+  if (s.showLogo) _tryAddLogo(doc, org.logo, 15, 15, 25, 25, s.palette, org.name);
+
+  doc.setTextColor(30, 40, 50); doc.setFont('courier', 'bold'); doc.setFontSize(14);
+  doc.text(org.name || DEFAULT_ORG.name, s.showLogo ? 45 : 15, 22);
+
+  if (s.showAddress) {
+    doc.setFontSize(8); doc.setFont('courier', 'normal');
+    doc.text(doc.splitTextToSize(org.address || DEFAULT_ORG.address, 100), s.showLogo ? 45 : 15, 28);
+  }
+
+  doc.setFillColor(30, 40, 50); doc.rect(pageW - 70, 10, 60, H - 10, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFontSize(10); doc.setFont('courier', 'bold');
+  doc.text(doc.splitTextToSize(title.toUpperCase(), 50), pageW - 40, 25, { align: 'center' });
+
+  if (s.showDate) {
+    doc.setFontSize(7); doc.text(new Date().toLocaleDateString('en-GB'), pageW - 40, H + 2, { align: 'center' });
+  }
+
+  return H + 15;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -576,6 +748,10 @@ export function addPdfHeader(
       return _corporateBox(doc, title, subtitle, org, s, pageW);
     case 'gradient_wave':
       return _gradientWave(doc, title, subtitle, org, s, pageW);
+    case 'executive_banner':
+      return _executiveBanner(doc, title, subtitle, org, s, pageW);
+    case 'industrial_box':
+      return _industrialBox(doc, title, subtitle, org, s, pageW);
     default:
       return _darkBanner(doc, title, subtitle, org, s, pageW);
   }

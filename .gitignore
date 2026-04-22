@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+.netlify/
+.netlify
+tsc_output.txt
