@@ -5,6 +5,9 @@ import {
   Mic2, CheckCircle2, AlertCircle, Info, Paperclip, Plus, Trash2, FileText, ClipboardList, MessageSquare, ShieldCheck
 } from 'lucide-react';
 import { getTable } from '../db/db';
+import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
+import { Download, Edit2 } from 'lucide-react';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -60,6 +63,41 @@ export function MeetingMinutesForm({ onNavigate, params }: Props) {
 
   const isReadOnly = mode === 'view';
 
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Meeting Minutes (MOM)',
+      moduleId: 'mom_detail',
+      recordId: formData.id,
+      fileName: `MOM_${formData.id}_Report`,
+      layout: 'executive',
+      fields: [
+        { label: 'Agenda / Title', value: formData.meetingTitle },
+        { label: 'Meeting Date', value: formData.date },
+        { label: 'Category', value: formData.category },
+        { label: 'Facilitator', value: formData.facilitator },
+        { label: 'Location', value: formData.location },
+        { label: 'Attendees', value: formData.attendees, fullWidth: true },
+        { label: 'Agenda Points', value: formData.agenda, fullWidth: true },
+        { label: 'Discussion & Minutes', value: formData.discussion, fullWidth: true },
+        { label: 'Remarks / Notes', value: formData.remarks, fullWidth: true },
+        { label: 'Current Status', value: formData.status }
+      ],
+      tables: [
+        {
+          title: 'Action Item Matrix',
+          columns: ['Task', 'Owner', 'Due Date', 'Status'],
+          rows: formData.actionItems.map((item: any) => [
+            item.task,
+            item.owner,
+            item.dueDate,
+            item.status
+          ])
+        }
+      ],
+      attachments: formData.attachments
+    });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) return;
@@ -82,11 +120,21 @@ export function MeetingMinutesForm({ onNavigate, params }: Props) {
     }
   };
 
-  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    const newAtts = Array.from(files).map((f: any) => f.name);
+    const newAtts: { name: string; data: string; type: string; size: number }[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const data = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      newAtts.push({ name: file.name, data, type: file.type, size: file.size });
+    }
     setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAtts] }));
+    e.target.value = '';
   };
 
   const addActionItem = () => {
@@ -119,13 +167,22 @@ export function MeetingMinutesForm({ onNavigate, params }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => onNavigate('meeting-minutes')} className="btn btn-ghost px-6">
-            {isReadOnly ? 'Close' : 'Cancel'}
-          </button>
-          {!isReadOnly && (
-            <button type="submit" className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
-              <Save className="w-4 h-4" /> Save Minutes
-            </button>
+          {isReadOnly ? (
+            <>
+              <button type="button" onClick={() => onNavigate('meeting-minutes-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                <Edit2 className="w-4 h-4" /> Edit Minutes
+              </button>
+              <button type="button" onClick={handleExport} className="btn btn-primary shadow-lg shadow-accent/20">
+                <Download className="w-4 h-4 mr-2" /> Export Minutes
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => onNavigate('meeting-minutes')} className="btn btn-ghost px-6">Cancel</button>
+              <button type="submit" className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
+                <Save className="w-4 h-4" /> Save Minutes
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -282,23 +339,10 @@ export function MeetingMinutesForm({ onNavigate, params }: Props) {
             <p className="text-sm font-bold uppercase tracking-widest">No scan attachments</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {formData.attachments.map((file, i) => (
-              <div key={i} className="flex items-center justify-between bg-bg-2 p-3 rounded-xl border border-border-main group">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="w-8 h-8 bg-accent/10 rounded flex items-center justify-center text-accent">
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <span className="text-sm font-semibold text-text-1 truncate">{file}</span>
-                </div>
-                {!isReadOnly && (
-                  <button type="button" onClick={() => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) }))} className="p-1.5 text-red-500 hover:bg-red-500/10 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+          <AttachmentList
+            attachments={formData.attachments}
+            onRemove={!isReadOnly ? (i) => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) })) : undefined}
+          />
         )}
       </div>
     </form>

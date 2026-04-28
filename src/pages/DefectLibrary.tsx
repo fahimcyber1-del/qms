@@ -1,3 +1,4 @@
+import { openExportPreview } from '../utils/exportPreviewUtils';
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { 
@@ -1025,7 +1026,6 @@ function DefectLibrary() {
   };
 
   const downloadIndividualPDF = async (defect: Defect) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
     const categoryName = categories.find(c => c.id === defect.categoryId)?.name || 'General';
 
     const attachments: { name: string; data: string }[] = [];
@@ -1034,11 +1034,12 @@ function DefectLibrary() {
     if (defect.severityImages?.Major) attachments.push({ name: 'Major Case', data: defect.severityImages.Major });
     if (defect.severityImages?.Critical) attachments.push({ name: 'Critical Case', data: defect.severityImages.Critical });
 
-    await exportDetailToPDF({
+    openExportPreview({
       moduleName: 'Defect Specification Report',
       moduleId: 'defect-library',
       recordId: defect.code,
       fileName: `Defect_${defect.code}`,
+      layout: 'technical',
       fields: [
         { label: 'Defect Code', value: defect.code },
         { label: 'Defect Name', value: defect.name },
@@ -1048,15 +1049,44 @@ function DefectLibrary() {
         { label: 'Department', value: defect.department || '—' },
         { label: 'Process / Stage', value: defect.process || '—' },
         { label: 'Revision', value: defect.revision || 'v1.0' },
-        { label: 'Description', value: defect.description || '—' },
-        { label: 'Root Cause Analysis', value: defect.rootCause || 'Analysis pending...' },
-        { label: 'Corrective Action', value: defect.correctiveAction || 'Immediate action required' },
-        { label: 'Preventive Action', value: defect.preventiveAction || 'Long-term mitigation required' },
-        { label: 'Impact Zone A', value: defect.zoningImpact?.zoneA || '—' },
-        { label: 'Impact Zone B', value: defect.zoningImpact?.zoneB || '—' },
-        { label: 'Impact Zone C', value: defect.zoningImpact?.zoneC || '—' },
+        { label: 'Standard Reference', value: defect.standardReference || '—' },
+        { label: 'Description', value: defect.description || '—', fullWidth: true },
+        { label: 'Root Cause Analysis', value: defect.rootCause || 'Analysis pending...', fullWidth: true },
+        { label: 'Corrective Action', value: defect.correctiveAction || 'Immediate action required', fullWidth: true },
+        { label: 'Preventive Action', value: defect.preventiveAction || 'Long-term mitigation required', fullWidth: true },
+      ],
+      sections: [
+        {
+          title: 'Impact Zoning (ISO 9001:2015)',
+          fields: [
+            { label: 'Impact Zone A', value: defect.zoningImpact?.zoneA || '—' },
+            { label: 'Impact Zone B', value: defect.zoningImpact?.zoneB || '—' },
+            { label: 'Impact Zone C', value: defect.zoningImpact?.zoneC || '—' },
+          ]
+        }
       ],
       attachments
+    });
+  };
+
+  const handleExportTable = () => {
+    openExportPreview({
+      moduleName: 'Defect Library Register',
+      moduleId: 'defect-library-bulk',
+      recordId: 'BULK-EXPORT',
+      fileName: 'Defect_Library_Register',
+      tables: [{
+        title: 'Defect Database',
+        columns: ['Code', 'Name', 'Category', 'Severity', 'Department', 'Process'],
+        rows: filteredDefects.map(d => [
+          d.code,
+          d.name,
+          categories.find(c => c.id === d.categoryId)?.name || 'General',
+          d.severity,
+          d.department || '—',
+          d.process || '—'
+        ])
+      }]
     });
   };
 
@@ -1144,8 +1174,11 @@ function DefectLibrary() {
                   <button onClick={() => setPanelMode('edit')} className="flex items-center gap-2 px-4 py-2.5 bg-bg-1 border border-border-main rounded-xl text-sm font-medium text-text-1 hover:border-accent hover:text-accent transition-all shadow-sm">
                     <Edit className="w-4 h-4" /> Edit
                   </button>
-                  <button onClick={() => {}} className="flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-xl text-sm font-medium hover:opacity-90 transition-all shadow-sm">
-                    <Download className="w-4 h-4" /> Export PDF
+                  <button 
+                    onClick={() => downloadIndividualPDF(selectedDefect)} 
+                    className="btn btn-ghost border border-border-main flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" /> Export Defect
                   </button>
                 </>
               )}
@@ -1378,8 +1411,11 @@ function DefectLibrary() {
                     <button onClick={() => setPanelMode('edit')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-text-1 hover:bg-accent/5 hover:text-accent border border-transparent hover:border-accent/20 transition-all">
                       <Edit className="w-4 h-4" /> Edit Defect
                     </button>
-                    <button onClick={() => downloadIndividualPDF(selectedDefect)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-text-1 hover:bg-accent/5 hover:text-accent border border-transparent hover:border-accent/20 transition-all">
-                      <Download className="w-4 h-4" /> Download PDF
+                    <button 
+                      onClick={() => downloadIndividualPDF(selectedDefect)} 
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-text-1 hover:bg-accent/5 hover:text-accent border border-transparent hover:border-accent/20 transition-all"
+                    >
+                      <Download className="w-4 h-4" /> Export Defect
                     </button>
                     <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-text-1 hover:bg-accent/5 hover:text-accent border border-transparent hover:border-accent/20 transition-all">
                       <Printer className="w-4 h-4" /> Print Report
@@ -1666,8 +1702,11 @@ function DefectLibrary() {
           <p className="text-text-2 text-base mt-2">Manage and standardize quality defect definitions across the organization.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2">
-            <Download className="w-4 h-4" /> Export
+          <button 
+            onClick={handleExportTable}
+            className="btn btn-ghost border border-border-main flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" /> Export Library
           </button>
           <button 
             className="btn btn-primary flex items-center gap-2"
@@ -1949,5 +1988,7 @@ function DefectLibrary() {
 }
 
 export { DefectLibrary };
+
+
 
 

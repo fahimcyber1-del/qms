@@ -12,6 +12,7 @@ import { ModuleConfigDef } from '../../config/moduleConfigs';
 import { UniversalRecord, Comment, ActivityLogEntry, FileAttachment } from '../../types';
 import * as XLSX from 'xlsx';
 import { exportTableToPDF, exportDetailToPDF } from '../../utils/pdfExportUtils';
+import { openExportPreview } from '../../utils/exportPreviewUtils';
 
 // ── Animation variants (matches Inspection) ───────────────────────────────
 const containerVariants = {
@@ -245,12 +246,15 @@ export function UniversalModule({ config, onNavigate, params }: UniversalModuleP
   };
 
   const exportSinglePDF = (record: UniversalRecord) => {
-    exportDetailToPDF({
-      moduleName: config.title, moduleId: config.key, recordId: record.id, fileName: `${record.id}_detail`,
+    openExportPreview({
+      moduleName: config.title, 
+      moduleId: config.key, 
+      recordId: record.id, 
+      fileName: `${record.id}_detail`,
       fields: detailFields.map(f => ({ label: f.label, value: String(record[f.key] || '—') }))
         .concat([{ label: 'Status', value: record.status }, { label: 'Created By', value: record.createdBy || '—' }, { label: 'Created At', value: formatDate(record.createdAt) }]),
       comments: (record.comments || []).map((c: any) => ({ user: c.userName, date: formatDate(c.createdAt), text: c.text })),
-      attachments: record.attachments, // Pass the attachments here
+      attachments: record.attachments,
     });
   };
 
@@ -345,7 +349,7 @@ export function UniversalModule({ config, onNavigate, params }: UniversalModuleP
             </div>
 
             <button onClick={() => {
-              exportDetailToPDF({
+              openExportPreview({
                 moduleName: config.title, 
                 moduleId: config.key, 
                 recordId: currentRecord.id, 
@@ -358,7 +362,7 @@ export function UniversalModule({ config, onNavigate, params }: UniversalModuleP
               });
             }}
               className="btn btn-primary shadow-md flex items-center gap-2">
-              <FileDown className="w-4 h-4 mr-1" /> Download Report
+              <FileDown className="w-4 h-4 mr-1" /> Export & Print
             </button>
             <button onClick={() => setShowDeleteConfirm(currentRecord.id)}
               className="flex items-center gap-2 px-4 py-2 text-xs font-bold border border-rose-500/30 rounded-xl text-rose-500 hover:bg-rose-500/10 transition-all uppercase tracking-wider">

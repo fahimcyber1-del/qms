@@ -5,6 +5,9 @@ import {
   Package, CheckCircle2, AlertCircle, Info, Paperclip, Plus, Trash2, FileText, ShoppingBag, ShieldCheck, Tag
 } from 'lucide-react';
 import { getTable } from '../db/db';
+import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
+import { Download, Edit2 } from 'lucide-react';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -90,11 +93,48 @@ export function IncomingQCForm({ onNavigate, params }: Props) {
     }
   };
 
-  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    const newAtts = Array.from(files).map((f: any) => f.name);
+    const newAtts: { name: string; data: string; type: string; size: number }[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const data = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      newAtts.push({ name: file.name, data, type: file.type, size: file.size });
+    }
     setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAtts] }));
+    e.target.value = '';
+  };
+
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Incoming Quality Control',
+      moduleId: 'incoming_qc_record',
+      recordId: formData.id,
+      fileName: `Incoming_QC_${formData.id}`,
+      fields: [
+        { label: 'Material Name', value: formData.materialName },
+        { label: 'Supplier', value: formData.supplier },
+        { label: 'Category', value: formData.materialType },
+        { label: 'Lot Number', value: formData.lotNumber },
+        { label: 'Inspection Date', value: formData.date },
+        { label: 'Status', value: formData.status },
+        { label: 'Received Qty', value: formData.receivedQty.toString() },
+        { label: 'Inspected Qty', value: formData.inspectedQty.toString() },
+        { label: 'Accepted Qty', value: formData.acceptedQty.toString() },
+        { label: 'Rejected Qty', value: formData.rejectedQty.toString() },
+        { label: 'Defects Found', value: formData.defectsFound, fullWidth: true },
+        { label: 'Test Results', value: formData.testResults, fullWidth: true },
+        { label: 'Inspector', value: formData.responsiblePerson },
+        { label: 'Department', value: formData.department },
+        { label: 'Remarks', value: formData.remarks, fullWidth: true }
+      ],
+      attachments: formData.attachments
+    });
   };
 
   const inputClass = "w-full bg-bg-2 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed";
@@ -114,13 +154,22 @@ export function IncomingQCForm({ onNavigate, params }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => onNavigate('incoming-qc')} className="btn btn-ghost px-6">
-            {isReadOnly ? 'Close' : 'Cancel'}
-          </button>
-          {!isReadOnly && (
-            <button type="submit" className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
-              <Save className="w-4 h-4" /> Save Inspection
-            </button>
+          {isReadOnly ? (
+            <>
+              <button type="button" onClick={() => onNavigate('incoming-qc-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                <Edit2 className="w-4 h-4" /> Edit Record
+              </button>
+              <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                <Download className="w-4 h-4" /> Export Record
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => onNavigate('incoming-qc')} className="btn btn-ghost px-6">Cancel</button>
+              <button type="submit" className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
+                <Save className="w-4 h-4" /> Save Inspection
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -291,23 +340,10 @@ export function IncomingQCForm({ onNavigate, params }: Props) {
             <p className="text-sm font-bold uppercase tracking-widest">No documents attached</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {formData.attachments.map((file, i) => (
-              <div key={i} className="flex items-center justify-between bg-bg-2 p-3 rounded-xl border border-border-main group">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="w-8 h-8 bg-accent/10 rounded flex items-center justify-center text-accent">
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <span className="text-sm font-semibold text-text-1 truncate">{file}</span>
-                </div>
-                {!isReadOnly && (
-                  <button type="button" onClick={() => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) }))} className="p-1.5 text-red-500 hover:bg-red-500/10 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+          <AttachmentList
+            attachments={formData.attachments}
+            onRemove={!isReadOnly ? (i) => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) })) : undefined}
+          />
         )}
       </div>
     </form>

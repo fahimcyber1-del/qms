@@ -1,13 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ClipboardCheck, CheckCircle2, AlertCircle, Plus, Download, 
   Search, Filter, Calendar, Eye, Edit2, Trash2, FileText, 
-  ChevronRight, Package, Clock, User, Building, X, ShoppingBag, ShieldCheck
+  ChevronRight, Package, Clock, User, Building, X, ShoppingBag, ShieldCheck, CheckSquare, Square
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
+import { openExportPreview } from '../utils/exportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -42,6 +42,7 @@ export function IncomingQC({ onNavigate }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const load = async () => {
@@ -65,6 +66,66 @@ export function IncomingQC({ onNavigate }: Props) {
     });
   }, [records, searchQuery, filterType, filterStatus]);
 
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredRecords.length && filteredRecords.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredRecords.map(r => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (window.confirm(`Delete ${selectedIds.size} incoming QC records?`)) {
+      const idsToDelete = Array.from(selectedIds);
+      await Promise.all(idsToDelete.map(id => getTable('incomingQC').delete(id as string)));
+      setRecords(records.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Incoming QC Master Register',
+      moduleId: 'incoming_qc_global',
+      fileName: 'Incoming_QC_Masterlist',
+      columns: ['Material', 'Supplier', 'Lot Number', 'Received', 'Accepted', 'Status'],
+      rows: filteredRecords.map(r => [
+        `${r.materialName} (${r.materialType})`,
+        r.supplier,
+        r.lotNumber,
+        r.receivedQty.toString(),
+        r.acceptedQty.toString(),
+        r.status
+      ])
+    });
+  };
+
+  const handleBulkExport = () => {
+    const selectedRecords = filteredRecords.filter(r => selectedIds.has(r.id));
+    openExportPreview({
+      moduleName: 'Selected Inward Inspections',
+      moduleId: 'incoming_qc_bulk',
+      fileName: `Incoming_QC_Bulk_Export_${selectedIds.size}`,
+      columns: ['Material', 'Supplier', 'Lot Number', 'Received', 'Accepted', 'Status'],
+      rows: selectedRecords.map(r => [
+        `${r.materialName} (${r.materialType})`,
+        r.supplier,
+        r.lotNumber,
+        r.receivedQty.toString(),
+        r.acceptedQty.toString(),
+        r.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
   const stats = useMemo(() => {
     return {
       total: records.length,
@@ -82,43 +143,11 @@ export function IncomingQC({ onNavigate }: Props) {
   };
 
   const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredRecords);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Incoming QC");
-    XLSX.writeFile(wb, "Incoming_QC_Report.xlsx");
+    handleGlobalExport();
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Incoming Quality Control',
-      columns: ['ID', 'Material', 'Supplier', 'Lot #', 'Recv Qty', 'Status'],
-      rows: filteredRecords.map(r => [r.id, r.materialName, r.supplier, r.lotNumber, r.receivedQty.toString(), r.status]),
-      fileName: 'Incoming_QC_Report'
-    });
-  };
-
-  const exportSinglePDF = async (record: IQCRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Material Inspection Report',
-      moduleId: 'incoming-qc',
-      recordId: record.id,
-      fileName: `IQC_${record.id}`,
-      fields: [
-        { label: 'Material Name',    value: record.materialName },
-        { label: 'Material Type',    value: record.materialType },
-        { label: 'Supplier Name',    value: record.supplier },
-        { label: 'Lot / Batch No.',  value: record.lotNumber },
-        { label: 'Received Quantity',value: record.receivedQty.toString() },
-        { label: 'Accepted Quantity',value: record.acceptedQty.toString() },
-        { label: 'Rejection Rate',   value: `${(((record.receivedQty - record.acceptedQty) / record.receivedQty) * 100).toFixed(1)}%` },
-        { label: 'Inspection Date',  value: record.date },
-        { label: 'Inspector',        value: record.responsiblePerson },
-        { label: 'Status',           value: record.status },
-      ]
-    });
-  };
-
+  
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -130,12 +159,10 @@ export function IncomingQC({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Raw material inspection, supplier quality verification, and lot tracking.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
-            <Download className="w-4 h-4" /> Excel
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('incoming-qc-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New Inspection
           </button>
@@ -173,19 +200,36 @@ export function IncomingQC({ onNavigate }: Props) {
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
-          <option value="All">All Materials</option>
-          <option value="Fabric">Fabric</option>
-          <option value="Accessories">Accessories</option>
-          <option value="Chemical">Chemicals</option>
-          <option value="Packaging">Packaging</option>
-        </select>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="All">All Statuses</option>
-          <option value="Pass">Pass</option>
-          <option value="Fail">Fail</option>
-          <option value="Pending">Pending</option>
-        </select>
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+            <button onClick={handleBulkExport} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+              <Download className="w-4 h-4" /> Export PDF
+            </button>
+            <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+              <option value="All">All Materials</option>
+              <option value="Fabric">Fabric</option>
+              <option value="Accessories">Accessories</option>
+              <option value="Chemical">Chemicals</option>
+              <option value="Packaging">Packaging</option>
+            </select>
+            <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <option value="All">All Statuses</option>
+              <option value="Pass">Pass</option>
+              <option value="Fail">Fail</option>
+              <option value="Pending">Pending</option>
+            </select>
+          </div>
+        )}
       </motion.div>
 
       <motion.div variants={itemVariants} className="bg-bg-1 border border-border-main rounded-2xl overflow-hidden shadow-sm">
@@ -193,7 +237,14 @@ export function IncomingQC({ onNavigate }: Props) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-bg-2/50 border-b border-border-main text-[10px] uppercase tracking-widest text-text-2 font-black">
-                <th className="p-4 pl-6">Material Detail</th>
+                <th className="p-4 w-10 pl-6">
+                  <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                    {selectedIds.size === filteredRecords.length && filteredRecords.length > 0
+                      ? <CheckSquare className="w-4 h-4 text-accent" />
+                      : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-4">Material Detail</th>
                 <th className="p-4">Supplier & Lot</th>
                 <th className="p-4">Quantity Analytics</th>
                 <th className="p-4 text-center">Inspector</th>
@@ -204,7 +255,12 @@ export function IncomingQC({ onNavigate }: Props) {
             <tbody className="divide-y divide-border-main">
               {filteredRecords.map(r => (
                 <tr key={r.id} className="hover:bg-bg-2/60 transition-all duration-200 group">
-                  <td className="p-4 pl-6">
+                  <td className="p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => toggleSelect(r.id)} className="text-text-3 hover:text-accent transition-colors">
+                      {selectedIds.has(r.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  </td>
+                  <td className="p-4">
                     <div className="font-bold text-text-1 text-sm">{r.materialName}</div>
                     <div className="text-[11px] text-text-3 mt-1 font-mono uppercase tracking-tight">{r.id} • {r.materialType}</div>
                   </td>
@@ -252,9 +308,7 @@ export function IncomingQC({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('incoming-qc-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

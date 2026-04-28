@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { openExportPreview } from '../utils/exportUtils';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   AlertOctagon, CheckCircle2, AlertCircle, Plus, Download, 
@@ -6,8 +8,6 @@ import {
   ChevronRight, ShieldAlert, Clock, User, Building, X, Layers, Activity
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -80,42 +80,44 @@ export function NCR({ onNavigate }: Props) {
     }
   };
 
-  const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredRecords);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "NCR Records");
-    XLSX.writeFile(wb, "NCR_Management_Report.xlsx");
-  };
-
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Nonconformance (NCR)',
-      columns: ['ID', 'Title', 'Type', 'Dept', 'Stage', 'Status'],
-      rows: filteredRecords.map(r => [r.id, r.ncrTitle, r.ncrType, r.department, r.detectionStage, r.status]),
-      fileName: 'NCR_Management_Report'
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Nonconformance Report (NCR) Register',
+      moduleId: 'ncr_bulk',
+      fileName: 'NCR_Management_Report',
+      columns: ['ID', 'Title', 'Type', 'Department', 'Qty', 'Status', 'Detected By'],
+      rows: filteredRecords.map(r => [
+        r.id,
+        r.ncrTitle,
+        r.ncrType,
+        r.department,
+        String(r.affectedQuantity),
+        r.status,
+        r.detectedBy
+      ])
     });
   };
 
-  const handleDownloadDetail = async (record: any) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    exportDetailToPDF({
-      moduleName: 'NCR Report',
-      moduleId: 'ncr',
+  
+  const handleDownloadDetail = (record: any) => {
+    openExportPreview({
+      moduleName: 'Nonconformance Report (NCR)',
+      moduleId: 'ncr_record',
       recordId: record.id,
       fileName: `NCR_${record.id}`,
       fields: [
-        { label: 'Title', value: record.ncrTitle },
-        { label: 'Type', value: record.ncrType },
+        { label: 'NCR Title', value: record.ncrTitle },
+        { label: 'Category', value: record.ncrType },
         { label: 'Department', value: record.department },
         { label: 'Responsible Person', value: record.responsiblePerson },
         { label: 'Detected By', value: record.detectedBy },
         { label: 'Detection Stage', value: record.detectionStage },
         { label: 'Affected Quantity', value: String(record.affectedQuantity) },
         { label: 'Disposition', value: record.disposition },
-        { label: 'Description', value: record.description },
-        { label: 'Root Cause', value: record.rootCause },
-        { label: 'Corrective Action', value: record.correctiveAction },
-        { label: 'Status', value: record.status }
+        { label: 'Description', value: record.description, fullWidth: true },
+        { label: 'Initial Root Cause', value: record.rootCause, fullWidth: true },
+        { label: 'Corrective Action', value: record.correctiveAction, fullWidth: true },
+        { label: 'Workflow Status', value: record.status }
       ],
       attachments: record.attachments
     });
@@ -132,12 +134,10 @@ export function NCR({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Identification, disposition and corrective actions for nonconformities.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
-            <Download className="w-4 h-4" /> Excel
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('ncr-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New NCR
           </button>

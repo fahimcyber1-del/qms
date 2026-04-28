@@ -3,9 +3,10 @@ import { motion } from 'motion/react';
 import { 
   ChevronLeft, Check, X, Plus, Trash2, FileText, AlertCircle, Save, 
   Building, User, Users, Award, ClipboardCheck, Clock, ShieldCheck, 
-  HelpCircle, Camera, Image as ImageIcon, Download, Activity, Flag, LayoutGrid, Calendar
+  HelpCircle, Camera, Image as ImageIcon, Download, Activity, Flag, LayoutGrid, Calendar, Edit2
 } from 'lucide-react';
 import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
 
 interface CAPAFormProps {
   params: {
@@ -72,6 +73,35 @@ export function CAPAForm({ params, onNavigate }: CAPAFormProps) {
     createdAt: new Date().toISOString()
   });
 
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'CAPA Compliance Report',
+      moduleId: 'capa_detail',
+      recordId: formData.id,
+      fileName: `${formData.id}_CAPA_Report`,
+      layout: 'executive',
+      fields: [
+        { label: 'CAPA ID', value: formData.id },
+        { label: 'Source Audit', value: formData.auditId || 'Manual Entry' },
+        { label: 'Responsible', value: formData.responsible },
+        { label: 'Department', value: formData.department },
+        { label: 'Deadline', value: formData.deadline },
+        { label: 'Status', value: formData.status },
+        { label: 'Non-Conformity', value: formData.nc, fullWidth: true },
+        { label: 'Root Cause Analysis', value: formData.cause, fullWidth: true },
+        { label: 'Corrective Action', value: formData.action, fullWidth: true },
+        { label: 'Preventive Plan', value: formData.preventive, fullWidth: true },
+        { label: 'Supporting Context', value: formData.description, fullWidth: true }
+      ],
+      comments: (formData.history || []).map((h: any) => ({
+        user: h.responsible || 'System',
+        date: h.date,
+        text: `${h.change} (Status: ${h.status})`
+      })),
+      attachments: formData.attachments
+    });
+  };
+
   const handleSave = async () => {
     if (!formData.nc || !formData.responsible || !formData.deadline) {
       alert('Non-Conformity, Responsible, and Deadline are required fields.');
@@ -135,94 +165,7 @@ export function CAPAForm({ params, onNavigate }: CAPAFormProps) {
     }));
   };
 
-  const exportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
-    const statusColor: Record<string, string> = {
-      'Open': '#f59e0b', 'In Progress': '#3b82f6',
-      'Closed': '#16a34a', 'Overdue': '#dc2626'
-    };
-
-    const historyRows = (formData.history || []).map((h: any) => [
-      new Date(h.date).toLocaleDateString('en-GB'),
-      h.change || '—',
-      h.responsible || '—',
-      h.status || '—',
-    ]);
-
-    await exportDetailToPDF({
-      moduleName: 'Corrective & Preventive Action Report',
-      moduleId: 'capa',
-      recordId: formData.id,
-      fileName: `CAPA_${formData.id}`,
-      sections: [
-        {
-          title: 'D1 — Governance & Identification',
-          fields: [
-            { label: 'CAPA Reference ID', value: formData.id },
-            { label: 'Current Status', value: formData.status },
-            { label: 'Responsible Person', value: formData.responsible || '—' },
-            { label: 'Department', value: formData.department || '—' },
-            { label: 'Linked Audit ID', value: formData.auditId || 'N/A' },
-            { label: 'Verification Deadline', value: formData.deadline || '—' },
-          ]
-        },
-        {
-          title: 'D2 — Problem Statement (Non-Conformity)',
-          fields: [
-            { label: 'NC Description', value: formData.nc || '—', fullWidth: true },
-          ]
-        },
-        {
-          title: 'D3 — Root Cause Analysis (5-Why)',
-          fields: [
-            { label: 'Root Cause', value: formData.cause || '—', fullWidth: true },
-          ]
-        },
-        {
-          title: 'D4 — Corrective Action Taken',
-          fields: [
-            { label: 'Corrective Action', value: formData.action || '—', fullWidth: true },
-          ]
-        },
-        {
-          title: 'D5 — Preventive Action Plan',
-          fields: [
-            { label: 'Preventive Action', value: formData.preventive || '—', fullWidth: true },
-          ]
-        },
-        {
-          title: 'D6 — Supporting Evidence',
-          fields: [
-            { label: 'Additional Context', value: formData.description || 'No additional context provided.' },
-            { label: 'ISO Reference', value: 'ISO 9001:2015 — Clause 10.2' },
-          ]
-        }
-      ],
-      tables: historyRows.length > 0 ? [
-        {
-          title: 'D7 — Audit Trail & Workflow History',
-          columns: ['Date', 'Event / Change', 'Responsible', 'Status'],
-          rows: historyRows,
-          columnStyles: {
-            0: { cellWidth: 30 },
-            1: { cellWidth: 75 },
-            2: { cellWidth: 45 },
-            3: { cellWidth: 30, halign: 'center', fontStyle: 'bold' },
-          }
-        }
-      ] : undefined,
-      summary: [
-        'D8 — Effectiveness Verification:',
-        formData.status === 'Closed'
-          ? 'CAPA has been verified effective and closed successfully.'
-          : `Verification pending. Current status: ${formData.status}. Deadline: ${formData.deadline || 'Not set'}.`
-      ],
-      signatureLabels: ['Raised By', 'Dept. Head', 'QA Manager', 'Closure Authority'],
-      styleOverrides: { accentColor: statusColor[formData.status] || '#3b82f6' }
-    });
-  };
-
+  
   const inputClass = "w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm font-bold text-text-1 focus:ring-2 focus:ring-accent outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
@@ -252,11 +195,11 @@ export function CAPAForm({ params, onNavigate }: CAPAFormProps) {
         <div className="flex gap-3">
           {isReadOnly ? (
              <>
-               <button className="btn btn-ghost border border-border-main flex items-center gap-2" onClick={() => onNavigate('capa-form', { mode: 'edit', data: formData })}>
-                  <Trash2 className="w-4 h-4 rotate-45" /> Modify Record
+               <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Download className="w-4 h-4" /> Export
                </button>
-               <button className="btn btn-primary shadow-lg shadow-accent/20" onClick={exportPDF}>
-                  <Download className="w-4 h-4 mr-2" /> Export PDF
+               <button type="button" onClick={() => onNavigate('capa-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Edit2 className="w-4 h-4" /> Modify Record
                </button>
              </>
           ) : (

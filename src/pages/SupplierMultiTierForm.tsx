@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { getTable } from '../db/db';
 import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
+import { Download, Edit2 } from 'lucide-react';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -62,6 +64,28 @@ export function SupplierMultiTierForm({ onNavigate, params }: Props) {
 
   const isReadOnly = mode === 'view';
 
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Supplier Multi-Tier Profile',
+      moduleId: 'supplier_tier_detail',
+      recordId: formData.id,
+      fileName: `Supplier_Profile_${formData.id}`,
+      layout: 'executive',
+      fields: [
+        { label: 'Supplier Name', value: formData.supplierName },
+        { label: 'Process / Specialty', value: formData.process },
+        { label: 'Factory Location', value: formData.location },
+        { label: 'Contact Person', value: formData.contactPerson },
+        { label: 'Phone / Contact', value: formData.phone },
+        { label: 'Compliance Score (%)', value: `${formData.score}%` },
+        { label: 'Source Origin', value: formData.source },
+        { label: 'Current Status', value: formData.status },
+        { label: 'Full Profile / Description', value: formData.description, fullWidth: true }
+      ],
+      attachments: formData.attachments
+    });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) return;
@@ -117,13 +141,22 @@ export function SupplierMultiTierForm({ onNavigate, params }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => onNavigate('supplier-multi-tier')} className="btn btn-ghost px-6">
-            {isReadOnly ? 'Close' : 'Cancel'}
-          </button>
-          {!isReadOnly && (
-            <button type="submit" className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
-              <Save className="w-4 h-4" /> Save Profile
-            </button>
+          {isReadOnly ? (
+            <>
+              <button type="button" onClick={() => onNavigate('supplier-multi-tier-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                <Edit2 className="w-4 h-4" /> Edit Profile
+              </button>
+              <button type="button" onClick={handleExport} className="btn btn-primary shadow-lg shadow-accent/20">
+                <Download className="w-4 h-4 mr-2" /> Export PDF
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => onNavigate('supplier-multi-tier')} className="btn btn-ghost px-6">Cancel</button>
+              <button type="submit" className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
+                <Save className="w-4 h-4" /> Save Profile
+              </button>
+            </>
           )}
         </div>
       </div>

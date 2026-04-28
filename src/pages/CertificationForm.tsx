@@ -1,9 +1,10 @@
+import { openExportPreview } from '../utils/exportUtils';
 import React, { useState, useEffect, memo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, Save, X, FileText, Calendar, Building, 
   User, ShieldCheck, Info, Plus, Trash2, Download, Eye, Award, Globe, 
-  FileUp, AlertTriangle, CheckCircle2, Info as InfoIcon, Activity, Tag, Flag, Search
+  FileUp, AlertTriangle, CheckCircle2, Info as InfoIcon, Activity, Tag, Flag, Search, Layers, Edit2
 } from 'lucide-react';
 import { CertificateRecord } from '../types';
 import { checkCertificateStatus, saveCertificates, getCertificates } from '../utils/certificateUtils';
@@ -108,13 +109,13 @@ export function CertificationForm({ onNavigate, params }: Props) {
     }
   };
 
-  const handleDownloadReport = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
+  const handleExport = () => {
+    openExportPreview({
       moduleName: 'Compliance Certificate Report',
-      moduleId: 'certification',
+      moduleId: 'certification_detail',
       recordId: formData.number || 'N/A',
       fileName: `CERT_${(formData.name || 'Unnamed').replace(/\s+/g, '_')}`,
+      layout: 'technical',
       fields: [
         { label: 'Certificate Name',   value: formData.name || '—' },
         { label: 'Cert Number',        value: formData.number || '—' },
@@ -149,10 +150,10 @@ export function CertificationForm({ onNavigate, params }: Props) {
           {isReadOnly ? (
              <>
                <button type="button" onClick={() => onNavigate('certification-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
-                  <Trash2 className="w-4 h-4 rotate-45" /> Edit Record
+                  <Edit2 className="w-4 h-4" /> Edit Record
                </button>
-               <button type="button" onClick={handleDownloadReport} className="btn btn-primary shadow-lg shadow-accent/20">
-                  <Download className="w-4 h-4 mr-2" /> Download Report
+               <button type="button" onClick={handleExport} className="btn btn-primary shadow-lg shadow-accent/20">
+                  <Download className="w-4 h-4 mr-2" /> Export
                </button>
              </>
           ) : (
@@ -324,3 +325,5 @@ export function CertificationForm({ onNavigate, params }: Props) {
     </div>
   );
 }
+
+

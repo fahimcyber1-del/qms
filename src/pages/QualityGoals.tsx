@@ -1,13 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Target, TrendingUp, CheckCircle2, AlertCircle, Plus, Download, 
   Search, Filter, Calendar, Eye, Edit2, Trash2, FileText, 
-  ChevronRight, BarChart3, Clock, User, Building, X
+  ChevronRight, BarChart3, Clock, User, Building, X, CheckSquare, Square
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
+import { openExportPreview } from '../utils/exportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -45,6 +45,7 @@ export function QualityGoals({ onNavigate }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const normalizeRecord = (record: Partial<QualityGoalRecord> & Record<string, any>): QualityGoalRecord => ({
     id: record.id || `GOAL-${Date.now()}`,
@@ -89,6 +90,66 @@ export function QualityGoals({ onNavigate }: Props) {
     });
   }, [records, searchQuery, filterCategory, filterStatus]);
 
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredRecords.length && filteredRecords.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredRecords.map(r => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (window.confirm(`Delete ${selectedIds.size} goal records?`)) {
+      const idsToDelete = Array.from(selectedIds);
+      await Promise.all(idsToDelete.map(id => getTable('qualityGoals').delete(id as string)));
+      setRecords(records.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const exportBulkPDF = async () => {
+    const recordsToExport = filteredRecords.filter(r => selectedIds.has(r.id));
+    openExportPreview({
+      moduleName: 'Quality Goals',
+      moduleId: 'quality_goals_bulk',
+      fileName: 'Quality_Goals_Export',
+      columns: ['Goal', 'Department', 'Progress', 'Timeline', 'Status'],
+      rows: recordsToExport.map(r => [
+        r.goalTitle,
+        r.department,
+        `${r.actualValue}/${r.targetValue} ${r.uom} (${getProgressPercent(r).toFixed(0)}%)`,
+        new Date(r.endDate).toLocaleDateString(),
+        r.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Quality Goals Master Register',
+      moduleId: 'quality_goals_global',
+      fileName: 'Quality_Goals_Masterlist',
+      columns: ['Goal', 'Category', 'Dept', 'Responsible', 'Target', 'Actual', 'Status'],
+      rows: filteredRecords.map(r => [
+        r.goalTitle,
+        r.category,
+        r.department,
+        r.responsiblePerson,
+        `${r.targetValue} ${r.uom}`,
+        `${r.actualValue} ${r.uom}`,
+        r.status
+      ])
+    });
+  };
+
   const stats = useMemo(() => {
     return {
       total: records.length,
@@ -112,36 +173,8 @@ export function QualityGoals({ onNavigate }: Props) {
     XLSX.writeFile(wb, "Quality_Goals_Report.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Quality Goals & Objectives (ISO 9001:2015)',
-      columns: ['Goal Title', 'Dept', 'Responsible', 'Target', 'Actual', 'UOM', 'Status'],
-      rows: filteredRecords.map(r => [r.goalTitle, r.department, r.responsiblePerson, String(r.targetValue), String(r.actualValue), r.uom, r.status]),
-      fileName: 'Quality_Goals_Report'
-    });
-  };
-
-  const exportSinglePDF = async (record: QualityGoalRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Quality Objective Specification',
-      moduleId: 'quality-goals',
-      recordId: record.id,
-      fileName: `Goal_${record.goalTitle.replace(/\s+/g, '_')}`,
-      fields: [
-        { label: 'Objective Title',      value: record.goalTitle },
-        { label: 'Category',             value: record.category },
-        { label: 'Department',           value: record.department },
-        { label: 'Responsible Person',   value: record.responsiblePerson },
-        { label: 'Target Value',         value: `${record.targetValue} ${record.uom}` },
-        { label: 'Actual Achievement',   value: `${record.actualValue} ${record.uom}` },
-        { label: 'Project Start',        value: record.startDate },
-        { label: 'Project End / Target', value: record.endDate },
-        { label: 'Current Status',       value: record.status },
-      ]
-    });
-  };
-
+  
+  
   const getProgressPercent = (record: QualityGoalRecord) => {
     if (!record.targetValue) return 0;
     return (record.actualValue / record.targetValue) * 100;
@@ -158,12 +191,10 @@ export function QualityGoals({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Strategic quality objectives and performance tracking.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
-            <Download className="w-4 h-4" /> Excel
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('quality-goals-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New Goal
           </button>
@@ -201,18 +232,35 @@ export function QualityGoals({ onNavigate }: Props) {
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-          <option value="All">All Categories</option>
-          <option value="Product Quality">Product Quality</option>
-          <option value="Process Efficiency">Process Efficiency</option>
-          <option value="Customer Satisfaction">Customer Satisfaction</option>
-        </select>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="All">All Statuses</option>
-          <option value="Achieved">Achieved</option>
-          <option value="In Progress">In Progress</option>
-          <option value="Not Achieved">Not Achieved</option>
-        </select>
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+            <button onClick={exportBulkPDF} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+              <Download className="w-4 h-4" /> Export PDF
+            </button>
+            <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+              <option value="All">All Categories</option>
+              <option value="Product Quality">Product Quality</option>
+              <option value="Process Efficiency">Process Efficiency</option>
+              <option value="Customer Satisfaction">Customer Satisfaction</option>
+            </select>
+            <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <option value="All">All Statuses</option>
+              <option value="Achieved">Achieved</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Not Achieved">Not Achieved</option>
+            </select>
+          </div>
+        )}
       </motion.div>
 
       <motion.div variants={itemVariants} className="bg-bg-1 border border-border-main rounded-2xl overflow-hidden shadow-sm">
@@ -220,7 +268,14 @@ export function QualityGoals({ onNavigate }: Props) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-bg-2/50 border-b border-border-main text-[10px] uppercase tracking-widest text-text-2 font-black">
-                <th className="p-4 pl-6">Goal Detail</th>
+                <th className="p-4 w-10 pl-6">
+                  <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                    {selectedIds.size === filteredRecords.length && filteredRecords.length > 0
+                      ? <CheckSquare className="w-4 h-4 text-accent" />
+                      : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-4">Goal Detail</th>
                 <th className="p-4">Department</th>
                 <th className="p-4">Target vs Actual</th>
                 <th className="p-4">Timeline</th>
@@ -231,7 +286,12 @@ export function QualityGoals({ onNavigate }: Props) {
             <tbody className="divide-y divide-border-main">
               {filteredRecords.map(r => (
                 <tr key={r.id} className="hover:bg-bg-2/60 transition-all duration-200 group">
-                  <td className="p-4 pl-6">
+                  <td className="p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => toggleSelect(r.id)} className="text-text-3 hover:text-accent transition-colors">
+                      {selectedIds.has(r.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  </td>
+                  <td className="p-4">
                     <div className="font-bold text-text-1 text-sm">{r.goalTitle}</div>
                     <div className="text-[11px] text-text-3 mt-1 font-mono uppercase tracking-tight">{r.id} • {r.category}</div>
                   </td>
@@ -283,9 +343,7 @@ export function QualityGoals({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('quality-goals-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

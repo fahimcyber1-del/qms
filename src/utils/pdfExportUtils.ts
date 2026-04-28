@@ -1,4 +1,4 @@
-﻿/**
+/**
  * PDF Export Utilities â€” QMS ERP Pro
  * Centralised branded PDF export for all UniversalModule-based modules.
  * Delegates header/footer rendering to `pdfHeader.ts` which reads from Settings.
@@ -6,9 +6,7 @@
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { addPdfHeader, isPdfHeaderEnabled, loadPdfSettings, loadOrgSettings, ACCENT_PALETTES } from './pdfHeader';
-
-
+import { addPdfHeader, isPdfHeaderEnabled, loadPdfSettings, loadOrgSettings, ACCENT_PALETTES } from './pdfEngine';
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function hexToRgbTuple(hex: string): [number, number, number] {
   const clean = hex.replace('#', '');
@@ -459,6 +457,7 @@ export interface DetailExportOptions {
     showImagesInline?: boolean;
     tableTheme?: 'grid' | 'striped' | 'plain';
   };
+  productImage?: string;
 }
 
 export async function exportDetailToPDF(options: DetailExportOptions): Promise<void> {

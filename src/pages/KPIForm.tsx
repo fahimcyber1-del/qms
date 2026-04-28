@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   ArrowLeft, Save, X, Cpu, Target, Activity, 
-  BarChart3, AlertTriangle, ShieldAlert, Zap, FileText, Info, Download, Eye
+  BarChart3, AlertTriangle, ShieldAlert, Zap, FileText, Info, Download, Eye, Edit2
 } from 'lucide-react';
 import { db } from '../db/db';
 import { SmartKPI, calculateActualValue } from '../utils/kpiEngine';
+import { openExportPreview } from '../utils/exportUtils';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -32,6 +33,29 @@ export function KPIForm({ onNavigate, params }: Props) {
   });
 
   const isReadOnly = mode === 'view';
+
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'KPI Metric Specification',
+      moduleId: 'kpi_detail',
+      recordId: formData.id || 'N/A',
+      fileName: `KPI_${(formData.kpiName || 'Metric').replace(/\s+/g, '_')}`,
+      layout: 'technical',
+      fields: [
+        { label: 'Metric Name', value: formData.kpiName || '—' },
+        { label: 'Category', value: formData.kpiCategory || '—' },
+        { label: 'Source Module', value: formData.dataSourceModule || '—' },
+        { label: 'Formula', value: formData.kpiFormula || '—', fullWidth: true },
+        { label: 'Frequency', value: formData.calculationFrequency || '—' },
+        { label: 'Current Value', value: formData.currentValue?.toString() || '0' },
+        { label: 'Target Value', value: formData.targetValue?.toString() || '0' },
+        { label: 'Warning Threshold', value: formData.warningThreshold?.toString() || '0' },
+        { label: 'Critical Threshold', value: formData.criticalThreshold?.toString() || '0' },
+        { label: 'Status', value: formData.status || 'Active' },
+        { label: 'Auto Fetch', value: formData.autoDataFetch ? 'Enabled' : 'Disabled' }
+      ]
+    });
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,43 +85,7 @@ export function KPIForm({ onNavigate, params }: Props) {
     }
   };
 
-  const exportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'KPI Performance Report',
-      moduleId: 'kpi',
-      recordId: formData.id || 'N/A',
-      fileName: `KPI_${(formData.kpiName || 'Unnamed').replace(/\s+/g, '_')}`,
-      sections: [
-        {
-          title: '01. Metric Identification',
-          fields: [
-            { label: 'KPI Name',        value: formData.kpiName || '—' },
-            { label: 'Category Group',  value: formData.kpiCategory || '—' },
-            { label: 'Source Module',   value: formData.dataSourceModule || '—' },
-          ]
-        },
-        {
-          title: '02. Engine & Formula',
-          fields: [
-            { label: 'Calculation Formula', value: formData.kpiFormula || '—', fullWidth: true },
-            { label: 'Processing Mode',     value: formData.autoDataFetch ? 'Autonomous Processing' : 'Manual Entry' },
-            { label: 'Update Frequency',    value: formData.calculationFrequency || '—' },
-          ]
-        },
-        {
-          title: '03. Performance Bounds',
-          fields: [
-            { label: 'Optimal Target',      value: String(formData.targetValue) },
-            { label: 'Warning Threshold',   value: String(formData.warningThreshold) },
-            { label: 'Critical Alert',      value: String(formData.criticalThreshold) },
-            { label: 'Current Performance', value: String(formData.currentValue ?? '0'), fullWidth: true },
-          ]
-        }
-      ]
-    });
-  };
-
+  
   const inputClass = "w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
@@ -117,13 +105,22 @@ export function KPIForm({ onNavigate, params }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={exportPDF} className="btn bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 px-4 flex items-center gap-2 hover:bg-indigo-500/20">
-            <Download className="w-4 h-4" /> Export Report
-          </button>
-          {!isReadOnly && (
-            <button onClick={handleSave} className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
-              <Save className="w-4 h-4" /> Save Configuration
-            </button>
+          {isReadOnly ? (
+            <>
+              <button type="button" onClick={() => onNavigate('kpi-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                <Edit2 className="w-4 h-4" /> Edit Rule
+              </button>
+              <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                <Download className="w-4 h-4" /> Export Rule
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => onNavigate('kpi')} className="btn btn-ghost px-6">Cancel</button>
+              <button type="submit" onClick={handleSave} className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
+                <Save className="w-4 h-4" /> Save Configuration
+              </button>
+            </>
           )}
         </div>
       </div>

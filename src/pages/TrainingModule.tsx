@@ -1,14 +1,14 @@
+import { openExportPreview } from '../utils/exportUtils';
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   GraduationCap, Calendar, Users, Award, FileText, Download,
   CheckCircle2, Clock, AlertTriangle, ShieldCheck, PieChart,
   Plus, Edit2, Trash2, Camera, UserSquare, BarChart, BookOpen, User, BookCheck,
-  Search, Filter, X, TrendingUp
+  Search, Filter, X, TrendingUp, CheckSquare, Square
 } from 'lucide-react';
 import { getTable } from '../db/db';
 import { UniversalRecord } from '../types';
-import { exportTableToPDF, exportDetailToPDF } from '../utils/pdfExportUtils';
 
 interface TrainingModuleProps {
   onNavigate: (page: string, params?: any) => void;
@@ -44,6 +44,24 @@ export function TrainingModule({ onNavigate }: TrainingModuleProps) {
     { id: 'reports', label: 'Reports', icon: FileText },
   ];
 
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Master Training Register',
+      moduleId: 'training_global',
+      fileName: 'Training_Management_Masterlist',
+      columns: ['Title', 'Type', 'Department', 'Trainer', 'Date', 'Participants', 'Status'],
+      rows: records.map(r => [
+        r.trainingTitle,
+        r.trainingType,
+        r.department,
+        r.trainer,
+        new Date(r.date).toLocaleDateString(),
+        r.participantCount || 0,
+        r.status
+      ])
+    });
+  };
+
   if (loading) {
     return <div className="p-8 text-center text-text-3">Loading training modules...</div>;
   }
@@ -60,6 +78,9 @@ export function TrainingModule({ onNavigate }: TrainingModuleProps) {
           <p className="text-text-3 text-sm mt-1">Manage employee training, materials, attendance, and compliance</p>
         </div>
         <div className="flex gap-2">
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
+          </button>
           <button 
             onClick={() => onNavigate('training-form', { mode: 'create' })}
             className="btn btn-primary flex items-center gap-2 shadow-lg shadow-accent/20"
@@ -211,6 +232,7 @@ function PlanTab({ records, onNavigate, refresh }: { records: UniversalRecord[],
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   const filtered = useMemo(() => {
     return records.filter(r => 
@@ -231,17 +253,64 @@ function PlanTab({ records, onNavigate, refresh }: { records: UniversalRecord[],
 
   const totalPages = Math.ceil(filtered.length / pageSize);
 
-  const handleExportPDF = async () => {
-    const cols = ['ID', 'Title', 'Type', 'Dept', 'Trainer', 'Date', 'Status'];
-    const rows = filtered.map(r => [
-      r.id, r.trainingTitle, r.trainingType, r.department, r.trainer, 
-      new Date(r.date).toLocaleDateString(), r.status
-    ]);
-    exportTableToPDF({
+  const toggleSelectAll = () => {
+    if (selectedIds.size === paginatedRecords.length && paginatedRecords.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedRecords.map(r => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (window.confirm(`Delete ${selectedIds.size} training records?`)) {
+      const idsToDelete = Array.from(selectedIds);
+      await Promise.all(idsToDelete.map(id => getTable('training').delete(id as string)));
+      setSelectedIds(new Set());
+      refresh();
+    }
+  };
+
+  const exportBulkPDF = () => {
+    const recordsToExport = filtered.filter(r => selectedIds.has(r.id));
+    openExportPreview({
       moduleName: 'Master Training Plan',
-      columns: cols,
-      rows: rows,
-      fileName: 'Master_Training_Plan'
+      moduleId: 'training_bulk',
+      fileName: 'Master_Training_Plan_Export',
+      columns: ['Title', 'Type', 'Dept', 'Trainer', 'Date', 'Status'],
+      rows: recordsToExport.map(r => [
+        r.trainingTitle,
+        r.trainingType,
+        r.department,
+        r.trainer,
+        new Date(r.date).toLocaleDateString(),
+        r.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleExportPDF = () => {
+    openExportPreview({
+      moduleName: 'Master Training Plan',
+      moduleId: 'training_all',
+      fileName: 'Master_Training_Plan',
+      columns: ['ID', 'Title', 'Type', 'Dept', 'Trainer', 'Date', 'Status'],
+      rows: filtered.map(r => [
+        r.id,
+        r.trainingTitle,
+        r.trainingType,
+        r.department,
+        r.trainer,
+        new Date(r.date).toLocaleDateString(),
+        r.status
+      ])
     });
   };
 
@@ -253,23 +322,35 @@ function PlanTab({ records, onNavigate, refresh }: { records: UniversalRecord[],
   };
 
   return (
-    <div className="p-6 h-full flex flex-col">
+     <div className="p-6 h-full flex flex-col">
        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
          <h2 className="text-lg font-bold text-text-1">Master Training Plan</h2>
          <div className="flex w-full md:w-auto gap-2">
-            <div className="relative flex-1 md:w-64">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-3" />
-              <input 
-                type="text" 
-                placeholder="Search plan..." 
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full bg-bg-2 border border-border-main rounded-xl pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
-              />
-            </div>
-            <button className="btn btn-ghost border border-border-main flex gap-2 items-center text-xs font-bold" onClick={handleExportPDF}>
-              <Download className="w-3.5 h-3.5"/> Export
-            </button>
+            {selectedIds.size > 0 ? (
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+                <button onClick={exportBulkPDF} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+                  <Download className="w-4 h-4" /> Export PDF
+                </button>
+                <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+                <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="relative flex-1 md:w-64">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-3" />
+                <input 
+                  type="text" 
+                  placeholder="Search plan..." 
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="w-full bg-bg-2 border border-border-main rounded-xl pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-accent outline-none"
+                />
+              </div>
+            )}
          </div>
        </div>
 
@@ -277,6 +358,13 @@ function PlanTab({ records, onNavigate, refresh }: { records: UniversalRecord[],
          <table className="w-full text-left text-sm whitespace-nowrap">
            <thead className="bg-bg-2 border-b border-border-main">
              <tr>
+               <th className="p-4 w-10 pl-6">
+                 <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                   {selectedIds.size === paginatedRecords.length && paginatedRecords.length > 0
+                     ? <CheckSquare className="w-4 h-4 text-accent" />
+                     : <Square className="w-4 h-4" />}
+                 </button>
+               </th>
                <th className="p-4 text-text-3 font-bold uppercase tracking-wider text-[10px]">Title</th>
                <th className="p-4 text-text-3 font-bold uppercase tracking-wider text-[10px]">Type</th>
                <th className="p-4 text-text-3 font-bold uppercase tracking-wider text-[10px]">Dept</th>
@@ -289,11 +377,16 @@ function PlanTab({ records, onNavigate, refresh }: { records: UniversalRecord[],
            <tbody className="divide-y divide-border-main bg-bg-1">
              {paginatedRecords.length === 0 ? (
                <tr>
-                 <td colSpan={7} className="p-12 text-center text-text-3 italic">No training records found.</td>
+                 <td colSpan={8} className="p-12 text-center text-text-3 italic">No training records found.</td>
                </tr>
              ) : (
                paginatedRecords.map(r => (
                  <tr key={r.id} className="hover:bg-bg-2/50 transition-colors group">
+                   <td className="p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                     <button onClick={() => toggleSelect(r.id)} className="text-text-3 hover:text-accent transition-colors">
+                       {selectedIds.has(r.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                     </button>
+                   </td>
                    <td className="p-4">
                      <div className="font-bold text-text-1">{r.trainingTitle}</div>
                      <div className="text-[10px] text-text-3 font-mono mt-0.5">{r.id}</div>
@@ -329,26 +422,7 @@ function PlanTab({ records, onNavigate, refresh }: { records: UniversalRecord[],
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
-                        <button 
-                          onClick={() => exportDetailToPDF({
-                            moduleName: 'Training Event',
-                            moduleId: 'training',
-                            recordId: r.id,
-                            fields: [
-                              { label: 'Title', value: r.trainingTitle },
-                              { label: 'Type', value: r.trainingType },
-                              { label: 'Dept', value: r.department },
-                              { label: 'Trainer', value: r.trainer },
-                              { label: 'Date', value: new Date(r.date).toLocaleDateString() },
-                              { label: 'Venue', value: r.venue || '—' },
-                              { label: 'Participants', value: r.participants || '—' }
-                            ],
-                            fileName: `Training_Event_${r.id}`
-                          })}
-                          className="p-2 hover:bg-accent/10 text-text-3 hover:text-accent rounded-lg transition-colors" title="PDF"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
+                        
                       </div>
                     </td>
                  </tr>
@@ -597,20 +671,7 @@ function ComplianceTab({ records }: { records: UniversalRecord[] }) {
 }
 
 function ReportsTab({ records }: { records: UniversalRecord[] }) {
-  const handleExport = (type: string) => {
-    const cols = ['ID', 'Title', 'Type', 'Dept', 'Trainer', 'Date', 'Status'];
-    const rows = records.map(r => [
-      r.id, r.trainingTitle, r.trainingType, r.department, r.trainer, 
-      new Date(r.date).toLocaleDateString(), r.status
-    ]);
-    exportTableToPDF({
-      moduleName: `Professional ${type}`,
-      columns: cols,
-      rows: rows,
-      fileName: `Training_${type.replace(' ', '_')}`
-    });
-  };
-
+  
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6 border-b border-border-main pb-4">
@@ -629,12 +690,7 @@ function ReportsTab({ records }: { records: UniversalRecord[] }) {
               </div>
               <div className="font-bold text-text-1 text-sm uppercase tracking-wider">{item.name}</div>
               <div className="flex gap-2 w-full mt-2">
-                 <button 
-                  onClick={() => handleExport(item.name)}
-                  className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm"
-                >
-                  PDF
-                </button>
+                 
                  <button className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-xl hover:bg-emerald-500 hover:text-white transition-all shadow-sm">
                   Excel
                 </button>
@@ -645,3 +701,6 @@ function ReportsTab({ records }: { records: UniversalRecord[] }) {
     </div>
   );
 }
+
+
+

@@ -1,3 +1,4 @@
+import { exportDetailToPDF } from '../utils/pdfExportUtils';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, X, Plus, Trash2, Save, AlertTriangle, Shield, Activity, Info, Eye, FileDown } from 'lucide-react';
@@ -121,8 +122,7 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
   };
 
   const handleExportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
+    
     let matrixRows: string[][] = [];
     if (formData.risks && formData.risks.length > 0) {
       matrixRows = formData.risks.map(r => [
@@ -196,11 +196,7 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
           </div>
         </div>
         <div className="flex gap-2">
-          {mode === 'view' && (
-            <button className="btn btn-primary" onClick={handleExportPDF}>
-              <FileDown className="w-4 h-4 mr-2" /> Download Report
-            </button>
-          )}
+
           {!isReadOnly && (
             <button className="btn btn-primary" onClick={handleSave}>
               <Save className="w-4 h-4 mr-2" /> Save Assessment
@@ -517,3 +513,5 @@ export function RiskForm({ params, onNavigate }: RiskFormProps) {
     </motion.div>
   );
 }
+
+

@@ -1,3 +1,4 @@
+import { exportDetailToPDF } from '../utils/pdfExportUtils';
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -570,8 +571,7 @@ function RecordDetail({ record, onBack }: { record: EvaluationRecord; onBack: ()
   const resultInfo = getResult(record.percentage);
 
   const handleExportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
+    
     // Compute per-section scores
     const sectionSummaryRows = SECTIONS.map(s => {
       let t = 0, m = 0;
@@ -663,10 +663,7 @@ function RecordDetail({ record, onBack }: { record: EvaluationRecord; onBack: ()
         <button onClick={onBack} className="flex items-center gap-2 text-sm text-text-3 hover:text-text-1 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Records
         </button>
-        <button onClick={handleExportPDF}
-          className="flex items-center gap-2 px-4 py-2 border border-border-main bg-accent text-white rounded-xl text-sm font-semibold hover:bg-accent/90 transition-colors shadow-sm">
-          <Download className="w-4 h-4" /> Export as PDF
-        </button>
+        
       </div>
 
       {/* Header card */}
@@ -915,3 +912,5 @@ export function SubSupplierEvaluation() {
     </div>
   );
 }
+
+

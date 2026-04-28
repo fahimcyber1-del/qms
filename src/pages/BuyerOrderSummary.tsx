@@ -1,14 +1,14 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { openExportPreview } from '../utils/exportUtils';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShoppingBag, CheckCircle2, AlertCircle, Plus, Download, 
   Search, Filter, Calendar, Eye, Edit2, Trash2, FileText, 
   ChevronRight, Truck, Clock, User, Building, X, Package, DollarSign, 
-  Activity, ArrowUpRight, LayoutGrid, List
+  Activity, ArrowUpRight, LayoutGrid, List, CheckSquare, Square
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -53,6 +53,7 @@ export function BuyerOrderSummary({ onNavigate }: Props) {
   const [sortConfig, setSortConfig] = useState<{key: keyof OrderRecord, direction: 'asc' | 'desc'}>({ key: 'shipDate', direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const load = async () => {
@@ -98,6 +99,66 @@ export function BuyerOrderSummary({ onNavigate }: Props) {
 
   const totalPages = Math.ceil(filteredRecords.length / pageSize);
 
+  const toggleSelectAll = () => {
+    if (selectedIds.size === paginatedRecords.length && paginatedRecords.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedRecords.map(r => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (window.confirm(`Delete ${selectedIds.size} orders?`)) {
+      const idsToDelete = Array.from(selectedIds);
+      await Promise.all(idsToDelete.map(id => getTable('orderSummary').delete(id as string)));
+      setRecords(records.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleBulkExport = () => {
+    const selectedRecords = filteredRecords.filter(r => selectedIds.has(r.id));
+    openExportPreview({
+      moduleName: 'Selected Buyer Orders',
+      moduleId: 'buyer_order_bulk',
+      fileName: 'Buyer_Orders_Selected',
+      columns: ['Order No', 'Buyer', 'Style', 'Qty', 'Ship Date', 'Status'],
+      rows: selectedRecords.map(r => [
+        r.orderNo || '—',
+        r.buyer || '—',
+        r.styleNo || '—',
+        r.qty.toLocaleString(),
+        r.shipDate || '—',
+        r.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Buyer Order Summary Master Register',
+      moduleId: 'buyer_order_global',
+      fileName: 'Buyer_Order_Summary_Full',
+      columns: ['Order No', 'Buyer', 'Style', 'Qty', 'Ship Date', 'Status'],
+      rows: filteredRecords.map(r => [
+        r.orderNo || '—',
+        r.buyer || '—',
+        r.styleNo || '—',
+        r.qty.toLocaleString(),
+        r.shipDate || '—',
+        r.status
+      ])
+    });
+  };
+
   const stats = useMemo(() => {
     const totalQty = records.reduce((sum, r: any) => sum + (Number(r.qty) || Number(r.quantity) || 0), 0);
     const totalValue = records.reduce((sum, r: any) => sum + ((Number(r.qty) || 0) * (Number(r.fobPrice || r.unitPrice) || 10)), 0);
@@ -126,48 +187,6 @@ export function BuyerOrderSummary({ onNavigate }: Props) {
     XLSX.writeFile(wb, "Buyer_Order_Summary.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Buyer Order Summary',
-      columns: ['Order #', 'Buyer', 'Style', 'Qty', 'FOB', 'CM', 'Ship Date', 'Status'],
-      rows: filteredRecords.map(r => [
-        r.orderNo, 
-        r.buyer, 
-        r.styleNo, 
-        r.qty.toLocaleString(), 
-        `$${r.fobPrice || r.unitPrice || 0}`, 
-        `$${r.cmPrice || 0}`,
-        r.shipDate, 
-        r.status
-      ]),
-      fileName: 'Buyer_Order_Summary_Report'
-    });
-  };
-
-  const exportSinglePDF = async (record: any) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Order Details Summary',
-      moduleId: 'order-summary',
-      recordId: record.orderNo,
-      fileName: `Order_${record.orderNo}`,
-      fields: [
-        { label: 'Order Number',     value: record.orderNo },
-        { label: 'Buyer Name',       value: record.buyer },
-        { label: 'Style Reference',  value: record.styleNo },
-        { label: 'Order Quantity',   value: (record.qty || 0).toLocaleString() },
-        { label: 'FOB Price',        value: `${record.fobPrice || record.unitPrice || 0} ${record.currency || 'USD'}` },
-        { label: 'CM Price',         value: `${record.cmPrice || 0} ${record.currency || 'USD'}` },
-        { label: 'Expected Ship Date', value: record.shipDate },
-        { label: 'Order Status',     value: record.status },
-        { label: 'Merchandiser',     value: record.merchandiser || record.responsiblePerson || '—' },
-        { label: 'Priority',         value: record.priority || 'Medium' },
-        { label: 'Fabric Details',   value: record.fabricType || '—' },
-        { label: 'Remarks',          value: record.remarks || '—' },
-      ]
-    });
-  };
-
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       {/* ── Header ── */}
@@ -188,9 +207,10 @@ export function BuyerOrderSummary({ onNavigate }: Props) {
           <button className="flex-1 lg:flex-none btn btn-ghost border border-border-main hover:bg-bg-2 flex items-center gap-2 px-6" onClick={exportExcel}>
             <Download className="w-4 h-4" /> Excel
           </button>
-          <button className="flex-1 lg:flex-none btn btn-ghost border border-border-main hover:bg-bg-2 flex items-center gap-2 px-6" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
+          <button className="flex-1 lg:flex-none btn btn-ghost border border-border-main hover:bg-bg-2 flex items-center gap-2 px-6" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
+          
           <button className="w-full lg:w-auto btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20" onClick={() => onNavigate('buyer-order-summary-form', { mode: 'create' })}>
             <Plus className="w-5 h-5" /> Initiate Order
           </button>
@@ -236,19 +256,34 @@ export function BuyerOrderSummary({ onNavigate }: Props) {
           />
         </div>
         <div className="w-px h-10 bg-border-main hidden lg:block"></div>
-        <div className="flex items-center gap-3">
-          <div className="text-[10px] font-black text-text-3 uppercase tracking-widest hidden sm:block">Workflow Phase:</div>
-          <select className="bg-bg-2 border border-border-main rounded-2xl px-6 py-3.5 text-sm font-bold focus:ring-2 focus:ring-accent outline-none text-text-1 min-w-[180px] appearance-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-            <option value="All">Complete Lifecycle</option>
-            <option value="New">New Order Entry</option>
-            <option value="In Production">In Production</option>
-            <option value="In Washing">Process: Washing</option>
-            <option value="In Packing">Process: Packing</option>
-            <option value="Ready">Ready for Logistics</option>
-            <option value="Shipped">Dispatched / Shipped</option>
-            <option value="Cancelled">Voided / Cancelled</option>
-          </select>
-        </div>
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+            <button onClick={handleBulkExport} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+              <Download className="w-4 h-4" /> Export PDF
+            </button>
+            <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="text-[10px] font-black text-text-3 uppercase tracking-widest hidden sm:block">Workflow Phase:</div>
+            <select className="bg-bg-2 border border-border-main rounded-2xl px-6 py-3.5 text-sm font-bold focus:ring-2 focus:ring-accent outline-none text-text-1 min-w-[180px] appearance-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <option value="All">Complete Lifecycle</option>
+              <option value="New">New Order Entry</option>
+              <option value="In Production">In Production</option>
+              <option value="In Washing">Process: Washing</option>
+              <option value="In Packing">Process: Packing</option>
+              <option value="Ready">Ready for Logistics</option>
+              <option value="Shipped">Dispatched / Shipped</option>
+              <option value="Cancelled">Voided / Cancelled</option>
+            </select>
+          </div>
+        )}
       </motion.div>
 
       {/* ── Table ── */}
@@ -257,7 +292,14 @@ export function BuyerOrderSummary({ onNavigate }: Props) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-bg-2/40 border-b border-border-main text-[10px] uppercase tracking-[0.15em] text-text-3 font-black">
-                <th className="p-6 pl-8 cursor-pointer hover:text-accent transition-colors" onClick={() => setSortConfig({ key: 'orderNo', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
+                <th className="p-6 w-10 pl-8">
+                  <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                    {selectedIds.size === paginatedRecords.length && paginatedRecords.length > 0
+                      ? <CheckSquare className="w-4 h-4 text-accent" />
+                      : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-6 cursor-pointer hover:text-accent transition-colors" onClick={() => setSortConfig({ key: 'orderNo', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
                   <div className="flex items-center gap-2">Order & Reference {sortConfig.key === 'orderNo' && <ArrowUpRight className={`w-3 h-3 ${sortConfig.direction === 'desc' ? 'rotate-180' : ''}`} />}</div>
                 </th>
                 <th className="p-6 cursor-pointer hover:text-accent transition-colors" onClick={() => setSortConfig({ key: 'buyer', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
@@ -283,7 +325,12 @@ export function BuyerOrderSummary({ onNavigate }: Props) {
 
                 return (
                   <tr key={r.id} className="hover:bg-bg-2/30 transition-all duration-300 group">
-                    <td className="p-6 pl-8">
+                    <td className="p-6 pl-8" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => toggleSelect(r.id)} className="text-text-3 hover:text-accent transition-colors">
+                        {selectedIds.has(r.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                      </button>
+                    </td>
+                    <td className="p-6">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-bg-2 border border-border-main flex items-center justify-center text-accent">
                            <ShoppingBag className="w-5 h-5" />
@@ -365,9 +412,7 @@ export function BuyerOrderSummary({ onNavigate }: Props) {
                         <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-bg-2 border border-border-main hover:border-blue-500 hover:text-blue-500 text-text-2 transition-all shadow-sm" onClick={() => onNavigate('buyer-order-summary-form', { mode: 'edit', data: r })}>
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-bg-2 border border-border-main hover:border-indigo-500 hover:text-indigo-500 text-text-2 transition-all shadow-sm" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                          <Download className="w-4 h-4" />
-                        </button>
+                        
                         <button className="w-10 h-10 rounded-xl flex items-center justify-center bg-rose-500/5 border border-rose-500/20 hover:bg-rose-500 hover:text-white text-rose-500 transition-all shadow-sm" onClick={() => handleDelete(r.id)}>
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -377,7 +422,7 @@ export function BuyerOrderSummary({ onNavigate }: Props) {
                 );
               }) : (
                 <tr>
-                   <td colSpan={6} className="p-20 text-center">
+                   <td colSpan={7} className="p-20 text-center">
                       <div className="flex flex-col items-center opacity-30">
                          <LayoutGrid className="w-16 h-16 mb-4" />
                          <p className="text-xl font-black uppercase tracking-widest text-text-2">No Active Orders Detected</p>

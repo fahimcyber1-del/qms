@@ -1,3 +1,4 @@
+import { openExportPreview } from '../utils/exportUtils';
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Clock, Tag, History, Users, QrCode, Link, Check, Plus, X, Edit, Trash2, Download as DownloadIcon, ChevronLeft, FileText, CheckCircle2, AlertCircle, Filter } from 'lucide-react';
@@ -104,24 +105,41 @@ export function OperationalGuidelines() {
     }
   };
 
-  const handleDownload = async (g: OperationalGuideline) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Operational Guideline',
-      moduleId: 'operational-guideline',
+  const handleDownload = (g: OperationalGuideline) => {
+    openExportPreview({
+      moduleName: 'Operational Guideline Dossier',
+      moduleId: 'operational-guideline-record',
       recordId: g.id || 'N/A',
       fileName: `Guideline_${g.id}`,
       fields: [
         { label: 'Guideline Title', value: g.title },
-        { label: 'Department',      value: g.department },
-        { label: 'Category',        value: g.category },
+        { label: 'Department', value: g.department },
+        { label: 'Category', value: g.category },
         { label: 'Current Version', value: g.version },
-        { label: 'Guideline Status',value: g.status },
-        { label: 'Effective Date',  value: g.issueDate },
+        { label: 'Guideline Status', value: g.status },
+        { label: 'Effective Date', value: g.issueDate },
         { label: 'Review Due Date', value: g.nextReviewDate },
-        { label: 'Approved By',     value: g.approvedBy || 'Authorized QMS Personnel' },
+        { label: 'Approved By', value: g.approvedBy || 'Authorized QMS Personnel' },
         { label: 'Protocol Policy', value: g.content, fullWidth: true },
       ],
+    });
+  };
+
+  const handleBulkExport = () => {
+    openExportPreview({
+      moduleName: 'Operational Guidelines Register',
+      moduleId: 'operational-guideline-bulk',
+      fileName: 'Operational_Guidelines_Register',
+      columns: ['ID', 'Title', 'Dept', 'Category', 'Version', 'Status', 'Review Date'],
+      rows: filtered.map(g => [
+        g.id || 'N/A',
+        g.title,
+        g.department,
+        g.category,
+        g.version,
+        g.status,
+        g.nextReviewDate
+      ])
     });
   };
 
@@ -139,11 +157,11 @@ export function OperationalGuidelines() {
           </div>
           {viewMode === 'view' && selectedGuideline && (
             <div className="flex items-center gap-3">
-              <button className="btn btn-ghost border border-border-main" onClick={() => {setFormData(selectedGuideline); setViewMode('edit');}}>
-                <Edit className="w-4 h-4 mr-2" /> Edit Info
+              <button className="btn btn-ghost border border-border-main flex items-center gap-2" onClick={() => handleDownload(selectedGuideline)}>
+                <DownloadIcon className="w-4 h-4" /> Export
               </button>
-              <button className="btn btn-primary" onClick={() => handleDownload(selectedGuideline)}>
-                <DownloadIcon className="w-4 h-4 mr-2" /> Download PDF
+              <button className="btn btn-ghost border border-border-main flex items-center gap-2" onClick={() => {setFormData(selectedGuideline); setViewMode('edit');}}>
+                <Edit className="w-4 h-4" /> Edit Info
               </button>
             </div>
           )}
@@ -325,6 +343,9 @@ export function OperationalGuidelines() {
           <p className="text-text-2 text-base mt-2">Standardized Factory Safety, Operational, and Compliance Protocols.</p>
         </div>
         <div className="flex items-center gap-3">
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleBulkExport}>
+            <DownloadIcon className="w-4 h-4" /> Global Export
+          </button>
           <button className="btn btn-primary flex items-center gap-2 shadow-md hover:shadow-lg transition-shadow" onClick={() => { setViewMode('create'); setFormData(INITIAL_FORM); }}>
             <Plus className="w-4 h-4" /> Create Guideline
           </button>
@@ -428,9 +449,7 @@ export function OperationalGuidelines() {
                             <button className="p-2 bg-bg-2 text-text-2 hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all" title="Edit" onClick={() => { setFormData(g); setViewMode('edit'); }}>
                               <Edit className="w-4 h-4" />
                             </button>
-                            <button className="p-2 bg-bg-2 text-text-2 hover:text-green-500 hover:bg-green-500/10 rounded-lg transition-all" title="Download PDF" onClick={() => handleDownload(g)}>
-                              <DownloadIcon className="w-4 h-4" />
-                            </button>
+                            
                             <button className="p-2 bg-bg-2 text-text-2 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all" title="Delete" onClick={() => handleDelete(g.id!)}>
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -459,3 +478,5 @@ export function OperationalGuidelines() {
     </motion.div>
   );
 }
+
+

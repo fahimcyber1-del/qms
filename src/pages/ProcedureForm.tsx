@@ -1,3 +1,4 @@
+import { exportDetailToPDF } from '../utils/pdfExportUtils';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
@@ -103,8 +104,7 @@ export function ProcedureForm({ params, onNavigate }: ProcedureFormProps) {
 
   const handleDownloadPDF = async () => {
     if (!formData) return;
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
+    
     const tables: any[] = [];
 
     if (formData.responsibilities && formData.responsibilities.length > 0) {
@@ -163,11 +163,9 @@ export function ProcedureForm({ params, onNavigate }: ProcedureFormProps) {
 
     await exportDetailToPDF({
       moduleName: formData.title || 'Standard Operating Procedure',
-      moduleId: `Document Ref: ${formData.code || 'UNCODED'}`,
       recordId: formData.code || 'UNCODED',
       fileName: `Procedure_${formData.code || 'Doc'}`,
       fields: [
-        { label: 'Document Control & Compliance Metadata', value: 'Overview', fullWidth: true },
         { label: 'Primary Dept',    value: formData.dept || '\u2014' },
         { label: 'Category',        value: formData.cat || '\u2014' },
         { label: 'ISO Reference',   value: formData.clause || '\u2014' },
@@ -176,10 +174,9 @@ export function ProcedureForm({ params, onNavigate }: ProcedureFormProps) {
         { label: 'Effective Date',  value: formData.issueDate || '\u2014' },
         { label: 'Next Review',     value: formData.reviewDate || '\u2014' },
         { label: 'Author / Owner',  value: formData.author || '\u2014' },
+        { label: 'Purpose',         value: formData.purpose || '\u2014' }
       ],
-      summary: formData.purpose ? ['Procedure Intent & Objectives (Purpose / Scope):', formData.purpose] : undefined,
-      tables: tables.length > 0 ? tables : undefined,
-      signatureLabels: ['Author (MR)', 'Reviewed By', 'Approved By (MD)']
+      tables: tables.length > 0 ? tables : undefined
     });
   };
 
@@ -861,3 +858,4 @@ export function ProcedureForm({ params, onNavigate }: ProcedureFormProps) {
     onNavigate('procedure-form', { mode, data: proc });
   }
 }
+

@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { 
   ChevronLeft, Check, X, Plus, Trash2, AlertTriangle, Save, Download, 
   FileText, Activity, User, Layers, FileDown, Camera, ImageIcon, 
-  ShoppingBag, Tag, Calendar, LayoutGrid, CheckCircle2, ShieldCheck, Info
+  ShoppingBag, Tag, Calendar, LayoutGrid, CheckCircle2, ShieldCheck, Info, Edit2
 } from 'lucide-react';
 import { getSamplingPlan } from '../utils/inspectionUtils';
 import { AQLInspectionRecord } from '../types';
@@ -11,6 +11,7 @@ import { db } from '../db/db';
 import { AttachmentList } from '../components/AttachmentList';
 import { Search, ChevronDown, BookOpen, Tag as TagIcon, ShoppingBag as BagIcon } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
+import { openExportPreview } from '../utils/exportUtils';
 
 /* ─────────────────────── Searchable Autocomplete ─────────────────────── */
 
@@ -254,54 +255,34 @@ export function InspectionForm({ params, onNavigate }: InspectionFormProps) {
     }));
   };
 
-  const exportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    const r = formData;
-
-    await exportDetailToPDF({
-      moduleName: 'AQL Inspection Report',
-      moduleId: `Record ID: ${r.id} \u2022 ${r.type}`,
-      recordId: r.id || 'Unknown',
-      fileName: `AQL_Audit_Report_${r.id}`,
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Quality Inspection',
+      moduleId: 'inspection_record',
+      recordId: formData.id,
+      fileName: `Inspection_${formData.id}`,
       fields: [
-        { label: 'Client / Buyer',    value: r.buyer || '\u2014' },
-        { label: 'Style / Style No',  value: r.style || '\u2014' },
-        { label: 'Purchase Order',    value: r.order || '\u2014' },
-        { label: 'Production Line',   value: r.line || '\u2014' },
-        { label: 'Inspector Name',    value: r.inspector || '\u2014' },
-        { label: 'CRD Date',          value: r.crdDate || '\u2014' },
-        { label: 'Audit Date',        value: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-GB') : '\u2014' },
-        { label: 'Report Status',     value: r.result, fullWidth: true },
-        
-        { label: 'Statistical Sampling Configuration', value: 'AQL', fullWidth: true },
-        { label: 'Lot / Order Qty',   value: String(r.orderQty) },
-        { label: 'Inspection Qty',    value: String(r.inspectionQty) },
-        { label: 'AQL Level',         value: String(r.aqlLevel) },
-        { label: 'Sampling Level',    value: String(r.inspectionLevel) },
-        { label: 'Sample Size (N)',   value: String(r.sampleSize) },
-        { label: 'Acceptance (AC)',   value: samplingPlan ? String(samplingPlan.ac) : '\u2014' },
-        { label: 'Rejection (RE)',    value: samplingPlan ? String(samplingPlan.re) : '\u2014' },
+        { label: 'Category', value: formData.type },
+        { label: 'Buyer', value: formData.buyer },
+        { label: 'Style', value: formData.style },
+        { label: 'Order', value: formData.order },
+        { label: 'Line', value: formData.line },
+        { label: 'AQL Level', value: formData.aqlLevel },
+        { label: 'Inspection Level', value: formData.inspectionLevel },
+        { label: 'Sample Size', value: formData.sampleSize.toString() },
+        { label: 'Total Received', value: formData.orderQty.toString() },
+        { label: 'Critical Defects', value: formData.criticalDefect.toString() },
+        { label: 'Major Defects', value: formData.majorDefect.toString() },
+        { label: 'Minor Defects', value: formData.minorDefect.toString() },
+        { label: 'Overall Result', value: formData.result },
+        { label: 'Inspector', value: formData.inspector },
+        { label: 'Remarks', value: formData.remarks, fullWidth: true }
       ],
-      tables: [
-        {
-          title: 'Defect Classification & Statistical Outcome',
-          columns: ['Defect Classification', 'Count / Frequency', 'Threshold Status'],
-          rows: [
-            ['Critical Defects (Class A)', String(r.criticalDefect), r.criticalDefect > 0 ? 'CRITICAL FAILURE' : 'Pass'],
-            ['Major Defects (Class B)',    String(r.majorDefect),    'Monitoring Required'],
-            ['Minor Defects (Class C)',    String(r.minorDefect),    'Monitoring Required'],
-            ['Total Defected Samples',     String(r.failQty),        '—'],
-            ['Acceptable Samples',         String(r.passQty),        '—'],
-            ['INSPECTION VERDICT',         r.result,                 r.result],
-          ]
-        }
-      ],
-      summary: r.remarks ? ['Auditor Remarks:', r.remarks] : undefined,
-      signatureLabels: ['QC Inspector', 'Prepared By', 'QA Manager', 'Plant Head'],
-      attachments: r.attachments && r.attachments.length > 0 ? r.attachments : undefined
+      attachments: formData.attachments
     });
   };
 
+  
   const inputClass = "w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm font-bold text-text-1 focus:ring-2 focus:ring-accent outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
@@ -328,11 +309,11 @@ export function InspectionForm({ params, onNavigate }: InspectionFormProps) {
         <div className="flex gap-3">
           {isReadOnly ? (
              <>
-               <button className="btn btn-ghost border border-border-main flex items-center gap-2" onClick={() => onNavigate('inspection-form', { mode: 'edit', data: formData })}>
-                  <Trash2 className="w-4 h-4 rotate-45" /> Modify Record
+               <button className="btn btn-ghost border border-border-main flex items-center gap-2" onClick={handleExport}>
+                  <Download className="w-4 h-4" /> Export
                </button>
-               <button className="btn btn-primary shadow-lg shadow-accent/20" onClick={exportPDF}>
-                  <Download className="w-4 h-4 mr-2" /> Download Report
+               <button className="btn btn-ghost border border-border-main flex items-center gap-2" onClick={() => onNavigate('inspection-form', { mode: 'edit', data: formData })}>
+                  <Edit2 className="w-4 h-4" /> Modify Record
                </button>
              </>
           ) : (

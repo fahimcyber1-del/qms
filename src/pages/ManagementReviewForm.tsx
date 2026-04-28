@@ -5,6 +5,9 @@ import {
   Gavel, CheckCircle2, AlertCircle, Info, Paperclip, Plus, Trash2, FileText, Users, Award, ClipboardList
 } from 'lucide-react';
 import { getTable } from '../db/db';
+import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
+import { Download, Edit2 } from 'lucide-react';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -68,6 +71,31 @@ export function ManagementReviewForm({ onNavigate, params }: Props) {
 
   const isReadOnly = mode === 'view';
 
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Management Review Minutes',
+      moduleId: 'mr_detail',
+      recordId: formData.id,
+      fileName: `MR_${formData.id}_Minutes`,
+      layout: 'executive',
+      fields: [
+        { label: 'Review Title', value: formData.reviewTitle },
+        { label: 'Review Type', value: formData.reviewType },
+        { label: 'Meeting Date', value: formData.date },
+        { label: 'Chairperson', value: formData.chairperson },
+        { label: 'Minutes Taker', value: formData.responsiblePerson },
+        { label: 'Attendees', value: formData.attendees, fullWidth: true },
+        { label: 'Review Inputs', value: formData.inputItems, fullWidth: true },
+        { label: 'Decisions & Outputs', value: formData.outputDecisions, fullWidth: true },
+        { label: 'Action Items', value: formData.actionItems, fullWidth: true },
+        { label: 'Resource Needs', value: formData.resourceNeeds, fullWidth: true },
+        { label: 'Next Review', value: formData.nextReviewDate },
+        { label: 'Current Status', value: formData.status }
+      ],
+      attachments: formData.attachments
+    });
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) return;
@@ -88,11 +116,21 @@ export function ManagementReviewForm({ onNavigate, params }: Props) {
     }
   };
 
-  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    const newAtts = Array.from(files).map((f: any) => f.name);
+    const newAtts: { name: string; data: string; type: string; size: number }[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const data = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      newAtts.push({ name: file.name, data, type: file.type, size: file.size });
+    }
     setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAtts] }));
+    e.target.value = '';
   };
 
   const inputClass = "w-full bg-bg-2 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed";
@@ -112,13 +150,22 @@ export function ManagementReviewForm({ onNavigate, params }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => onNavigate('management-review')} className="btn btn-ghost px-6">
-            {isReadOnly ? 'Close' : 'Cancel'}
-          </button>
-          {!isReadOnly && (
-            <button type="submit" className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
-              <Save className="w-4 h-4" /> Save Minutes
-            </button>
+          {isReadOnly ? (
+            <>
+              <button type="button" onClick={() => onNavigate('management-review-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                <Edit2 className="w-4 h-4" /> Edit Minutes
+              </button>
+              <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                <Download className="w-4 h-4" /> Export Minutes
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => onNavigate('management-review')} className="btn btn-ghost px-6">Cancel</button>
+              <button type="submit" className="btn btn-primary flex items-center gap-2 px-8 shadow-lg shadow-accent/20">
+                <Save className="w-4 h-4" /> Save Minutes
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -266,23 +313,10 @@ export function ManagementReviewForm({ onNavigate, params }: Props) {
             <p className="text-sm font-bold uppercase tracking-widest">No meeting files attached</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {formData.attachments.map((file, i) => (
-              <div key={i} className="flex items-center justify-between bg-bg-2 p-3 rounded-xl border border-border-main group">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="w-8 h-8 bg-accent/10 rounded flex items-center justify-center text-accent">
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <span className="text-sm font-semibold text-text-1 truncate">{file}</span>
-                </div>
-                {!isReadOnly && (
-                  <button type="button" onClick={() => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) }))} className="p-1.5 text-red-500 hover:bg-red-500/10 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+          <AttachmentList
+            attachments={formData.attachments}
+            onRemove={!isReadOnly ? (i) => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) })) : undefined}
+          />
         )}
       </div>
     </form>

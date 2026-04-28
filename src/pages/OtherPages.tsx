@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Copy, CheckCircle2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
-import { ExportModal } from '../components/ExportModal';
 
 import { motion } from 'motion/react';
 import { CAPARecord, CertificateRecord } from '../types';
@@ -152,13 +151,7 @@ function Reports() {
 
   return (
     <div className="page active p-4 md:p-8">
-      <ExportModal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setIsExportModalOpen(false)} 
-        data={months}
-        columns={[{key: 'name', label: 'Month'}, {key: 'dhu', label: 'DHU%'}, {key: 'rft', label: 'RFT%'}]}
-        title="Quality Performance Report"
-      />
+      
       <div className="sec-head">
         <div><div className="sec-title">📈 Reports & Analytics</div><div className="sec-sub">Factory-wide Quality Performance</div></div>
         <div className="flex gap-2">
@@ -405,20 +398,7 @@ function Calibration() {
 
   return (
     <div className="page active p-4 md:p-8">
-      <ExportModal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setIsExportModalOpen(false)} 
-        data={exportData}
-        columns={[
-          {key: 'id', label: 'Machine ID'},
-          {key: 'name', label: 'Machine Name'},
-          {key: 'calDate', label: 'Calibration Date'},
-          {key: 'nextCalDate', label: 'Next Calibration Date'},
-          {key: 'responsible', label: 'Responsible Person'},
-          {key: 'certificates', label: 'Certificates'}
-        ]}
-        title="Calibration Report"
-      />
+      
       
       {machineToDelete && (
         <div className="modal active">

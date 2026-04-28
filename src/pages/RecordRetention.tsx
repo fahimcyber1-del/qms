@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Archive, CheckCircle2, AlertCircle, Plus, Download, 
@@ -6,8 +7,7 @@ import {
   ChevronRight, Database, Clock, User, Building, X, Trash, Layers
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
+import { openExportPreview } from '../utils/exportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -76,6 +76,24 @@ export function RecordRetention({ onNavigate }: Props) {
     }
   };
 
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Record Retention Control',
+      moduleId: 'retention_bulk',
+      fileName: 'Record_Retention_Schedule',
+      columns: ['ID', 'Record Title', 'Storage Format', 'Retention Period', 'Department', 'Disposal Method', 'Status'],
+      rows: filteredRecords.map(r => [
+        r.id,
+        r.recordTitle,
+        r.storageFormat,
+        r.retentionPeriod,
+        r.department,
+        r.disposalMethod,
+        r.status
+      ])
+    });
+  };
+
   const exportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(filteredRecords);
     const wb = XLSX.utils.book_new();
@@ -83,34 +101,8 @@ export function RecordRetention({ onNavigate }: Props) {
     XLSX.writeFile(wb, "Record_Retention_Control.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Record Retention Control',
-      columns: ['Record Title', 'Format', 'Retention', 'Dept', 'Disposal', 'Status'],
-      rows: filteredRecords.map(r => [r.recordTitle, r.storageFormat, r.retentionPeriod, r.department, r.disposalMethod, r.status]),
-      fileName: 'Record_Retention_Report'
-    });
-  };
-
-  const exportSinglePDF = async (record: RetentionRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Record Retention Specification',
-      moduleId: 'record-retention',
-      recordId: record.id,
-      fileName: `Retention_${record.recordTitle.replace(/\s+/g, '_')}`,
-      fields: [
-        { label: 'Record Title',       value: record.recordTitle },
-        { label: 'Storage Format',     value: record.storageFormat },
-        { label: 'Retention Period',   value: record.retentionPeriod },
-        { label: 'Custodial Dept',     value: record.department },
-        { label: 'Responsible Officer',value: record.responsiblePerson },
-        { label: 'Disposal Method',    value: record.disposalMethod },
-        { label: 'Control Status',     value: record.status },
-      ]
-    });
-  };
-
+  
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -122,12 +114,10 @@ export function RecordRetention({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Retention timelines, storage formats, and disposal methods for QMS records.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
-            <Download className="w-4 h-4" /> Excel
+          <button className="btn btn-ghost flex items-center gap-2" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Export
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('record-retention-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New Provision
           </button>
@@ -227,9 +217,7 @@ export function RecordRetention({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('record-retention-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

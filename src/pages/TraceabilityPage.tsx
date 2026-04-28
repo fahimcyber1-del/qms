@@ -5,6 +5,7 @@ import {
   Trash2, Eye, Search, FileDown, ChevronLeft, 
   MessageSquare, User, Calendar, Clock, Download, FileSpreadsheet, Send, Save, ArrowRight
 } from 'lucide-react';
+import { openExportPreview } from '../utils/exportUtils';
 import * as XLSX from 'xlsx';
 import { TraceabilityRecord, TraceabilityStep, Comment } from '../types';
 import { db } from '../db/db';
@@ -223,36 +224,61 @@ export function TraceabilityPage({ onNavigate }: { onNavigate: (page: string, pa
     XLSX.writeFile(wb, "Traceability_Register.xlsx");
   };
 
-  const handleExportPDF = async (record?: TraceabilityRecord) => {
+  const handleExportPDF = (record?: TraceabilityRecord) => {
     if (record) {
-      const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-      await exportDetailToPDF({
-        moduleName: 'Product Traceability Record',
-        moduleId: 'traceability',
+      openExportPreview({
+        moduleName: 'Product Traceability Report',
+        moduleId: 'traceability_detail',
         recordId: record.code,
-        fileName: `Trace_${record.code}`,
+        fileName: `Traceability_${record.code}_Report`,
+        layout: 'technical',
         fields: [
-          { label: 'PO Number',         value: record.poNumber },
-          { label: 'Style Number',      value: record.styleNumber },
-          { label: 'Buyer',             value: record.buyer },
-          { label: 'Order Quantity',    value: String(record.orderQuantity) },
-          { label: 'Current Stage',     value: record.currentStage },
-          { label: 'Control Status',    value: record.status },
-          { label: 'Target Date',       value: record.targetDate || '—' },
-          { label: 'Responsible PIC',   value: record.responsiblePerson || '—' },
-          { label: 'Fabric Trace',      value: `Status: ${record.fabricStage.status} | Roll: ${record.fabricStage.rollNumber} | Date: ${record.fabricStage.date}` },
-          { label: 'Cutting Trace',     value: `Status: ${record.cuttingStage.status} | Bundle: ${record.cuttingStage.bundleNumber} | Date: ${record.cuttingStage.date}` },
-          { label: 'Sewing Trace',      value: `Status: ${record.sewingStage.status} | Line: ${record.sewingStage.lineNumber} | Date: ${record.sewingStage.date}` },
-        ]
+          { label: 'Reference Code', value: record.code },
+          { label: 'PO Number', value: record.poNumber },
+          { label: 'Style Number', value: record.styleNumber },
+          { label: 'Buyer', value: record.buyer },
+          { label: 'Order Qty', value: record.orderQuantity.toString() },
+          { label: 'Current Stage', value: record.currentStage },
+          { label: 'Status', value: record.status },
+          { label: 'PIC', value: record.responsiblePerson },
+          { label: 'Fabric Status', value: record.fabricStage.status },
+          { label: 'Cutting Status', value: record.cuttingStage.status },
+          { label: 'Sewing Status', value: record.sewingStage.status }
+        ],
+        tables: [{
+          title: 'Traceability Journey',
+          columns: ['Stage', 'Status', 'Date', 'Identifier', 'Details'],
+          rows: [
+            ['Fabric', record.fabricStage.status, record.fabricStage.date || '—', record.fabricStage.rollNumber || '—', record.fabricStage.details || '—'],
+            ['Cutting', record.cuttingStage.status, record.cuttingStage.date || '—', record.cuttingStage.bundleNumber || '—', record.cuttingStage.details || '—'],
+            ['Sewing', record.sewingStage.status, record.sewingStage.date || '—', record.sewingStage.lineNumber || '—', record.sewingStage.details || '—'],
+            ['Finishing', record.finishingStage.status, record.finishingStage.date || '—', record.finishingStage.batchNumber || '—', record.finishingStage.details || '—'],
+            ['Packing', record.packingStage.status, record.packingStage.date || '—', record.packingStage.cartonNumber || '—', record.packingStage.details || '—'],
+            ['Shipment', record.shipmentStage.status, record.shipmentStage.date || '—', record.shipmentStage.containerNumber || '—', record.shipmentStage.destination || '—']
+          ]
+        }],
+        comments: record.comments.map(c => ({
+          user: c.userName,
+          date: c.createdAt,
+          text: c.text
+        }))
       });
     } else {
-      const { exportTableToPDF } = await import('../utils/pdfExportUtils');
-      const dataToExport = selectedIds.length > 0 ? records.filter(r => selectedIds.includes(r.id)) : filtered;
-      exportTableToPDF({
+      const recordsToExport = selectedIds.length > 0 ? records.filter(r => selectedIds.includes(r.id)) : filtered;
+      openExportPreview({
         moduleName: 'Traceability Register',
-        columns: ['Code', 'PO #', 'Style', 'Buyer', 'Stage', 'Status'],
-        rows: dataToExport.map(r => [r.code, r.poNumber, r.styleNumber, r.buyer, r.currentStage, r.status]),
-        fileName: 'Traceability_Register'
+        moduleId: 'traceability_bulk',
+        fileName: 'Traceability_Register_Report',
+        columns: ['Code', 'PO', 'Style', 'Buyer', 'Qty', 'Stage', 'Status'],
+        rows: recordsToExport.map(r => [
+          r.code,
+          r.poNumber,
+          r.styleNumber,
+          r.buyer,
+          r.orderQuantity.toString(),
+          r.currentStage,
+          r.status
+        ])
       });
     }
   };

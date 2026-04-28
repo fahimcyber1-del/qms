@@ -1,5 +1,5 @@
+import { openExportPreview } from '../utils/exportUtils';
 import React, { useState, useMemo, useEffect } from 'react';
-import { ExportModal } from '../components/ExportModal';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   RefreshCw, Search, Plus, Clock, CheckCircle2, AlertCircle, 
@@ -47,7 +47,6 @@ export function FollowUpAudit() {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [selectedFollowup, setSelectedFollowup] = useState<FollowUpRecord | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -155,42 +154,42 @@ export function FollowUpAudit() {
     }
   };
 
-  const downloadPDF = async (f: FollowUpRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
-    await exportDetailToPDF({
+  const handleExport = (f: FollowUpRecord) => {
+    openExportPreview({
       moduleName: 'Follow-Up Audit Report',
-      moduleId: `Ref: ${f.id}`,
-      recordId: f.id || 'Unknown',
+      moduleId: 'follow_up_record',
+      recordId: f.id,
       fileName: `FollowUp_${f.id}`,
       fields: [
-        { label: 'Follow-Up ID',      value: f.id },
-        { label: 'CAPA Reference',    value: f.capaId },
-        { label: 'Department',        value: f.department || '\u2014' },
+        { label: 'Follow-Up ID', value: f.id },
+        { label: 'CAPA Reference', value: f.capaId },
+        { label: 'Department', value: f.department || 'N/A' },
         { label: 'Verification Date', value: f.verificationDate },
-        { label: 'Lead Verifier',     value: f.verifier },
-        { label: 'Outcome Status',    value: f.status },
+        { label: 'Lead Verifier', value: f.verifier },
+        { label: 'Outcome Status', value: f.status },
+        { label: 'CAPA Finding', value: f.capaDescription, fullWidth: true },
+        { label: 'Verification Observations', value: f.remarks, fullWidth: true }
       ],
-      tables: [
-        {
-          title: 'Issue Description',
-          columns: ['CAPA Finding'],
-          rows: [[f.capaDescription]]
-        },
-        {
-          title: 'Verification Observations',
-          columns: ['Remarks'],
-          rows: [[f.remarks || '\u2014']]
-        }
-      ],
-      attachments: f.evidenceUrls && f.evidenceUrls.length > 0 ? f.evidenceUrls.map(url => ({
-        url,
-        caption: 'VERIFICATION EVIDENCE'
-      })) : undefined,
-      signatureLabels: ['Lead Verifier', 'QA Manager', 'Authorized By']
+      attachments: f.evidenceUrls
     });
   };
 
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Follow-Up Audit Master Register',
+      moduleId: 'follow_up_global',
+      fileName: 'FollowUp_Audit_Masterlist',
+      columns: ['Record ID', 'CAPA Ref', 'Department', 'Verifier', 'Date', 'Status'],
+      rows: filteredFollowups.map(f => [
+        f.id,
+        f.capaId,
+        f.department || '—',
+        f.verifier,
+        f.verificationDate,
+        f.status
+      ])
+    });
+  };
 
   const seedMockData = () => {
     if (capas.length === 0) {
@@ -221,7 +220,7 @@ export function FollowUpAudit() {
       {/* Header Section */}
       <div className="sec-head">
         <div>
-          <div className="sec-title flex items-center gap-3">
+          <div className="sec-title flex items-center gap-3 text-text-1">
             <RefreshCw className="w-8 h-8 text-accent animate-spin-slow" />
             Follow-Up Audit
           </div>
@@ -229,7 +228,9 @@ export function FollowUpAudit() {
         </div>
         <div className="flex gap-2">
           <button className="btn btn-ghost" onClick={seedMockData}><Database className="w-4 h-4 mr-2"/> Seed Data</button>
-          <button className="btn btn-ghost" onClick={() => setIsExportModalOpen(true)}>⬇ Export List</button>
+          <button className="btn btn-ghost border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4 mr-2" /> Global Export
+          </button>
           <button className="btn btn-primary" onClick={() => handleOpenModal()}><Plus className="w-4 h-4 mr-2" /> Add Record</button>
         </div>
       </div>
@@ -320,7 +321,7 @@ export function FollowUpAudit() {
                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button className="btn btn-ghost btn-sm p-1.5" title="Details" onClick={() => handleOpenModal(f, true)}><Eye className="w-4 h-4" /></button>
                       <button className="btn btn-ghost btn-sm p-1.5" title="Edit" onClick={() => handleOpenModal(f, false)}><Edit2 className="w-4 h-4" /></button>
-                      <button className="btn btn-ghost btn-sm p-1.5" title="Download ZIP" onClick={() => downloadPDF(f)}><FileDown className="w-4 h-4" /></button>
+                      <button className="btn btn-ghost btn-sm p-1.5" title="Download Report" onClick={() => handleExport(f)}><Download className="w-4 h-4" /></button>
                       <button className="btn btn-ghost btn-sm p-1.5 text-red-500 hover:bg-red-500/10" title="Delete" onClick={() => { setSelectedFollowup(f); setIsDeleteModalOpen(true); }}><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
@@ -424,8 +425,10 @@ export function FollowUpAudit() {
                 <div className="col-span-2 flex justify-end gap-3 mt-6 pt-6 border-t border-border-main">
                   {viewOnly ? (
                     <>
-                      <button type="button" className="btn btn-ghost" onClick={() => downloadPDF(selectedFollowup!)}><FileDown className="w-4 h-4 mr-2" /> PDF Report</button>
-                      <button type="button" className="btn btn-primary" onClick={() => setIsModalOpen(false)}>Close</button>
+                      <button type="button" className="btn btn-ghost border border-border-main flex items-center gap-2" onClick={() => handleExport(selectedFollowup!)}>
+                        <Download className="w-4 h-4" /> Export Report
+                      </button>
+                      <button type="button" className="btn btn-primary" onClick={() => setIsModalOpen(false)}>Close View</button>
                     </>
                   ) : (
                     <>
@@ -461,21 +464,9 @@ export function FollowUpAudit() {
         )}
       </AnimatePresence>
 
-      <ExportModal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setIsExportModalOpen(false)} 
-        data={filteredFollowups} 
-        title="Follow-up Audit Verification Data"
-        columns={[
-          { key: 'id', label: 'Follow-up ID' },
-          { key: 'capaId', label: 'CAPA Reference' },
-          { key: 'department', label: 'Dept' },
-          { key: 'verificationDate', label: 'Audit Date' },
-          { key: 'verifier', label: 'Auditor' },
-          { key: 'status', label: 'Result Status' },
-          { key: 'remarks', label: 'Verification Remarks' }
-        ]}
-      />
+      
     </div>
   );
 }
+
+

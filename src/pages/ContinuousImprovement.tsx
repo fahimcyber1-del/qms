@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   TrendingUp, CheckCircle2, AlertCircle, Plus, Download, 
@@ -6,8 +7,7 @@ import {
   ChevronRight, Rocket, Clock, User, Building, X, Lightbulb, Sparkles
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
+import { openExportPreview } from '../utils/exportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -78,40 +78,25 @@ export function ContinuousImprovement({ onNavigate }: Props) {
     }
   };
 
-  const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredRecords);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "CI Projects");
-    XLSX.writeFile(wb, "Continuous_Improvement_Report.xlsx");
-  };
-
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Continuous Improvement',
-      columns: ['ID', 'Title', 'Category', 'Dept', 'Status', 'Target'],
-      rows: filteredRecords.map(r => [r.id, r.improvementTitle, r.category, r.department, r.status, r.targetDate]),
-      fileName: 'Continuous_Improvement_Report'
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Continuous Improvement Register',
+      moduleId: 'ci_global',
+      fileName: 'Continuous_Improvement_Masterlist',
+      columns: ['Initiative', 'Category', 'Dept', 'Owner', 'Target Date', 'Status'],
+      rows: filteredRecords.map(r => [
+        r.improvementTitle,
+        r.category,
+        r.department,
+        r.responsiblePerson,
+        new Date(r.targetDate).toLocaleDateString(),
+        r.status
+      ])
     });
   };
 
-  const exportSinglePDF = async (record: CIRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Continuous Improvement Report',
-      moduleId: 'continuous-improvement',
-      recordId: record.id,
-      fileName: `CI_${record.id}`,
-      fields: [
-        { label: 'Title', value: record.improvementTitle },
-        { label: 'Category', value: record.category },
-        { label: 'Department', value: record.department },
-        { label: 'Responsible', value: record.responsiblePerson },
-        { label: 'Target Date', value: record.targetDate },
-        { label: 'Status', value: record.status },
-      ]
-    });
-  };
-
+  
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -123,12 +108,10 @@ export function ContinuousImprovement({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Kaizen initiatives, process optimizations, and future innovations.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
-            <Download className="w-4 h-4" /> Excel
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('continuous-improvement-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New Initiative
           </button>
@@ -235,9 +218,7 @@ export function ContinuousImprovement({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('continuous-improvement-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

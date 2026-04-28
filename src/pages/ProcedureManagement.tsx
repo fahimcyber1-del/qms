@@ -1,3 +1,4 @@
+import { exportDetailToPDF } from '../utils/pdfExportUtils';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
@@ -68,8 +69,7 @@ export function ProcedureManagement({ onNavigate }: { onNavigate: (page: string,
   };
 
   const handleExportSinglePDF = async (proc: ProcedureRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
+        await exportDetailToPDF({
       moduleName: 'Documented Procedure Specification',
       moduleId: 'procedure',
       recordId: proc.code,
@@ -269,9 +269,7 @@ export function ProcedureManagement({ onNavigate }: { onNavigate: (page: string,
                           <button className="p-2 hover:bg-blue-500/10 text-text-3 hover:text-blue-500 rounded-lg transition-all" title="Edit" onClick={() => openForm('edit', p)}>
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button className="p-2 hover:bg-indigo-500/10 text-text-3 hover:text-indigo-500 rounded-lg transition-all" title="Download PDF" onClick={(e) => { e.stopPropagation(); handleExportSinglePDF(p); }}>
-                            <Download className="w-4 h-4" />
-                          </button>
+                          
                           <button className="p-2 hover:bg-red-500/10 text-gray-400 hover:text-red-500 rounded-lg transition-all" title="Delete" onClick={() => handleDelete(p.id)}>
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -293,3 +291,5 @@ export function ProcedureManagement({ onNavigate }: { onNavigate: (page: string,
     </motion.div>
   );
 }
+
+

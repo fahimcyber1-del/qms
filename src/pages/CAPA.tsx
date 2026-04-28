@@ -1,11 +1,11 @@
+import { openExportPreview } from '../utils/exportUtils';
 import React, { useState, useMemo } from 'react';
-import { ExportModal } from '../components/ExportModal';
 
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldCheck, AlertCircle, Clock, CheckCircle2, Plus, Download, 
   Database, Eye, Edit2, Trash2, FileText, X, Save, Filter, Calendar, 
-  Building, User, Users, Award, Search, ChevronRight, HelpCircle, Check, ArrowRight, RefreshCw
+  Building, User, Users, Award, Search, ChevronRight, HelpCircle, Check, ArrowRight, RefreshCw, CheckSquare, Square
 } from 'lucide-react';
 import { CAPARecord } from '../types';
 
@@ -114,6 +114,7 @@ export function CAPA({ onNavigate }: CAPAProps) {
   const [endDate, setEndDate] = useState('');
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const filteredCapas = useMemo(() => {
     return capas.filter(c => {
@@ -139,6 +140,66 @@ export function CAPA({ onNavigate }: CAPAProps) {
       overdue: filteredCapas.filter(c => c.status === 'Overdue').length
     };
   }, [filteredCapas]);
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredCapas.length && filteredCapas.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredCapas.map(c => c.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = () => {
+    if (window.confirm(`Delete ${selectedIds.size} CAPAs?`)) {
+      const updated = capas.filter(c => !selectedIds.has(c.id));
+      setCapas(updated);
+      localStorage.setItem('garmentqms_capas', JSON.stringify(updated));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const exportBulkPDF = () => {
+    const records = filteredCapas.filter(c => selectedIds.has(c.id));
+    openExportPreview({
+      moduleName: 'CAPA Management',
+      moduleId: 'capa_bulk',
+      fileName: 'CAPA_Records_Export',
+      columns: ['CAPA ID', 'Audit ID', 'NC / Finding', 'Responsible', 'Deadline', 'Status'],
+      rows: records.map(c => [
+        c.id,
+        c.auditId || '—',
+        c.nc,
+        c.responsible,
+        c.deadline,
+        c.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'CAPA Master Register',
+      moduleId: 'capa_global',
+      fileName: 'CAPA_Management_Masterlist',
+      columns: ['CAPA ID', 'Audit ID', 'NC / Finding', 'Responsible', 'Deadline', 'Status'],
+      rows: filteredCapas.map(c => [
+        c.id,
+        c.auditId || '—',
+        c.nc,
+        c.responsible,
+        c.deadline,
+        c.status
+      ])
+    });
+  };
 
   const openCreate = () => onNavigate('capa-form', { mode: 'create' });
   const openView = (record: CAPARecord) => onNavigate('capa-form', { mode: 'view', data: record });
@@ -174,9 +235,7 @@ export function CAPA({ onNavigate }: CAPAProps) {
   };
 
   const downloadIndividualPDF = async (capa: CAPARecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
-    await exportDetailToPDF({
+    openExportPreview({
       moduleName: 'CAPA Compliance Report',
       moduleId: 'capa',
       recordId: capa.id,
@@ -220,8 +279,8 @@ export function CAPA({ onNavigate }: CAPAProps) {
           <button className="btn btn-ghost flex items-center gap-2" onClick={seedMockData}>
             <Database className="w-4 h-4" /> Seed Log
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={() => setIsExportModalOpen(true)}>
-            <Download className="w-4 h-4" /> Export All
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
           <button className="btn btn-primary flex items-center gap-2" onClick={openCreate}>
             <Plus className="w-4 h-4" /> Raise CAPA
@@ -262,21 +321,36 @@ export function CAPA({ onNavigate }: CAPAProps) {
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <select className="w-full md:w-44 bg-bg-2 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-main outline-none text-text-1 font-bold" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-            <option value="All">All Statuses</option>
-            <option value="Open">Open</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Closed">Closed</option>
-            <option value="Overdue">Overdue</option>
-          </select>
-          <div className="flex items-center gap-2 bg-bg-2 px-3 py-2 rounded-xl flex-1 md:flex-none border border-transparent focus-within:border-purple-500/30">
-            <Calendar className="w-4 h-4 text-text-2" />
-            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            <span className="text-text-2 text-sm px-1">-</span>
-            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+            <button onClick={exportBulkPDF} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+              <Download className="w-4 h-4" /> Export PDF
+            </button>
+            <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <select className="w-full md:w-44 bg-bg-2 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-purple-main outline-none text-text-1 font-bold" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <option value="All">All Statuses</option>
+              <option value="Open">Open</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Closed">Closed</option>
+              <option value="Overdue">Overdue</option>
+            </select>
+            <div className="flex items-center gap-2 bg-bg-2 px-3 py-2 rounded-xl flex-1 md:flex-none border border-transparent focus-within:border-purple-500/30">
+              <Calendar className="w-4 h-4 text-text-2" />
+              <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <span className="text-text-2 text-sm px-1">-</span>
+              <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </div>
+          </div>
+        )}
       </motion.div>
 
       {/* Data Table */}
@@ -285,7 +359,14 @@ export function CAPA({ onNavigate }: CAPAProps) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-bg-2/70 border-b border-border-main text-[10px] uppercase tracking-widest text-text-3 font-black">
-                <th className="p-4 pl-6">CAPA ID</th>
+                <th className="p-4 w-10 pl-6">
+                  <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                    {selectedIds.size === filteredCapas.length && filteredCapas.length > 0
+                      ? <CheckSquare className="w-4 h-4 text-accent" />
+                      : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-4">CAPA ID</th>
                 <th className="p-4">NC & Root Cause</th>
                 <th className="p-4">Owner</th>
                 <th className="p-4 text-center">Deadline</th>
@@ -296,7 +377,7 @@ export function CAPA({ onNavigate }: CAPAProps) {
             <tbody className="divide-y divide-border-main">
               {filteredCapas.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-16 text-center text-text-3">
+                  <td colSpan={7} className="p-16 text-center text-text-3">
                     <div className="flex flex-col items-center justify-center gap-4">
                       <ShieldCheck className="w-12 h-12 opacity-10" />
                       <div className="text-base font-semibold">No Corrective Actions Logged</div>
@@ -309,7 +390,12 @@ export function CAPA({ onNavigate }: CAPAProps) {
                   key={capa.id} 
                   className="hover:bg-bg-2/60 transition-all duration-200 group relative" 
                 >
-                  <td className="p-4 pl-6">
+                  <td className="p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => toggleSelect(capa.id)} className="text-text-3 hover:text-accent transition-colors">
+                      {selectedIds.has(capa.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  </td>
+                  <td className="p-4">
                     <div className="font-mono font-black text-text-1 text-sm tracking-tight">{capa.id}</div>
                     <div className="text-[10px] text-text-3 font-bold mt-1 uppercase tracking-tighter">{capa.auditId || 'Manual Raise'}</div>
                   </td>
@@ -361,13 +447,7 @@ export function CAPA({ onNavigate }: CAPAProps) {
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-green-500/10 hover:text-green-500 text-text-2 transition-all cursor-pointer" 
-                        title="Download PDF"
-                        onClick={(e) => { e.stopPropagation(); downloadIndividualPDF(capa); }}
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                         <button 
                           className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-accent/10 hover:text-accent text-text-2 transition-all cursor-pointer" 
                           title="Verify / Follow-up"
@@ -399,23 +479,9 @@ export function CAPA({ onNavigate }: CAPAProps) {
       </motion.div>
 
       {/* Export Modal UI */}
-      <ExportModal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setIsExportModalOpen(false)} 
-        data={filteredCapas}
-        title="CAPA Compliance Report"
-        columns={[
-          {key: 'id', label: 'CAPA ID'},
-          {key: 'auditId', label: 'Source'},
-          {key: 'nc', label: 'Issue'},
-          {key: 'cause', label: 'Cause'},
-          {key: 'action', label: 'Correction'},
-          {key: 'preventive', label: 'Prevention'},
-          {key: 'responsible', label: 'Owner'},
-          {key: 'deadline', label: 'Deadline'},
-          {key: 'status', label: 'Status'}
-        ]}
-      />
+      
     </motion.div>
   );
 }
+
+

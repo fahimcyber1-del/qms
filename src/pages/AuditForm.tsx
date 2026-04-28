@@ -7,6 +7,8 @@ import {
   LayoutGrid, Activity
 } from 'lucide-react';
 import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
+import { Download, Edit2, Edit3 } from 'lucide-react';
 
 const AUDIT_CLAUSES = [
   {
@@ -323,6 +325,56 @@ export function AuditForm({ params, onNavigate }: AuditFormProps) {
   const [allAnswers, setAllAnswers] = useState<Record<string, { result: string, evidence: string, attachments: string[] }>>(formData.checklist || {});
   const [selectedClauseGroup, setSelectedClauseGroup] = useState<string>('All');
 
+  const handleExport = () => {
+    const checklistRows: string[][] = [];
+    AUDIT_CLAUSES.forEach(group => {
+      group.items.forEach(item => {
+        const entry = allAnswers[item.id];
+        if (entry) {
+          checklistRows.push([
+            item.id,
+            item.text,
+            entry.result,
+            entry.evidence || '—',
+            (entry.attachments && entry.attachments.length > 0) ? 'Yes' : 'No'
+          ]);
+        }
+      });
+    });
+
+    const attachments: any[] = [];
+    Object.entries(allAnswers).forEach(([id, entry]) => {
+      const e = entry as { attachments?: string[] };
+      if (e.attachments) {
+        e.attachments.forEach((data, i) => attachments.push({ name: `${id}_evidence_${i + 1}`, data }));
+      }
+    });
+
+    openExportPreview({
+      moduleName: 'Audit Compliance Report',
+      moduleId: 'audit_detail',
+      recordId: formData.auditId,
+      fileName: `Audit_${formData.auditId}_Report`,
+      layout: 'technical',
+      fields: [
+        { label: 'Audit Type', value: formData.auditType },
+        { label: 'Department', value: formData.department },
+        { label: 'Auditor', value: formData.auditorName },
+        { label: 'Date', value: formData.auditDate },
+        { label: 'Result', value: formData.result },
+        { label: 'Score', value: `${formData.score || 0}%` },
+        { label: 'Status', value: formData.status },
+        { label: 'NC Summary', value: formData.nonConformitySummary, fullWidth: true }
+      ],
+      tables: checklistRows.length > 0 ? [{
+        title: 'Audit Checklist Findings',
+        columns: ['ID', 'Checkpoint', 'Finding', 'Evidence', 'Docs'],
+        rows: checklistRows
+      }] : [],
+      attachments
+    });
+  };
+
   const handleSave = async () => {
     if (!formData.department || !formData.auditorName) {
       alert('Department and Auditor Name are required.');
@@ -437,7 +489,16 @@ export function AuditForm({ params, onNavigate }: AuditFormProps) {
           </div>
 
           <div className="flex gap-3 ml-auto md:ml-0">
-            {!isReadOnly && (
+            {isReadOnly ? (
+              <>
+                <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                   <Download className="w-4 h-4" /> Export
+                </button>
+                <button type="button" onClick={() => onNavigate('audit-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                   <Edit2 className="w-4 h-4" /> Modify Audit
+                </button>
+              </>
+            ) : (
               <button 
                 className="btn btn-primary shadow-lg shadow-accent/20 flex items-center gap-2 px-8 h-11" 
                 onClick={handleSave}

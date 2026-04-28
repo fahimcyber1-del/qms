@@ -1,3 +1,4 @@
+import { exportDetailToPDF } from '../utils/pdfExportUtils';
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -25,7 +26,9 @@ import {
   ToggleRight,
   PenLine,
   Database,
-  Hash
+  Hash,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { JDRecord, Employee, JDResponsibility, DocumentControlRecord } from '../types';
 import { COMPANIES, LOCATIONS } from '../constants';
@@ -156,6 +159,56 @@ export function JDModule({ onNavigate }: JDModuleProps) {
   const [reportToSearch, setReportToSearch] = useState('');
   const [showEmpResults, setShowEmpResults] = useState(false);
   const [showReportToResults, setShowReportToResults] = useState(false);
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelectAll = () => {
+    const filteredRecords = records.filter(r => 
+      r.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      r.jdRefNo.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    if (selectedIds.size === filteredRecords.length && filteredRecords.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredRecords.map(r => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = () => {
+    if (window.confirm(`Delete ${selectedIds.size} JDs?`)) {
+      const updated = records.filter(r => !selectedIds.has(r.id));
+      setRecords(updated);
+      localStorage.setItem('jd_records', JSON.stringify(updated));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const exportBulkPDF = async () => {
+    // @ts-ignore
+    const { exportTableToPDF } = await import('../utils/pdfExportUtils');
+    const selectedRecords = records.filter(r => selectedIds.has(r.id));
+    await exportTableToPDF({
+      moduleName: 'Job Descriptions',
+      moduleId: 'jd_module_bulk',
+      fileName: 'JD_Records_Export',
+      columns: ['Ref No', 'Employee', 'Designation', 'Department', 'Status'],
+      rows: selectedRecords.map(r => [
+        r.jdRefNo,
+        r.employeeName,
+        r.designation,
+        r.department,
+        r.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem('jd_records');
@@ -333,8 +386,7 @@ export function JDModule({ onNavigate }: JDModuleProps) {
   //  Layout: Doc Code & Rev at top-left | Company center bold | Address below
   // ═══════════════════════════════════════════════════════════════════
   const exportToPDF = async (record: JDRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
+    
     const responsibilitiesBody = record.responsibilities
       .filter(r => r.description.trim())
       .map((r, idx) => [String(idx + 1), r.description]);
@@ -447,8 +499,8 @@ export function JDModule({ onNavigate }: JDModuleProps) {
             className="space-y-6"
           >
             {/* Search */}
-            <div className="bg-bg-1/50 backdrop-blur-md border border-border-main p-4 flex flex-col md:flex-row gap-4">
-              <div className="relative flex-1">
+            <div className="bg-bg-1/50 backdrop-blur-md border border-border-main p-4 flex flex-col md:flex-row gap-4 items-center">
+              <div className="relative flex-1 w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-3" />
                 <input 
                   type="text"
@@ -459,6 +511,20 @@ export function JDModule({ onNavigate }: JDModuleProps) {
                   autoComplete="off"
                 />
               </div>
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <span className="text-sm font-bold text-accent font-mono uppercase">{selectedIds.size} selected</span>
+                  <button onClick={exportBulkPDF} className="flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 font-mono text-xs uppercase transition-all">
+                    <Download className="w-4 h-4" /> Export PDF
+                  </button>
+                  <button onClick={handleBulkDelete} className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-500 hover:bg-red-500/20 font-mono text-xs uppercase transition-all">
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </button>
+                  <button onClick={() => setSelectedIds(new Set())} className="text-text-3 hover:text-text-1">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* List Table */}
@@ -466,6 +532,13 @@ export function JDModule({ onNavigate }: JDModuleProps) {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-border-main bg-bg-2/50">
+                    <th className="p-4 w-10">
+                      <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                        {selectedIds.size === records.filter(r => r.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) || r.jdRefNo.toLowerCase().includes(searchTerm.toLowerCase())).length && records.length > 0
+                          ? <CheckSquare className="w-4 h-4 text-accent" />
+                          : <Square className="w-4 h-4" />}
+                      </button>
+                    </th>
                     <th className="p-4 font-mono text-[10px] font-bold text-text-3 uppercase tracking-widest">Ref No</th>
                     <th className="p-4 font-mono text-[10px] font-bold text-text-3 uppercase tracking-widest">Employee</th>
                     <th className="p-4 font-mono text-[10px] font-bold text-text-3 uppercase tracking-widest">Designation</th>
@@ -480,6 +553,11 @@ export function JDModule({ onNavigate }: JDModuleProps) {
                     r.jdRefNo.toLowerCase().includes(searchTerm.toLowerCase())
                   ).map(record => (
                     <tr key={record.id} className="hover:bg-accent/5 transition-colors group">
+                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => toggleSelect(record.id)} className="text-text-3 hover:text-accent transition-colors">
+                          {selectedIds.has(record.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                        </button>
+                      </td>
                       <td className="p-4 font-mono text-xs text-accent font-bold">{record.jdRefNo}</td>
                       <td className="p-4">
                         <div className="font-mono text-sm text-text-1 font-bold uppercase">{record.employeeName}</div>
@@ -497,13 +575,7 @@ export function JDModule({ onNavigate }: JDModuleProps) {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            onClick={() => exportToPDF(record)}
-                            className="p-1.5 text-text-3 hover:text-accent hover:bg-accent/10 border border-transparent hover:border-accent/30 transition-all"
-                            title="Export PDF"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
+                          
                           <button 
                             onClick={() => handleEdit(record)}
                             className="p-1.5 text-text-3 hover:text-blue-400 hover:bg-blue-400/10 border border-transparent hover:border-blue-400/30 transition-all"
@@ -524,7 +596,7 @@ export function JDModule({ onNavigate }: JDModuleProps) {
                   ))}
                   {records.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="p-12 text-center">
+                      <td colSpan={7} className="p-12 text-center">
                         <div className="flex flex-col items-center gap-3 text-text-3">
                           <FileText className="w-12 h-12 opacity-20" />
                           <p className="font-mono text-sm uppercase tracking-widest">No Job Descriptions found</p>
@@ -1054,3 +1126,5 @@ export function JDModule({ onNavigate }: JDModuleProps) {
     </div>
   );
 }
+
+

@@ -1,13 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   FileLock2, CheckCircle2, AlertCircle, Plus, Download, 
   Search, Filter, Calendar, Eye, Edit2, Trash2, FileText, 
-  ChevronRight, Lock, Clock, User, Building, X, History, FileCheck
+  ChevronRight, Lock, Clock, User, Building, X, History, FileCheck, CheckSquare, Square
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
+import { openExportPreview } from '../utils/exportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -108,35 +108,68 @@ export function DocumentControl({ onNavigate }: Props) {
     XLSX.writeFile(wb, "Document_Control_Masterlist.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Document Control System',
-      columns: ['Doc #', 'Title', 'Category', 'Rev', 'Date', 'Status'],
-      rows: filteredRecords.map(r => [r.docNumber, r.docTitle, r.category, r.revision, r.releaseDate, r.status]),
-      fileName: 'Document_Control_Report'
-    });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === paginatedRecords.length && paginatedRecords.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedRecords.map(r => r.id)));
+    }
   };
 
-  const exportSinglePDF = async (record: DocRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Document Registration Record',
-      moduleId: 'doc-control',
-      recordId: record.docNumber,
-      fileName: `Doc_${record.docNumber}`,
-      fields: [
-        { label: 'Document Title',     value: record.docTitle },
-        { label: 'Document Number',    value: record.docNumber },
-        { label: 'Category',           value: record.category },
-        { label: 'Current Revision',   value: record.revision },
-        { label: 'Department',         value: record.department },
-        { label: 'Custodian Officer',  value: record.responsiblePerson },
-        { label: 'Release Date',       value: record.releaseDate },
-        { label: 'Control Status',     value: record.status },
-      ]
-    });
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
   };
 
+  const handleBulkDelete = async () => {
+    if (window.confirm(`Delete ${selectedIds.size} documents?`)) {
+      const idsToDelete = Array.from(selectedIds);
+      await Promise.all(idsToDelete.map(id => getTable('documents').delete(id as string)));
+      setRecords(records.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const exportBulkPDF = () => {
+    const selectedRecords = filteredRecords.filter(r => selectedIds.has(r.id));
+    openExportPreview({
+      moduleName: 'Document Control (Selected)',
+      moduleId: 'document_control_bulk',
+      fileName: 'Document_Masterlist_Export',
+      columns: ['Title', 'Doc Number', 'Category', 'Dept', 'Revision', 'Status'],
+      rows: selectedRecords.map(r => [
+        r.docTitle,
+        r.docNumber,
+        r.category,
+        r.department,
+        r.revision,
+        r.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Document Control Master Register',
+      moduleId: 'document_control_global',
+      fileName: 'Document_Control_Masterlist',
+      columns: ['Title', 'Doc Number', 'Category', 'Dept', 'Revision', 'Status', 'Owner'],
+      rows: filteredRecords.map(r => [
+        r.docTitle,
+        r.docNumber,
+        r.category,
+        r.department,
+        r.revision,
+        r.status,
+        r.responsiblePerson
+      ])
+    });
+  };
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -148,12 +181,10 @@ export function DocumentControl({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Controlled master copies of SOPs, policies, and process documentation.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
-            <Download className="w-4 h-4" /> Excel
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('document-control-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New Document
           </button>
@@ -191,27 +222,45 @@ export function DocumentControl({ onNavigate }: Props) {
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-          <option value="All">All Categories</option>
-          <option value="Cutting">Cutting</option>
-          <option value="Sewing">Sewing</option>
-          <option value="Finishing">Finishing</option>
-          <option value="Audit">Audit</option>
-          <option value="Training">Training</option>
-          <option value="Maintenance">Maintenance</option>
-          <option value="IE">IE Section</option>
-          <option value="GPQ">GPQ Section</option>
-          <option value="Safety">Safety</option>
-          <option value="Supplier">Supplier</option>
-          <option value="General">General</option>
-        </select>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="All">All Statuses</option>
-          <option value="Published">Published / Active</option>
-          <option value="Draft">Drafting</option>
-          <option value="Archived">Archived</option>
-          <option value="Obsolete">Superseded</option>
-        </select>
+        <div className="w-px h-8 bg-border-main hidden md:block"></div>
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+            <button onClick={exportBulkPDF} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+              <Download className="w-4 h-4" /> Export PDF
+            </button>
+            <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+              <option value="All">All Categories</option>
+              <option value="Cutting">Cutting</option>
+              <option value="Sewing">Sewing</option>
+              <option value="Finishing">Finishing</option>
+              <option value="Audit">Audit</option>
+              <option value="Training">Training</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="IE">IE Section</option>
+              <option value="GPQ">GPQ Section</option>
+              <option value="Safety">Safety</option>
+              <option value="Supplier">Supplier</option>
+              <option value="General">General</option>
+            </select>
+            <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <option value="All">All Statuses</option>
+              <option value="Published">Published / Active</option>
+              <option value="Draft">Drafting</option>
+              <option value="Archived">Archived</option>
+              <option value="Obsolete">Superseded</option>
+            </select>
+          </div>
+        )}
       </motion.div>
 
       <motion.div variants={itemVariants} className="bg-bg-1 border border-border-main rounded-2xl overflow-hidden shadow-sm">
@@ -219,7 +268,14 @@ export function DocumentControl({ onNavigate }: Props) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-bg-2/50 border-b border-border-main text-[10px] uppercase tracking-widest text-text-2 font-black">
-                <th className="p-4 pl-6">Doc Identification</th>
+                <th className="p-4 w-10 pl-6">
+                  <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                    {selectedIds.size === paginatedRecords.length && paginatedRecords.length > 0
+                      ? <CheckSquare className="w-4 h-4 text-accent" />
+                      : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-4">Doc Identification</th>
                 <th className="p-4">Category & Department</th>
                 <th className="p-4 text-center">Version / Rev</th>
                 <th className="p-4 text-center">Release Date</th>
@@ -230,7 +286,12 @@ export function DocumentControl({ onNavigate }: Props) {
             <tbody className="divide-y divide-border-main">
               {paginatedRecords.map(r => (
                 <tr key={r.id} className="hover:bg-bg-2/60 transition-all duration-200 group">
-                  <td className="p-4 pl-6">
+                  <td className="p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => toggleSelect(r.id)} className="text-text-3 hover:text-accent transition-colors">
+                      {selectedIds.has(r.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  </td>
+                  <td className="p-4">
                     <div className="font-bold text-text-1 text-sm">{r.docTitle}</div>
                     <div className="text-[11px] text-text-3 mt-1 font-mono uppercase tracking-tight">{r.docNumber}</div>
                   </td>
@@ -265,9 +326,7 @@ export function DocumentControl({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('document-control-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

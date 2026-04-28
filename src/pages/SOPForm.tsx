@@ -1,6 +1,7 @@
+import { openExportPreview } from '../utils/exportUtils';
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ChevronLeft, Save, Building, Users, ClipboardCheck, FileText, Link as LinkIcon, FileDown, Clock, Edit, CheckCircle, Trash2, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, Save, Building, Users, ClipboardCheck, FileText, Link as LinkIcon, FileDown, Clock, Edit, CheckCircle, Trash2, AlertTriangle, Download } from 'lucide-react';
 import { SOPRecord } from '../types';
 import { getSOPRecords, saveSOPRecords } from '../utils/sopUtils';
 import { AttachmentList } from '../components/AttachmentList';
@@ -105,9 +106,8 @@ export function SOPForm({ params, onNavigate }: SOPFormProps) {
   };
 
   const handleDownloadPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
-    await exportDetailToPDF({
+    
+    openExportPreview({
       moduleName: 'Standard Operating Procedure',
       moduleId: `${formData.sopId} \u2022 ${formData.title}`,
       recordId: formData.sopId || '—',
@@ -130,15 +130,9 @@ export function SOPForm({ params, onNavigate }: SOPFormProps) {
         { label: 'Safety Guidelines', value: formData.safetyGuidelines || 'No specific safety requirements.', fullWidth: true },
         { label: 'QC Checkpoints',   value: formData.qcPoints || 'No specific quality checkpoints.', fullWidth: true },
         { label: 'Required Tools',   value: formData.requiredEquipment || 'N/A', fullWidth: true },
+        { label: 'Procedure Steps', value: formData.procedureSteps || 'Technical instructions pending...', fullWidth: true }
       ],
-      tables: [
-        {
-          title: 'Operational Procedure Steps',
-          columns: ['Step Description / Technical Instructions'],
-          rows: [[formData.procedureSteps || 'Technical instructions pending...']]
-        }
-      ],
-      signatureLabels: ['Author / Specialist', 'Quality Assurance', 'Management Approval']
+      attachments: formData.attachments
     });
   };
 
@@ -172,7 +166,7 @@ export function SOPForm({ params, onNavigate }: SOPFormProps) {
               <Edit className="w-4 h-4 mr-2" /> Edit SOP
             </button>
             <button className="btn btn-primary" onClick={handleDownloadPDF}>
-              <FileDown className="w-4 h-4 mr-2" /> Download PDF
+              <Download className="w-4 h-4 mr-2" /> Export
             </button>
           </div>
         ) : (
@@ -454,6 +448,8 @@ export function SOPForm({ params, onNavigate }: SOPFormProps) {
     </motion.div>
   );
 }
+
+
 
 
 

@@ -3,9 +3,11 @@ import { motion } from 'motion/react';
 import { 
   ArrowLeft, Save, X, FileLock2, Building, User, Calendar, 
   Lock, CheckCircle2, AlertCircle, Info, Paperclip, Plus, Trash2, FileText, 
-  History, FileCheck, ShieldCheck, Download, Activity, Flag, Tag, Users
+  History, FileCheck, ShieldCheck, Download, Activity, Flag, Tag, Users, Edit2
 } from 'lucide-react';
 import { getTable } from '../db/db';
+import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -100,34 +102,49 @@ export function DocumentControlForm({ onNavigate, params }: Props) {
     }
   };
 
-  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    const newAtts = Array.from(files).map((f: any) => f.name);
+    const newAtts: { name: string; data: string; type: string; size: number }[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const data = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      newAtts.push({ name: file.name, data, type: file.type, size: file.size });
+    }
     setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAtts] }));
+    e.target.value = '';
   };
-
-  const exportSinglePDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Controlled Document Specification',
-      moduleId: 'doc-control',
-      recordId: formData.docNumber,
-      fileName: `Doc_${formData.docNumber}`,
+  
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Controlled Document Dossier',
+      moduleId: 'document_control_record',
+      recordId: formData.id || 'N/A',
+      fileName: `Document_${formData.docNumber || 'export'}`,
       fields: [
-        { label: 'Document Title',     value: formData.docTitle },
-        { label: 'Document Number',    value: formData.docNumber },
-        { label: 'Category',           value: formData.category },
-        { label: 'Current Revision',   value: formData.revision },
-        { label: 'Department',         value: formData.department },
-        { label: 'Custodian Officer',  value: formData.responsiblePerson },
-        { label: 'Release Date',       value: formData.releaseDate },
-        { label: 'Control Status',     value: formData.status },
+        { label: 'Document Title', value: formData.docTitle || 'N/A' },
+        { label: 'Document Number', value: formData.docNumber || 'N/A' },
+        { label: 'Classification', value: formData.category || 'N/A' },
+        { label: 'Revision', value: formData.revision || 'N/A' },
+        { label: 'Department', value: formData.department || 'N/A' },
+        { label: 'Owner / Custodian', value: formData.responsiblePerson || 'N/A' },
+        { label: 'Approved By', value: formData.approvedBy || 'N/A' },
+        { label: 'Status', value: formData.status || 'N/A' },
+        { label: 'Release Date', value: formData.releaseDate || 'N/A' },
+        { label: 'Expiry Date', value: formData.expiryDate || 'N/A' },
+        { label: 'Change Summary', value: formData.changeSummary || 'N/A', fullWidth: true },
+        { label: 'Distribution List', value: formData.distributionList || 'N/A', fullWidth: true },
+        { label: 'Custodian Remarks', value: formData.remarks || 'N/A', fullWidth: true },
       ],
-      summary: formData.changeSummary ? ['Change Summary:', formData.changeSummary] : undefined
+      attachments: formData.attachments
     });
   };
 
+  
   const inputClass = "w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm font-bold text-text-1 focus:ring-2 focus:ring-accent outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
@@ -147,11 +164,11 @@ export function DocumentControlForm({ onNavigate, params }: Props) {
         <div className="flex items-center gap-3">
           {isReadOnly ? (
              <>
-               <button type="button" onClick={() => onNavigate('document-control-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
-                  <Trash2 className="w-4 h-4 rotate-45" /> Edit Record
+               <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Download className="w-4 h-4" /> Export
                </button>
-               <button type="button" onClick={exportSinglePDF} className="btn btn-primary shadow-lg shadow-accent/20">
-                  <Download className="w-4 h-4 mr-2" /> Download Specification
+               <button type="button" onClick={() => onNavigate('document-control-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Edit2 className="w-4 h-4" /> Edit Record
                </button>
              </>
           ) : (
@@ -348,23 +365,10 @@ export function DocumentControlForm({ onNavigate, params }: Props) {
                 <p className="text-sm font-bold uppercase tracking-widest">No master file</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3">
-                {formData.attachments.map((file, i) => (
-                  <div key={i} className="flex items-center justify-between bg-bg-2 p-3 rounded-xl border border-border-main group">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="w-8 h-8 bg-accent/10 rounded flex items-center justify-center text-accent">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <span className="text-sm font-semibold text-text-1 truncate">{file}</span>
-                    </div>
-                    {!isReadOnly && (
-                      <button type="button" onClick={() => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) }))} className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <AttachmentList
+                attachments={formData.attachments}
+                onRemove={!isReadOnly ? (i) => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) })) : undefined}
+              />
             )}
           </div>
         </div>

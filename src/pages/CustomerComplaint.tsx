@@ -1,13 +1,14 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { exportDetailToPDF, exportTableToPDF } from '../utils/pdfExportUtils';
+import { openExportPreview } from '../utils/exportPreviewUtils';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   MessageSquareOff, CheckCircle2, AlertCircle, Plus, Download, 
   Search, Filter, Calendar, Eye, Edit2, Trash2, FileText, 
-  ChevronRight, Frown, Clock, User, Building, X, HelpCircle, ShieldAlert
+  ChevronRight, Frown, Clock, User, Building, X, HelpCircle, ShieldAlert, CheckSquare, Square
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -40,6 +41,7 @@ export function CustomerComplaint({ onNavigate }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSeverity, setFilterSeverity] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const load = async () => {
@@ -62,6 +64,51 @@ export function CustomerComplaint({ onNavigate }: Props) {
       return matchesSearch && matchesSeverity && matchesStatus;
     });
   }, [records, searchQuery, filterSeverity, filterStatus]);
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredRecords.length && filteredRecords.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredRecords.map(r => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (window.confirm(`Delete ${selectedIds.size} customer complaints?`)) {
+      const idsToDelete = Array.from(selectedIds);
+      await Promise.all(idsToDelete.map(id => getTable('customerComplaint').delete(id as string)));
+      setRecords(records.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const exportBulkPDF = async () => {
+    // @ts-ignore
+    const { exportTableToPDF } = await import('../utils/pdfExportUtils');
+    const recordsToExport = filteredRecords.filter(r => selectedIds.has(r.id));
+    await exportTableToPDF({
+      moduleName: 'Customer Complaints',
+      moduleId: 'customer_complaint_bulk',
+      fileName: 'Customer_Complaints_Export',
+      columns: ['Title', 'Buyer', 'Order No', 'Date', 'Severity', 'Status'],
+      rows: recordsToExport.map(r => [
+        r.complaintTitle,
+        r.buyer,
+        r.orderNo,
+        new Date(r.date).toLocaleDateString(),
+        r.severity,
+        r.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
 
   const stats = useMemo(() => {
     return {
@@ -86,18 +133,9 @@ export function CustomerComplaint({ onNavigate }: Props) {
     XLSX.writeFile(wb, "Customer_Complaints_Log.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Customer Complaint Management',
-      columns: ['ID', 'Title', 'Buyer', 'Order #', 'Date', 'Status'],
-      rows: filteredRecords.map(r => [r.id, r.complaintTitle, r.buyer, r.orderNo, r.date, r.status]),
-      fileName: 'Customer_Complaint_Report'
-    });
-  };
-
+  
   const handleDownloadDetail = async (record: any) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    exportDetailToPDF({
+    openExportPreview({
       moduleName: 'Customer Complaint Report',
       moduleId: 'complaint',
       recordId: record.id,
@@ -134,9 +172,7 @@ export function CustomerComplaint({ onNavigate }: Props) {
           <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
             <Download className="w-4 h-4" /> Excel
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('customer-complaint-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> Log Complaint
           </button>
@@ -174,20 +210,37 @@ export function CustomerComplaint({ onNavigate }: Props) {
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterSeverity} onChange={(e) => setFilterSeverity(e.target.value)}>
-          <option value="All">All Severities</option>
-          <option value="Critical">Critical</option>
-          <option value="High">High</option>
-          <option value="Medium">Medium</option>
-          <option value="Low">Low</option>
-        </select>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="All">All Statuses</option>
-          <option value="Open">Open</option>
-          <option value="Investigating">Investigating</option>
-          <option value="Resolved">Resolved</option>
-          <option value="Closed">Closed</option>
-        </select>
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+            <button onClick={exportBulkPDF} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+              <Download className="w-4 h-4" /> Export PDF
+            </button>
+            <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterSeverity} onChange={(e) => setFilterSeverity(e.target.value)}>
+              <option value="All">All Severities</option>
+              <option value="Critical">Critical</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+            <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <option value="All">All Statuses</option>
+              <option value="Open">Open</option>
+              <option value="Investigating">Investigating</option>
+              <option value="Resolved">Resolved</option>
+              <option value="Closed">Closed</option>
+            </select>
+          </div>
+        )}
       </motion.div>
 
       <motion.div variants={itemVariants} className="bg-bg-1 border border-border-main rounded-2xl overflow-hidden shadow-sm">
@@ -195,7 +248,14 @@ export function CustomerComplaint({ onNavigate }: Props) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-bg-2/50 border-b border-border-main text-[10px] uppercase tracking-widest text-text-2 font-black">
-                <th className="p-4 pl-6">Complaint Detail</th>
+                <th className="p-4 w-10 pl-6">
+                  <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                    {selectedIds.size === filteredRecords.length && filteredRecords.length > 0
+                      ? <CheckSquare className="w-4 h-4 text-accent" />
+                      : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-4">Complaint Detail</th>
                 <th className="p-4">Buyer & Order</th>
                 <th className="p-4">Severity Level</th>
                 <th className="p-4 text-center">Received Date</th>
@@ -206,7 +266,12 @@ export function CustomerComplaint({ onNavigate }: Props) {
             <tbody className="divide-y divide-border-main">
               {filteredRecords.map(r => (
                 <tr key={r.id} className="hover:bg-bg-2/60 transition-all duration-200 group">
-                  <td className="p-4 pl-6">
+                  <td className="p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => toggleSelect(r.id)} className="text-text-3 hover:text-accent transition-colors">
+                      {selectedIds.has(r.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  </td>
+                  <td className="p-4">
                     <div className="font-bold text-text-1 text-sm truncate max-w-[200px]">{r.complaintTitle}</div>
                     <div className="text-[11px] text-text-3 mt-1 font-mono uppercase tracking-tight">{r.id}</div>
                   </td>
@@ -266,4 +331,6 @@ export function CustomerComplaint({ onNavigate }: Props) {
     </motion.div>
   );
 }
+
+
 

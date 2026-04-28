@@ -1,16 +1,16 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ProductionQualityCharts } from '../components/ProductionQualityCharts';
-import { ExportModal } from '../components/ExportModal';
 import * as XLSX from 'xlsx';
 import { 
   Search, Plus, Trash2, Edit, Download, Filter, 
   BarChart3, CheckCircle2, XCircle, AlertTriangle, 
   X, Upload, Settings, List, Activity, Eye, FileDown,
-  Layers, Factory, Scissors, User, Calendar
+  Layers, Factory, Scissors, User, Calendar, CheckSquare, Square
 } from 'lucide-react';
 import { InspectionRecord } from '../types';
 import { getProductionQualityRecords, saveProductionQualityRecords } from '../utils/qualityUtils';
+import { openExportPreview } from '../utils/exportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -62,6 +62,7 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Derived Data
   const filteredInspections = useMemo(() => {
@@ -137,40 +138,67 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
     onNavigate('prod-quality-form', { mode, data, recordType });
   };
 
-  const exportPDF = async (record: InspectionRecord, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
-    const rft = record.checkedQuantity > 0 ? ((record.goodsQuantity / record.checkedQuantity) * 100).toFixed(1) : '0';
-    const dhu = record.checkedQuantity > 0 ? ((record.totalDefects / record.checkedQuantity) * 100).toFixed(1) : '0';
-
-    await exportDetailToPDF({
-      moduleName: 'Production Quality Report',
-      moduleId: 'production-quality',
-      recordId: record.id,
-      fileName: `PQ_${record.lineNumber}_${record.date}`,
-      fields: [
-        { label: 'Date',          value: record.date },
-        { label: 'Shift',         value: record.shift },
-        { label: 'Unit',          value: record.unit },
-        { label: 'Section',       value: record.section },
-        { label: 'Line',          value: record.lineNumber },
-        { label: 'Style',         value: record.style || '—' },
-        { label: 'Buyer',         value: record.buyer || '—' },
-        { label: 'Checked Qty',   value: String(record.checkedQuantity) },
-        { label: 'Goods Passed',  value: String(record.goodsQuantity) },
-        { label: 'Total Defects', value: String(record.totalDefects) },
-        { label: 'RFT %',         value: `${rft}%` },
-        { label: 'DHU %',         value: `${dhu}%` },
-        { label: 'Target DHU %',  value: `${record.standardDhu || 5}%` },
-        { label: 'Defect Summary',value: (record.topDefects || []).filter(d => d.name).map(d => `${d.name} (${d.count})`).join(', ') || 'No defects recorded' }
-      ],
-      comments: record.remark ? [{ user: record.qcInspector || 'Inspector', date: record.date, text: record.remark }] : [],
-    });
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredInspections.length && filteredInspections.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredInspections.map(r => r.id)));
+    }
   };
 
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
 
+  const handleBulkDelete = () => {
+    if (window.confirm(`Delete ${selectedIds.size} records?`)) {
+      const updated = inspections.filter(i => !selectedIds.has(i.id));
+      setInspections(updated);
+      saveProductionQualityRecords(updated);
+      setSelectedIds(new Set());
+    }
+  };
 
+  const exportBulkPDF = () => {
+    const recordsToExport = filteredInspections.filter(r => selectedIds.has(r.id));
+    openExportPreview({
+      moduleName: 'Production Quality Register',
+      moduleId: 'production_quality_bulk',
+      fileName: 'Production_Quality_Export',
+      columns: ['Date', 'Line', 'Style', 'Checked', 'Defects', 'RFT %', 'DHU %'],
+      rows: recordsToExport.map(r => [
+        r.date, 
+        r.lineNumber, 
+        r.style || '-', 
+        String(r.checkedQuantity), 
+        String(r.totalDefects),
+        r.checkedQuantity > 0 ? ((r.goodsQuantity / r.checkedQuantity) * 100).toFixed(1) : '0.0',
+        r.checkedQuantity > 0 ? ((r.totalDefects / r.checkedQuantity) * 100).toFixed(1) : '0.0'
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Production Quality Master Register',
+      moduleId: 'production_quality_global',
+      fileName: 'Production_Quality_Masterlist',
+      columns: ['Date', 'Line', 'Style', 'Checked', 'Defects', 'RFT %', 'DHU %'],
+      rows: filteredInspections.map(r => [
+        r.date, 
+        r.lineNumber, 
+        r.style || '-', 
+        String(r.checkedQuantity), 
+        String(r.totalDefects),
+        r.checkedQuantity > 0 ? ((r.goodsQuantity / r.checkedQuantity) * 100).toFixed(1) : '0.0',
+        r.checkedQuantity > 0 ? ((r.totalDefects / r.checkedQuantity) * 100).toFixed(1) : '0.0'
+      ])
+    });
+  };
 
   const handleBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -216,7 +244,7 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
             <Upload className="w-4 h-4" /> CSV Upload
             <input type="file" accept=".csv, .xlsx" className="hidden" onChange={handleBulkUpload} />
           </label>
-          <button className="btn btn-ghost flex items-center gap-2 border border-border-main text-text-2 shadow-sm" onClick={() => setIsExportModalOpen(true)}>
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main text-text-2 shadow-sm" onClick={handleGlobalExport}>
             <Download className="w-4 h-4" /> Global Export
           </button>
           <button className="btn btn-primary flex items-center gap-2 shadow-md" onClick={() => handleNavigateToForm('create', null, 'detailed')}>
@@ -292,23 +320,38 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
                 />
               </div>
               <div className="w-px h-8 bg-border-main hidden md:block"></div>
-              <div className="flex items-center gap-3 w-full md:w-auto">
-                <select className="w-full md:w-32 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterUnit} onChange={(e) => setFilterUnit(e.target.value)}>
-                  <option value="All">All Units</option>
-                  {units.map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
-                <select className="w-full md:w-32 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterShift} onChange={(e) => setFilterShift(e.target.value)}>
-                  <option value="All">All Shifts</option>
-                  <option value="Day">Day</option>
-                  <option value="Night">Night</option>
-                </select>
-                <div className="flex items-center gap-2 bg-bg-2 px-3 py-1.5 rounded-xl flex-1 md:flex-none">
-                  <Calendar className="w-4 h-4 text-text-2" />
-                  <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                  <span className="text-text-2 text-sm px-1">-</span>
-                  <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              {selectedIds.size > 0 ? (
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+                  <button onClick={exportBulkPDF} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+                    <Download className="w-4 h-4" /> Export PDF
+                  </button>
+                  <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </button>
+                  <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                  <select className="w-full md:w-32 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterUnit} onChange={(e) => setFilterUnit(e.target.value)}>
+                    <option value="All">All Units</option>
+                    {units.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                  <select className="w-full md:w-32 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterShift} onChange={(e) => setFilterShift(e.target.value)}>
+                    <option value="All">All Shifts</option>
+                    <option value="Day">Day</option>
+                    <option value="Night">Night</option>
+                  </select>
+                  <div className="flex items-center gap-2 bg-bg-2 px-3 py-1.5 rounded-xl flex-1 md:flex-none">
+                    <Calendar className="w-4 h-4 text-text-2" />
+                    <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                    <span className="text-text-2 text-sm px-1">-</span>
+                    <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                  </div>
+                </div>
+              )}
             </motion.div>
 
             {/* Data Table */}
@@ -317,6 +360,13 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-bg-2/50 border-b border-border-main text-xs uppercase tracking-wider text-text-2 font-semibold">
+                      <th className="p-4 w-10">
+                        <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                          {selectedIds.size === filteredInspections.length && filteredInspections.length > 0
+                            ? <CheckSquare className="w-4 h-4 text-accent" />
+                            : <Square className="w-4 h-4" />}
+                        </button>
+                      </th>
                       <th className="p-4">Date</th>
                       <th className="p-4">Location</th>
                       <th className="p-4">Style / Order</th>
@@ -333,7 +383,7 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
                     <AnimatePresence>
                       {filteredInspections.length === 0 ? (
                         <motion.tr>
-                          <td colSpan={10} className="p-12 text-center text-text-2">
+                          <td colSpan={11} className="p-12 text-center text-text-2">
                             <div className="flex flex-col items-center justify-center gap-3">
                               <Search className="w-8 h-8 opacity-20" />
                               <p className="font-semibold text-lg text-text-1">No production audits found</p>
@@ -353,6 +403,11 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
                             className="hover:bg-bg-2/50 transition-colors cursor-pointer group" 
                             onClick={() => handleNavigateToForm('view', row)}
                           >
+                            <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                              <button onClick={() => toggleSelect(row.id)} className="text-text-3 hover:text-accent transition-colors">
+                                {selectedIds.has(row.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                              </button>
+                            </td>
                             <td className="p-4 text-sm text-text-1 whitespace-nowrap font-medium">{row.date}</td>
                             <td className="p-4">
                               <div className="font-bold text-text-1 group-hover:text-accent transition-colors">{row.lineNumber}</div>
@@ -384,9 +439,7 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
                                 <button className="p-2 text-text-2 hover:bg-blue-500/10 hover:text-blue-500 rounded-lg transition-all" title="Edit" onClick={() => handleNavigateToForm('edit', row)}>
                                   <Edit className="w-4 h-4" />
                                 </button>
-                                <button className="p-2 text-text-2 hover:bg-indigo-500/10 hover:text-indigo-500 rounded-lg transition-all" title="Download Report" onClick={(e) => exportPDF(row, e)}>
-                                  <FileDown className="w-4 h-4" />
-                                </button>
+                                
                                 <button className="p-2 text-text-2 hover:bg-red-500/10 hover:text-red-500 rounded-lg transition-all" title="Delete" onClick={(e) => handleDelete(row.id, e)}>
                                   <Trash2 className="w-4 h-4" />
                                 </button>
@@ -454,21 +507,7 @@ export function ProductionQuality({ onNavigate }: { onNavigate: (page: string, p
         )}
       </motion.div>
 
-      <ExportModal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setIsExportModalOpen(false)} 
-        data={filteredInspections}
-        columns={[
-          {key: 'id', label: 'ID'},
-          {key: 'date', label: 'Date'},
-          {key: 'lineNumber', label: 'Line'},
-          {key: 'buyer', label: 'Buyer'},
-          {key: 'style', label: 'Style'},
-          {key: 'checkedQuantity', label: 'Checked'},
-          {key: 'totalDefects', label: 'Defects'}
-        ]}
-        title="Production Quality Data Dump"
-      />
+      
     </motion.div>
   );
 }

@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, CheckCircle2, AlertCircle, Plus, Download, 
@@ -6,8 +7,6 @@ import {
   ChevronRight, Briefcase, Clock, User, Building, X, Award, MapPin
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -83,34 +82,8 @@ export function JobDescriptionManagement({ onNavigate }: Props) {
     XLSX.writeFile(wb, "JD_Masterlist.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Job Description Management',
-      columns: ['Job Title', 'Dept', 'Grade', 'Reports To', 'Rev', 'Status'],
-      rows: filteredRecords.map(r => [r.jobTitle, r.department, r.grade, r.reportsTo, r.revision, r.status]),
-      fileName: 'Job_Description_Report'
-    });
-  };
-
-  const exportSinglePDF = async (record: JDRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Job Description & Role Specification',
-      moduleId: 'jd-management',
-      recordId: record.id,
-      fileName: `JD_${record.jobTitle.replace(/\s+/g, '_')}`,
-      fields: [
-        { label: 'Job Title',        value: record.jobTitle },
-        { label: 'Department',       value: record.department },
-        { label: 'Job Grade',        value: record.grade },
-        { label: 'Reports To',       value: record.reportsTo },
-        { label: 'Revision Number',  value: record.revision },
-        { label: 'Last Updated',     value: record.lastUpdate },
-        { label: 'Current Status',   value: record.status },
-      ]
-    });
-  };
-
+  
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -125,9 +98,7 @@ export function JobDescriptionManagement({ onNavigate }: Props) {
           <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
             <Download className="w-4 h-4" /> Excel
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('job-description-management-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> Define Role
           </button>
@@ -225,9 +196,7 @@ export function JobDescriptionManagement({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('job-description-management-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

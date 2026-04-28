@@ -1,3 +1,4 @@
+import { exportDetailToPDF } from '../utils/pdfExportUtils';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -267,8 +268,7 @@ function FlowBuilderEditor({ record, onSave, onClose }: { record: FlowChartRecor
   };
 
   const handleExportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    const svgEl = document.querySelector('.mermaid-preview svg');
+        const svgEl = document.querySelector('.mermaid-preview svg');
     if (!svgEl) return;
     
     // Generate PNG from SVG for PDF
@@ -357,9 +357,7 @@ function FlowBuilderEditor({ record, onSave, onClose }: { record: FlowChartRecor
              >Source Code</button>
           </div>
           
-          <button onClick={handleExportPDF} className="btn bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 px-4">
-            <Download className="w-4 h-4 mr-2" /> PDF Report
-          </button>
+          
           <button onClick={handleSave} className="btn btn-primary px-6 shadow-lg shadow-accent/20">
             <Save className="w-4 h-4 mr-2" /> Save & Build
           </button>
@@ -862,3 +860,5 @@ export function FlowChartPage({ onNavigate }: { onNavigate: (page: string, param
     </motion.div>
   );
 }
+
+

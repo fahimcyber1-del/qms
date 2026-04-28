@@ -1,3 +1,4 @@
+import { exportDetailToPDF } from '../utils/pdfExportUtils';
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
@@ -271,8 +272,7 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
   };
 
   const handleExportPDF = async (record?: RiskManagementRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
+    
     if (record) {
       const levelColorMap: Record<RiskLevel, string> = {
         'Critical': '#ec4899', 'High': '#dc2626',
@@ -379,12 +379,8 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
               <Trash2 className="w-4 h-4" /> Delete ({selectedIds.length})
             </button>
           )}
-          <button className="flex items-center gap-2 px-3 py-2 bg-bg-1 border border-border-main text-text-2 rounded-xl text-sm font-medium hover:text-accent transition-colors shadow-sm" onClick={handleExportExcel}>
-            <FileSpreadsheet className="w-4 h-4" /> Excel
-          </button>
-          <button className="flex items-center gap-2 px-3 py-2 bg-bg-1 border border-border-main text-text-2 rounded-xl text-sm font-medium hover:text-accent transition-colors shadow-sm" onClick={() => handleExportPDF()}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
+          
           <button className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-xl text-sm font-medium hover:opacity-90 transition-all shadow-sm" onClick={handleAdd}>
             <Plus className="w-4 h-4" /> Add Risk
           </button>
@@ -499,7 +495,7 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
                     <div className="flex items-center justify-end gap-1">
                       <button className="p-2 rounded-lg hover:bg-bg-2 text-text-3 hover:text-accent transition-colors" onClick={() => handleView(r)}><Eye className="w-4 h-4" /></button>
                       <button className="p-2 rounded-lg hover:bg-bg-2 text-text-3 hover:text-accent transition-colors" onClick={() => handleEdit(r)}><Edit2 className="w-4 h-4" /></button>
-                      <button className="p-2 rounded-lg hover:bg-bg-2 text-text-3 hover:text-blue-500 transition-colors" onClick={() => handleExportPDF(r)}><FileDown className="w-4 h-4" /></button>
+                      
                     </div>
                   </td>
                 </tr>
@@ -534,9 +530,7 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
           <button className="flex items-center gap-2 px-4 py-2.5 bg-bg-1 border border-border-main text-text-2 rounded-xl text-sm font-medium hover:text-accent transition-colors" onClick={() => handleEdit(selectedRecord)}>
             <Edit2 className="w-4 h-4" /> Edit
           </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-xl text-sm font-medium hover:opacity-90 transition-all shadow-sm" onClick={() => handleExportPDF(selectedRecord)}>
-            <FileDown className="w-4 h-4" /> Print PDF
-          </button>
+          
         </div>
       </div>
 
@@ -767,6 +761,8 @@ export function RiskManagementPage({ onNavigate }: { onNavigate: (page: string, 
     </motion.div>
   );
 }
+
+
 
 
 

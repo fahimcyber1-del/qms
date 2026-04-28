@@ -1,3 +1,4 @@
+import { exportDetailToPDF } from '../utils/pdfExportUtils';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -456,8 +457,7 @@ async function exportOrgPNG(record: OrgRecord) {
 }
 
 async function exportOrgPDF(record: OrgRecord) {
-  const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-  const svgEl = document.querySelector('.mermaid-render svg');
+    const svgEl = document.querySelector('.mermaid-render svg');
   if (!svgEl) return;
   const svgData = new XMLSerializer().serializeToString(svgEl);
   const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
@@ -472,29 +472,17 @@ async function exportOrgPDF(record: OrgRecord) {
     const imgData = canvas.toDataURL('image/png');
     await exportDetailToPDF({
       moduleName: 'Organizational Hierarchy Report',
-      moduleId: 'organogram',
       recordId: record.code,
       fileName: `${record.code}_Chart`,
-      orientation: 'landscape',
-      sections: [
-        {
-          title: 'Document Identification',
-          fields: [
-            { label: 'Chart Description', value: record.chartTitle },
-            { label: 'Organization Code', value: record.code },
-            { label: 'Revision Level',    value: record.version },
-            { label: 'Effective Date',    value: record.date },
-          ]
-        },
-        {
-          title: 'Responsibility & Authority',
-          fields: [
-            { label: 'Business Process',   value: record.department },
-            { label: 'Chart Responsible',  value: record.responsiblePerson || '—' },
-            { label: 'Approved By',        value: record.approvedBy || '—' },
-            { label: 'Status',             value: record.status },
-          ]
-        }
+      fields: [
+        { label: 'Chart Description', value: record.chartTitle },
+        { label: 'Organization Code', value: record.code },
+        { label: 'Revision Level',    value: record.version },
+        { label: 'Effective Date',    value: record.date },
+        { label: 'Business Process',   value: record.department },
+        { label: 'Chart Responsible',  value: record.responsiblePerson || '—' },
+        { label: 'Approved By',        value: record.approvedBy || '—' },
+        { label: 'Status',             value: record.status }
       ],
       attachments: [{ name: 'Hierarchy Visualization', data: imgData }]
     });
@@ -827,3 +815,4 @@ export function OrganogramPage({ onNavigate }: { onNavigate: (page: string, para
     </motion.div>
   );
 }
+

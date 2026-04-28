@@ -1,13 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
+import { openExportPreview } from '../utils/exportUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users2, CheckCircle2, AlertCircle, Plus, Download, 
   Search, Filter, Calendar, Eye, Edit2, Trash2, FileText, 
-  ChevronRight, Mic2, Clock, User, Building, X, MessageSquare, ClipboardList
+  ChevronRight, Mic2, Clock, User, Building, X, MessageSquare, ClipboardList, CheckSquare, Square
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -39,6 +39,7 @@ export function MeetingMinutes({ onNavigate }: Props) {
   const [records, setRecords] = useState<MeetingRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const load = async () => {
@@ -59,6 +60,66 @@ export function MeetingMinutes({ onNavigate }: Props) {
       return matchesSearch && matchesCategory;
     });
   }, [records, searchQuery, filterCategory]);
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredRecords.length && filteredRecords.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredRecords.map(r => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (window.confirm(`Delete ${selectedIds.size} meeting records?`)) {
+      const idsToDelete = Array.from(selectedIds);
+      await Promise.all(idsToDelete.map(id => getTable('meetingMinutes').delete(id as string)));
+      setRecords(records.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const exportBulkPDF = () => {
+    const recordsToExport = filteredRecords.filter(r => selectedIds.has(r.id));
+    openExportPreview({
+      moduleName: 'Meeting Minutes (MOM)',
+      moduleId: 'meeting_bulk',
+      fileName: 'Meeting_Minutes_Export',
+      columns: ['Agenda', 'Type', 'Facilitator', 'Date', 'Status'],
+      rows: recordsToExport.map(r => [
+        r.meetingTitle,
+        r.category,
+        r.facilitator,
+        new Date(r.date).toLocaleDateString(),
+        r.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Meeting Minutes Master Register',
+      moduleId: 'meeting_global',
+      fileName: 'Meeting_Minutes_Masterlist',
+      columns: ['Agenda', 'Category', 'Facilitator', 'Location', 'Date', 'Actions', 'Status'],
+      rows: filteredRecords.map(r => [
+        r.meetingTitle,
+        r.category,
+        r.facilitator,
+        r.location,
+        new Date(r.date).toLocaleDateString(),
+        r.actionItemsCount || 0,
+        r.status
+      ])
+    });
+  };
 
   const stats = useMemo(() => {
     return {
@@ -87,34 +148,8 @@ export function MeetingMinutes({ onNavigate }: Props) {
     XLSX.writeFile(wb, "Meeting_Minutes_Log.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Meeting Minutes & Action Items',
-      columns: ['Title', 'Date', 'Type', 'Facilitator', 'Actions', 'Status'],
-      rows: filteredRecords.map(r => [r.meetingTitle, r.date, r.category, r.facilitator, r.actionItemsCount, r.status]),
-      fileName: 'Meeting_Minutes_Report'
-    });
-  };
-
-  const exportSinglePDF = async (record: MeetingRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Minutes of Meeting (MOM)',
-      moduleId: 'meeting-minutes',
-      recordId: record.id,
-      fileName: `MOM_${record.meetingTitle.replace(/\s+/g, '_')}`,
-      fields: [
-        { label: 'Meeting Title',      value: record.meetingTitle },
-        { label: 'Meeting Category',   value: record.category },
-        { label: 'Meeting Date',       value: record.date },
-        { label: 'Facilitator / Chair', value: record.facilitator },
-        { label: 'Meeting Location',   value: record.location },
-        { label: 'Open Action Items',  value: String(record.actionItemsCount || 0) },
-        { label: 'Session Status',     value: record.status },
-      ]
-    });
-  };
-
+  
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -126,12 +161,10 @@ export function MeetingMinutes({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Log formal quality meetings, management reviews, and follow-up action items.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
-            <Download className="w-4 h-4" /> Excel
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('meeting-minutes-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> Record MOM
           </button>
@@ -169,14 +202,29 @@ export function MeetingMinutes({ onNavigate }: Props) {
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-          <option value="All">All Categories</option>
-          <option>Management Review</option>
-          <option>Production Meeting</option>
-          <option>Quality Committee</option>
-          <option>Safety/Compliance</option>
-          <option>Internal Audit Sync</option>
-        </select>
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+            <button onClick={exportBulkPDF} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+              <Download className="w-4 h-4" /> Export PDF
+            </button>
+            <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+            <option value="All">All Categories</option>
+            <option>Management Review</option>
+            <option>Production Meeting</option>
+            <option>Quality Committee</option>
+            <option>Safety/Compliance</option>
+            <option>Internal Audit Sync</option>
+          </select>
+        )}
       </motion.div>
 
       <motion.div variants={itemVariants} className="bg-bg-1 border border-border-main rounded-2xl overflow-hidden shadow-sm">
@@ -184,7 +232,14 @@ export function MeetingMinutes({ onNavigate }: Props) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-bg-2/50 border-b border-border-main text-[10px] uppercase tracking-widest text-text-2 font-black">
-                <th className="p-4 pl-6">Meeting Agenda</th>
+                <th className="p-4 w-10 pl-6">
+                  <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                    {selectedIds.size === filteredRecords.length && filteredRecords.length > 0
+                      ? <CheckSquare className="w-4 h-4 text-accent" />
+                      : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-4">Meeting Agenda</th>
                 <th className="p-4">Type & Facilitator</th>
                 <th className="p-4 text-center">Open Actions</th>
                 <th className="p-4 text-center">Meeting Date</th>
@@ -195,7 +250,12 @@ export function MeetingMinutes({ onNavigate }: Props) {
             <tbody className="divide-y divide-border-main">
               {filteredRecords.map(r => (
                 <tr key={r.id} className="hover:bg-bg-2/60 transition-all duration-200 group">
-                  <td className="p-4 pl-6">
+                  <td className="p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => toggleSelect(r.id)} className="text-text-3 hover:text-accent transition-colors">
+                      {selectedIds.has(r.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  </td>
+                  <td className="p-4">
                     <div className="font-bold text-text-1 text-sm">{r.meetingTitle}</div>
                     <div className="text-[11px] text-text-3 mt-1 font-mono uppercase tracking-tight">{r.location}</div>
                   </td>
@@ -231,9 +291,7 @@ export function MeetingMinutes({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('meeting-minutes-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

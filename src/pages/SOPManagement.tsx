@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Plus, Edit, Trash2, FileText, FileDown, AlertTriangle, CheckCircle, Clock, BookOpen, CheckCircle2 } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, FileText, FileDown, AlertTriangle, CheckCircle, Clock, BookOpen, CheckCircle2, Download } from 'lucide-react';
 import { SOPRecord } from '../types';
 import { getSOPRecords, saveSOPRecords } from '../utils/sopUtils';
-import { ExportModal } from '../components/ExportModal';
+import { openExportPreview } from '../utils/exportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -72,9 +72,8 @@ export function SOPManagement({ onNavigate }: { onNavigate: (page: string, param
 
   const handleDownloadPDF = async (sop: SOPRecord, e: React.MouseEvent) => {
     e.stopPropagation();
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
-    await exportDetailToPDF({
+    
+    openExportPreview({
       moduleName: 'Standard Operating Procedure',
       moduleId: 'sop',
       recordId: sop.sopId,
@@ -95,6 +94,24 @@ export function SOPManagement({ onNavigate }: { onNavigate: (page: string, param
     });
   };
 
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Standard Operating Procedures',
+      moduleId: 'sop_bulk',
+      fileName: 'SOP_Library_Report',
+      columns: ['ID', 'Title', 'Department', 'Process', 'Version', 'Status', 'Effective Date'],
+      rows: filteredRecords.map(r => [
+        r.sopId,
+        r.title,
+        r.department,
+        r.process,
+        r.version,
+        r.status,
+        r.effectiveDate
+      ])
+    });
+  };
+
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="p-4 md:p-8 space-y-8">
@@ -108,8 +125,8 @@ export function SOPManagement({ onNavigate }: { onNavigate: (page: string, param
           <p className="text-text-2 text-base mt-2">Standard Operating Procedures Library & Process documentation.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={() => setIsExportModalOpen(true)}>
-            <FileDown className="w-4 h-4" /> Export Excel
+          <button className="btn btn-ghost flex items-center gap-2" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Export
           </button>
           <button className="btn btn-primary flex items-center gap-2 shadow-md hover:shadow-lg transition-shadow" onClick={() => handleNavigateToForm('create')}>
             <Plus className="w-4 h-4" /> Add New SOP
@@ -215,9 +232,7 @@ export function SOPManagement({ onNavigate }: { onNavigate: (page: string, param
                           <button className="p-2 bg-bg-2 text-text-2 hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all" title="Edit" onClick={() => handleNavigateToForm('edit', record)}>
                             <Edit className="w-4 h-4" />
                           </button>
-                          <button className="p-2 bg-bg-2 text-text-2 hover:text-green-500 hover:bg-green-500/10 rounded-lg transition-all" title="Download PDF" onClick={(e) => handleDownloadPDF(record, e)}>
-                            <FileDown className="w-4 h-4" />
-                          </button>
+                          
                           <button className="p-2 bg-bg-2 text-text-2 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all" title="Delete" onClick={() => handleDelete(record.id)}>
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -283,22 +298,10 @@ export function SOPManagement({ onNavigate }: { onNavigate: (page: string, param
         </div>
       </motion.div>
 
-      <ExportModal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setIsExportModalOpen(false)} 
-        data={records}
-        columns={[
-          {key: 'sopId', label: 'SOP ID'},
-          {key: 'title', label: 'Title'},
-          {key: 'department', label: 'Department'},
-          {key: 'process', label: 'Process'},
-          {key: 'version', label: 'Version'},
-          {key: 'status', label: 'Status'},
-          {key: 'effectiveDate', label: 'Effective Date'}
-        ]}
-        title="SOP Register"
-      />
+      
 
     </motion.div>
   );
 }
+
+

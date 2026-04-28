@@ -6,6 +6,7 @@ import {
   ShieldAlert, Activity, Search, Download, Flag, ShoppingBag
 } from 'lucide-react';
 import { getTable } from '../db/db';
+import { AttachmentList } from '../components/AttachmentList';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -102,32 +103,7 @@ export function CustomerComplaintForm({ onNavigate, params }: Props) {
     setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAtts] }));
   };
 
-  const exportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Customer Complaint Record',
-      moduleId: 'customer-complaint',
-      recordId: formData.id,
-      fileName: `Complaint_${formData.id}`,
-      fields: [
-        { label: 'Subject',      value: formData.complaintTitle },
-        { label: 'Buyer',        value: formData.buyer },
-        { label: 'Order/PO',     value: formData.orderNo },
-        { label: 'Received on',  value: formData.date },
-        { label: 'Severity',     value: formData.severity },
-        { label: 'Status',       value: formData.status },
-        { label: 'Resolved By',  value: formData.resolvedBy },
-        { label: 'Resolution',   value: formData.resolutionDate },
-      ],
-      summary: [
-        'Complaint Description:', formData.description,
-        'Root Cause Investigation:', formData.rootCause,
-        'Corrective Actions:', formData.correctiveAction,
-        'Preventive Measures:', formData.preventiveAction
-      ]
-    });
-  };
-
+  
   const inputClass = "w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm font-bold text-text-1 focus:ring-2 focus:ring-accent outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
@@ -150,9 +126,7 @@ export function CustomerComplaintForm({ onNavigate, params }: Props) {
                <button type="button" onClick={() => onNavigate('customer-complaint-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
                   <Trash2 className="w-4 h-4 rotate-45" /> Edit Ticket
                </button>
-               <button type="button" onClick={exportPDF} className="btn btn-primary shadow-lg shadow-accent/20">
-                  <Download className="w-4 h-4 mr-2" /> Download Report
-               </button>
+               
              </>
           ) : (
             <>
@@ -344,23 +318,10 @@ export function CustomerComplaintForm({ onNavigate, params }: Props) {
                 <p className="text-sm font-bold uppercase tracking-widest">No evidence files</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3">
-                {formData.attachments.map((file: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between bg-bg-2 p-3 rounded-xl border border-border-main group">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="w-8 h-8 bg-accent/10 rounded flex items-center justify-center text-accent">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <span className="text-sm font-semibold text-text-1 truncate">{typeof file === 'string' ? file : file.name}</span>
-                    </div>
-                    {!isReadOnly && (
-                      <button type="button" onClick={() => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) }))} className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <AttachmentList
+                attachments={formData.attachments}
+                onRemove={!isReadOnly ? (i) => setFormData(p => ({ ...p, attachments: p.attachments.filter((_, idx) => idx !== i) })) : undefined}
+              />
             )}
           </div>
         </div>

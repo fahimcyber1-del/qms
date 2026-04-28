@@ -1,3 +1,4 @@
+import { openExportPreview } from '../utils/exportUtils';
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -7,7 +8,6 @@ import {
   MoreHorizontal, Trash, Package, Grid, List
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { ExportModal } from '../components/ExportModal';
 import { CertificateRecord } from '../types';
 import { getCertificates, saveCertificates, checkCertificateStatus, getDaysUntilExpiry } from '../utils/certificateUtils';
 
@@ -100,9 +100,28 @@ export function Certification({ onNavigate }: Props) {
     }
   };
 
-  const handleDownloadReport = async (cert: CertificateRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
+  const handleBulkExport = () => {
+    const recordsToExport = filteredCertificates.filter(c => selectedIds.has(c.id));
+    openExportPreview({
+      moduleName: 'Certification Register',
+      moduleId: 'certification_bulk',
+      fileName: 'Certification_Records_Export',
+      columns: ['Name', 'Number', 'Type', 'Issued By', 'Department', 'Expiry', 'Status'],
+      rows: recordsToExport.map(c => [
+        c.name,
+        c.number,
+        c.type,
+        c.issuedBy,
+        c.department,
+        c.expiryDate,
+        c.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleDownloadReport = (cert: CertificateRecord) => {
+    openExportPreview({
       moduleName: 'Compliance Certificate Report',
       moduleId: 'certification',
       recordId: cert.number,
@@ -165,7 +184,7 @@ export function Certification({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Oversee Global Compliance, QA Certs, and Operational Licenses.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 flex items-center gap-2 hover:bg-indigo-500/20" onClick={() => setIsExportModalOpen(true)}>
+          <button className="btn bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 flex items-center gap-2 hover:bg-indigo-500/20" onClick={handleBulkExport}>
             <Download className="w-4 h-4" /> Export Report
           </button>
           <button className="btn btn-primary flex items-center gap-2 shadow-lg shadow-accent/20 px-6" onClick={() => onNavigate('certification-form', { mode: 'create' })}>
@@ -383,22 +402,9 @@ export function Certification({ onNavigate }: Props) {
         />
       </motion.div>
 
-      <ExportModal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setIsExportModalOpen(false)} 
-        data={filteredCertificates}
-        title="Certification Index Report"
-        columns={[
-          { key: 'number', label: 'Cert No' },
-          { key: 'name', label: 'Name' },
-          { key: 'issuedBy', label: 'Authority' },
-          { key: 'type', label: 'Type' },
-          { key: 'issueDate', label: 'Issued' },
-          { key: 'expiryDate', label: 'Expires' },
-          { key: 'department', label: 'Dept' },
-          { key: 'status', label: 'Status' },
-        ]}
-      />
+      
     </motion.div>
   );
 }
+
+

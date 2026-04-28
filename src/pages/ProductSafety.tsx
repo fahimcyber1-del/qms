@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldAlert, CheckCircle2, AlertCircle, Plus, Download, 
@@ -6,8 +7,6 @@ import {
   ChevronRight, ShieldCheck, Clock, User, Building, X, AlertTriangle, ShieldCheck as SafetyIcon
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -84,34 +83,8 @@ export function ProductSafety({ onNavigate }: Props) {
     XLSX.writeFile(wb, "Product_Safety_Report.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Product Safety',
-      columns: ['ID', 'Title', 'Product Type', 'Buyer', 'Date', 'Status'],
-      rows: filteredRecords.map(r => [r.id, r.assessmentTitle, r.productType, r.buyer, r.date, r.status]),
-      fileName: 'Product_Safety_Management_Report'
-    });
-  };
-
-  const exportSinglePDF = async (record: SafetyRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Product Safety Assessment',
-      moduleId: 'product-safety',
-      recordId: record.id,
-      fileName: `Safety_${record.id}`,
-      fields: [
-        { label: 'Assessment Title', value: record.assessmentTitle },
-        { label: 'Product Type',     value: record.productType },
-        { label: 'Buyer / Client',    value: record.buyer },
-        { label: 'Department',       value: record.department },
-        { label: 'Safety Officer',    value: record.responsiblePerson },
-        { label: 'Assessment Date',  value: record.date },
-        { label: 'Compliance Status',value: record.status },
-      ]
-    });
-  };
-
+  
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -126,9 +99,7 @@ export function ProductSafety({ onNavigate }: Props) {
           <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
             <Download className="w-4 h-4" /> Excel
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('product-safety-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New Assessment
           </button>
@@ -223,9 +194,7 @@ export function ProductSafety({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('product-safety-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

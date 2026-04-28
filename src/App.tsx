@@ -78,6 +78,7 @@ import { JobDescriptionManagementForm } from './pages/JobDescriptionManagementFo
 import { MeetingMinutes } from './pages/MeetingMinutes';
 import { MeetingMinutesForm } from './pages/MeetingMinutesForm';
 import { ChangeManagementPage } from './pages/ChangeManagementPage';
+import { ExportPreview } from './pages/ExportPreview';
 
 // ─── Default user profile ───────────────────────────────────────
 const DEFAULT_PROFILE: UserProfile = {
@@ -114,6 +115,15 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [pageParams, setPageParams] = useState<any>(null);
+  const [isExportPreview, setIsExportPreview] = useState(() => window.location.hash === '#export-preview');
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setIsExportPreview(window.location.hash === '#export-preview');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   // ── Theme ───────────────────────────────────────────────────────
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -368,6 +378,10 @@ export default function App() {
   }
 
   // ── Main App ─────────────────────────────────────────────────────
+  if (isExportPreview) {
+    return <ExportPreview />;
+  }
+
   return (
     <div id="app">
       <Sidebar

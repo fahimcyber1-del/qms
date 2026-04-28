@@ -78,28 +78,7 @@ export function KPIModule({ onNavigate }: Props) {
     if (onNavigate) onNavigate('kpi-form', { mode: 'view', data: record });
   };
 
-  const exportSinglePDF = async (record: SmartKPI) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'KPI Performance Report',
-      moduleId: 'kpi',
-      recordId: record.id || 'N/A',
-      fileName: `KPI_${record.kpiName.replace(/\s+/g, '_')}`,
-      fields: [
-        { label: 'KPI Metric',     value: record.kpiName },
-        { label: 'Category',       value: record.kpiCategory },
-        { label: 'Source Module',   value: record.dataSourceModule },
-        { label: 'Calculations',   value: record.autoDataFetch ? 'Automated Engine' : 'Manual Entry' },
-        { label: 'Formula Matrix', value: record.kpiFormula || '—' },
-        { label: 'Current Value',  value: String(record.currentValue ?? '0') },
-        { label: 'Target Value',   value: String(record.targetValue) },
-        { label: 'Warning Threshold', value: String(record.warningThreshold) },
-        { label: 'Critical Threshold', value: String(record.criticalThreshold) },
-        { label: 'Status',         value: record.status },
-      ]
-    });
-  };
-
+  
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 md:p-8 space-y-8 min-h-full">
       {/* ── HEADER ── */}
@@ -181,7 +160,7 @@ export function KPIModule({ onNavigate }: Props) {
                     <td className="py-4 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => handleView(kpi)} className="p-1.5 text-text-3 hover:text-emerald-500 transition-colors" title="View Detail"><Eye className="w-4 h-4" /></button>
-                        <button onClick={() => exportSinglePDF(kpi)} className="p-1.5 text-text-3 hover:text-indigo-500 transition-colors" title="Download PDF"><Download className="w-4 h-4" /></button>
+                        
                         <button onClick={() => handleEdit(kpi)} className="p-1.5 text-text-3 hover:text-accent transition-colors" title="Edit"><Edit3 className="w-4 h-4" /></button>
                         <button onClick={async () => { if(confirm('Delete this KPI rule?')) { await db.kpiRecords.delete(kpi.id!); loadData(); } }} className="p-1.5 text-text-3 hover:text-red-500 transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
                       </div>

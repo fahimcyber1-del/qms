@@ -3,10 +3,11 @@ import { motion } from 'motion/react';
 import { 
   ArrowLeft, Save, X, TestTube2, Building, User, Calendar, 
   Beaker, CheckCircle2, AlertCircle, Info, Paperclip, Plus, Trash2, FileText, 
-  Microscope, Tag, ShoppingBag, Download, Activity, FlaskConical
+  Microscope, Tag, ShoppingBag, Download, Activity, FlaskConical, Edit2
 } from 'lucide-react';
 import { getTable } from '../db/db';
 import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -111,26 +112,29 @@ export function TestingManagementForm({ onNavigate, params }: Props) {
     setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAtts] }));
   };
 
-  const exportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Laboratory Test Report',
-      moduleId: 'testing',
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Testing Management',
+      moduleId: 'testing_record',
       recordId: formData.id,
-      fileName: `Test_${formData.id}`,
+      fileName: `Testing_Record_${formData.id}`,
       fields: [
-        { label: 'Test Name',      value: formData.testName },
-        { label: 'Test Type',      value: formData.testType },
-        { label: 'Sample ID',      value: formData.sampleId },
-        { label: 'Lab Name',       value: formData.labName },
-        { label: 'Buyer',          value: formData.buyer },
-        { label: 'Style',          value: formData.style },
+        { label: 'Test Name', value: formData.testName },
+        { label: 'Sample ID', value: formData.sampleId },
+        { label: 'Category', value: formData.testType },
+        { label: 'Buyer', value: formData.buyer },
+        { label: 'Style', value: formData.style },
+        { label: 'Lab Name', value: formData.labName },
+        { label: 'Date', value: formData.date },
+        { label: 'Status', value: formData.status },
         { label: 'Expected Value', value: formData.expectedValue },
-        { label: 'Actual Value',   value: formData.actualValue },
-        { label: 'Result',         value: formData.testResult },
-        { label: 'Status',         value: formData.status },
+        { label: 'Actual Value', value: formData.actualValue },
+        { label: 'Result Summary', value: formData.testResult, fullWidth: true },
+        { label: 'Remarks', value: formData.remarks, fullWidth: true },
+        { label: 'Responsible', value: formData.responsiblePerson },
+        { label: 'Department', value: formData.department }
       ],
-      summary: formData.remarks ? ['Remarks:', formData.remarks] : undefined
+      attachments: formData.attachments
     });
   };
 
@@ -153,11 +157,11 @@ export function TestingManagementForm({ onNavigate, params }: Props) {
         <div className="flex items-center gap-3">
           {isReadOnly ? (
              <>
-               <button type="button" onClick={() => onNavigate('testing-management-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
-                  <Trash2 className="w-4 h-4 rotate-45" /> Edit Test
+               <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Download className="w-4 h-4" /> Export
                </button>
-               <button type="button" onClick={exportPDF} className="btn btn-primary shadow-lg shadow-accent/20">
-                  <Download className="w-4 h-4 mr-2" /> Download Report
+               <button type="button" onClick={() => onNavigate('testing-management-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Edit2 className="w-4 h-4" /> Edit Test
                </button>
              </>
           ) : (

@@ -9,6 +9,8 @@ import {
 import { getTable } from '../db/db';
 import { DEPARTMENTS } from '../config/moduleConfigs';
 import { UniversalRecord, FileAttachment } from '../types';
+import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
 
 interface TrainingFormProps {
   onNavigate: (page: string, params?: any) => void;
@@ -137,6 +139,29 @@ export function TrainingForm({ onNavigate, params }: TrainingFormProps) {
     }));
   };
 
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Training Specification',
+      moduleId: 'training_detail',
+      recordId: formData.id,
+      fileName: `Training_${formData.id}`,
+      fields: [
+        { label: 'Training Title', value: formData.trainingTitle },
+        { label: 'Category', value: formData.trainingType },
+        { label: 'Department', value: formData.department },
+        { label: 'Instructor', value: formData.trainer },
+        { label: 'Scheduled Date', value: formData.date },
+        { label: 'Duration (Hrs)', value: String(formData.duration) },
+        { label: 'Venue', value: formData.venue },
+        { label: 'Total Attendance', value: String(formData.participantCount) },
+        { label: 'Status', value: formData.status },
+        { label: 'Syllabus / Content', value: formData.description, fullWidth: true },
+        { label: 'Attendees', value: formData.participants, fullWidth: true }
+      ],
+      attachments: formData.attachments
+    });
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const now = new Date().toISOString();
@@ -177,77 +202,7 @@ export function TrainingForm({ onNavigate, params }: TrainingFormProps) {
     }
   };
 
-  const exportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
-    const statusColor: Record<string, string> = {
-      'Completed': '#16a34a', 'In Progress': '#3b82f6',
-      'Open': '#f59e0b', 'Cancelled': '#dc2626'
-    };
-
-    // Build participant list as table rows if text is present
-    const participantLines = (formData.participants || '').split('\n').filter(p => p.trim());
-    const participantRows = participantLines.map((name, i) => [String(i + 1), name.trim(), '—', '']);
-
-    await exportDetailToPDF({
-      moduleName: 'Personnel Training Record',
-      moduleId: 'training',
-      recordId: formData.id || 'N/A',
-      fileName: `Training_${(formData.trainingTitle || 'Record').replace(/\s+/g, '_')}`,
-      sections: [
-        {
-          title: '1. Training Programme Details',
-          fields: [
-            { label: 'Training Title / Subject', value: formData.trainingTitle || '—', fullWidth: true },
-            { label: 'Training Category', value: formData.trainingType || '—' },
-            { label: 'Target Department', value: formData.department || '—' },
-            { label: 'Execution Status', value: formData.status || '—' },
-            { label: 'ISO Reference', value: 'ISO 9001:2015 — Clause 7.2 (Competence)' },
-          ]
-        },
-        {
-          title: '2. Logistics & Personnel',
-          fields: [
-            { label: 'Training Date', value: formData.date || '—' },
-            { label: 'Duration', value: `${formData.duration || 1} Hour(s)` },
-            { label: 'Venue / Location', value: formData.venue || '—' },
-            { label: 'Lead Instructor / Trainer', value: formData.trainer || '—' },
-            { label: 'Expected Participants', value: String(formData.participantCount || 0) },
-            { label: 'Responsible Person', value: formData.responsiblePerson || '—' },
-          ]
-        },
-        {
-          title: '3. Syllabus & Content',
-          fields: [
-            { label: 'Training Content / Description', value: formData.description || 'Not specified.', fullWidth: true },
-            { label: 'Effectiveness Evaluation', value: formData.effectiveness || 'Not Evaluated' },
-          ]
-        }
-      ],
-      tables: participantRows.length > 0 ? [
-        {
-          title: '4. Attendance Register',
-          columns: ['#', 'Participant Name / ID', 'Designation', 'Signature'],
-          rows: participantRows,
-          columnStyles: {
-            0: { cellWidth: 12, halign: 'center' },
-            1: { cellWidth: 65, fontStyle: 'bold' },
-            2: { cellWidth: 50 },
-            3: { cellWidth: 45 },
-          }
-        }
-      ] : undefined,
-      summary: [
-        `Training Status: ${formData.status}`,
-        formData.status === 'Completed'
-          ? `Training completed successfully on ${formData.date}. ${formData.participantCount || 0} participant(s) attended.`
-          : `Training scheduled for ${formData.date}. Status: ${formData.status}.`
-      ],
-      signatureLabels: ['Lead Instructor', 'Dept. Head', 'HR Manager', 'QA Acknowledgment'],
-      styleOverrides: { accentColor: statusColor[formData.status || ''] || '#3b82f6' }
-    });
-  };
-
+  
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -288,11 +243,11 @@ export function TrainingForm({ onNavigate, params }: TrainingFormProps) {
         <div className="flex items-center gap-3">
            {isView ? (
               <>
-                <button type="button" onClick={() => onNavigate('training-form', { mode: 'edit', recordId: formData.id })} className="btn btn-ghost border border-border-main flex items-center gap-2">
-                   <Plus className="w-4 h-4 rotate-45" /> Modify Record
+                <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                   <Download className="w-4 h-4" /> Export Training
                 </button>
-                <button type="button" onClick={exportPDF} className="btn btn-primary shadow-lg shadow-accent/20">
-                   <Download className="w-4 h-4 mr-2" /> Download Record
+                <button type="button" onClick={() => onNavigate('training-form', { mode: 'edit', recordId: formData.id })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                   <Edit2 className="w-4 h-4" /> Edit Training
                 </button>
               </>
            ) : (
@@ -474,26 +429,10 @@ export function TrainingForm({ onNavigate, params }: TrainingFormProps) {
                   <p className="text-xs font-black uppercase tracking-widest text-center px-4">No materials attached</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {formData.attachments?.map((file, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 bg-bg-2 rounded-xl group border border-border-main hover:border-accent/40 transition-all">
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="p-2 bg-accent/10 rounded-lg text-accent">
-                          <FileText className="w-4 h-4" />
-                        </div>
-                        <span className="text-xs font-bold text-text-1 truncate">{file.name}</span>
-                      </div>
-                      {!isReadOnly && (
-                        <button 
-                          onClick={() => removeAttachment(i)}
-                          className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <AttachmentList
+                  attachments={formData.attachments || []}
+                  onRemove={!isReadOnly ? (i) => removeAttachment(i) : undefined}
+                />
               )}
             </div>
           </div>

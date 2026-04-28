@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   SearchCode, CheckCircle2, AlertCircle, Plus, Download, 
@@ -6,8 +7,7 @@ import {
   ChevronRight, Binoculars, Clock, User, Building, X, Microscope, Activity, Layers
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
+import { openExportPreview } from '../utils/exportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -80,42 +80,25 @@ export function RootCauseAnalysis({ onNavigate }: Props) {
     }
   };
 
-  const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filteredRecords);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "RCA Records");
-    XLSX.writeFile(wb, "RCA_Records_Report.xlsx");
-  };
-
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Root Cause Analysis (RCA)',
-      columns: ['ID', 'Problem Title', 'Source', 'Ref ID', 'Method', 'Status'],
-      rows: filteredRecords.map(r => [r.id, r.problemTitle, r.sourceModule, r.referenceId, r.analysisMethod, r.status]),
-      fileName: 'RCA_Management_Report'
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'RCA Master Register',
+      moduleId: 'rca_global',
+      fileName: 'Root_Cause_Analysis_Masterlist',
+      columns: ['Problem', 'Source', 'Reference', 'Method', 'Date', 'Status'],
+      rows: filteredRecords.map(r => [
+        r.problemTitle,
+        r.sourceModule,
+        r.referenceId,
+        r.analysisMethod,
+        new Date(r.date).toLocaleDateString(),
+        r.status
+      ])
     });
   };
 
-  const exportSinglePDF = async (record: RCARecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Root Cause Analysis Report',
-      moduleId: 'rca',
-      recordId: record.id,
-      fileName: `RCA_${record.id}`,
-      fields: [
-        { label: 'Problem Summary', value: record.problemTitle },
-        { label: 'Source Module',   value: record.sourceModule },
-        { label: 'Reference ID',    value: record.referenceId },
-        { label: 'Department',      value: record.department },
-        { label: 'Responsible',     value: record.responsiblePerson },
-        { label: 'Analysis Method', value: record.analysisMethod },
-        { label: 'Investigation Date', value: record.date },
-        { label: 'Status',          value: record.status },
-      ]
-    });
-  };
-
+  
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -127,12 +110,10 @@ export function RootCauseAnalysis({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Deep-dive analysis of recurring problems and critical failures.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
-            <Download className="w-4 h-4" /> Excel
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('root-cause-analysis-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New Investigation
           </button>
@@ -245,9 +226,7 @@ export function RootCauseAnalysis({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('root-cause-analysis-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

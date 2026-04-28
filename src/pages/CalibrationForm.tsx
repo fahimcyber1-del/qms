@@ -4,10 +4,11 @@ import {
   ArrowLeft, Save, X, Settings2, Building, User, Calendar, 
   Wrench, CheckCircle2, AlertCircle, Info, Paperclip, Plus, Trash2, FileText, 
   Microscope, Award, ShieldCheck, Tag, Ruler, Download, Info as InfoIcon, 
-  Activity, Flag, Search
+  Activity, Flag, Search, Edit2
 } from 'lucide-react';
 import { getTable } from '../db/db';
 import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -71,6 +72,30 @@ export function CalibrationForm({ onNavigate, params }: Props) {
     attachments: initialData.attachments || []
   });
 
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Calibration Certificate Record',
+      moduleId: 'calibration_detail',
+      recordId: formData.id,
+      fileName: `Calibration_${formData.equipmentId}_Certificate`,
+      layout: 'technical',
+      fields: [
+        { label: 'Equipment Name', value: formData.equipmentName },
+        { label: 'Equipment ID', value: formData.equipmentId },
+        { label: 'Department', value: formData.department },
+        { label: 'Responsible Custodian', value: formData.responsiblePerson },
+        { label: 'Certificate Number', value: formData.certificateNumber },
+        { label: 'Calibration Agency', value: formData.calibrationAgency },
+        { label: 'Last Calibration', value: formData.lastCalibrationDate },
+        { label: 'Next Calibration', value: formData.nextCalibrationDate },
+        { label: 'Frequency', value: formData.calibrationFrequency },
+        { label: 'Status', value: formData.status },
+        { label: 'Remarks / Notes', value: formData.remarks, fullWidth: true }
+      ],
+      attachments: formData.attachments
+    });
+  };
+
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (isReadOnly) return;
@@ -109,68 +134,7 @@ export function CalibrationForm({ onNavigate, params }: Props) {
     setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAtts] }));
   };
 
-  const exportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
-    const isValid = formData.status === 'Valid';
-    const statusColor = isValid ? '#16a34a' : '#dc2626';
-
-    // Calculate days until next calibration
-    const today = new Date();
-    const nextDue = formData.nextCalibrationDate ? new Date(formData.nextCalibrationDate) : null;
-    const daysRemaining = nextDue ? Math.ceil((nextDue.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
-    const dueStatus = daysRemaining === null ? '—'
-      : daysRemaining < 0 ? `OVERDUE by ${Math.abs(daysRemaining)} days`
-      : daysRemaining <= 30 ? `DUE SOON — ${daysRemaining} days remaining`
-      : `${daysRemaining} days remaining`;
-
-    await exportDetailToPDF({
-      moduleName: 'Equipment Calibration Certificate',
-      moduleId: 'calibration',
-      recordId: formData.equipmentId || formData.id,
-      fileName: `CalibrationCert_${formData.equipmentId || formData.id}`,
-      sections: [
-        {
-          title: '1. Instrument Identification',
-          fields: [
-            { label: 'Equipment Name', value: formData.equipmentName || '—' },
-            { label: 'Equipment Tag ID', value: formData.equipmentId || '—' },
-            { label: 'Custodian Department', value: formData.department || '—' },
-            { label: 'Responsible Custodian', value: formData.responsiblePerson || '—' },
-            { label: 'Integrity Status', value: formData.status || '—' },
-            { label: 'Days Until Next Due', value: dueStatus },
-          ]
-        },
-        {
-          title: '2. Calibration Details & Certificate',
-          fields: [
-            { label: 'Certificate Number', value: formData.certificateNumber || '—' },
-            { label: 'Calibration Agency / Lab', value: formData.calibrationAgency || '—' },
-            { label: 'Last Calibration Date', value: formData.lastCalibrationDate || '—' },
-            { label: 'Next Calibration Due', value: formData.nextCalibrationDate || '—' },
-            { label: 'Service Frequency', value: formData.calibrationFrequency || '—' },
-            { label: 'ISO Reference', value: 'ISO 9001:2015 — Clause 7.1.5' },
-          ]
-        },
-        {
-          title: '3. Calibration Result & Remarks',
-          fields: [
-            { label: 'Overall Result', value: isValid ? 'VALID — In Service' : `${formData.status} — Action Required` },
-            { label: 'Remarks / Notes', value: formData.remarks || 'No additional remarks.', fullWidth: true },
-          ]
-        }
-      ],
-      summary: [
-        `Calibration Result: ${formData.status}`,
-        isValid
-          ? `Equipment is in calibrated service. Next due: ${formData.nextCalibrationDate || 'N/A'}.`
-          : `Equipment is ${formData.status}. Immediate recalibration or withdrawal from service required.`
-      ],
-      signatureLabels: ['Calibration Technician', 'QA Approval', 'Custodian', 'Valid Until'],
-      styleOverrides: { accentColor: statusColor }
-    });
-  };
-
+  
   const inputClass = "w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm font-bold text-text-1 focus:ring-2 focus:ring-accent outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
@@ -199,11 +163,11 @@ export function CalibrationForm({ onNavigate, params }: Props) {
         <div className="flex items-center gap-3">
           {isReadOnly ? (
              <>
-               <button type="button" onClick={() => onNavigate('calibration-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
-                  <Trash2 className="w-4 h-4 rotate-45" /> Modify Record
+               <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Download className="w-4 h-4" /> Export
                </button>
-               <button type="button" onClick={exportPDF} className="btn btn-primary shadow-lg shadow-accent/20">
-                  <Download className="w-4 h-4 mr-2" /> Download Record
+               <button type="button" onClick={() => onNavigate('calibration-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Edit2 className="w-4 h-4" /> Modify Record
                </button>
              </>
           ) : (

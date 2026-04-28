@@ -3,10 +3,11 @@ import { motion } from 'motion/react';
 import { 
   ArrowLeft, Save, X, AlertOctagon, Building, User, Calendar, 
   ShieldAlert, CheckCircle2, AlertCircle, Info, Paperclip, Plus, Trash2, FileText, 
-  Activity, Layers, Tag, Download, Info as InfoIcon, Flag, Search
+  Activity, Layers, Tag, Download, Info as InfoIcon, Flag, Search, Edit2
 } from 'lucide-react';
 import { getTable } from '../db/db';
 import { AttachmentList } from '../components/AttachmentList';
+import { openExportPreview } from '../utils/exportUtils';
 
 interface Props {
   onNavigate: (page: string, params?: any) => void;
@@ -109,74 +110,33 @@ export function NCRForm({ onNavigate, params }: Props) {
     
     setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAtts] }));
   };
-
-  const exportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
-    const isMajor = formData.ncrType === 'Product' || formData.ncrType === 'System';
-    const severityColor = isMajor ? '#dc2626' : '#f59e0b';
-    const statusColor: Record<string, string> = {
-      'Closed': '#16a34a', 'Open': '#dc2626',
-      'Under Review': '#f59e0b', 'Disposition Decided': '#3b82f6',
-      'Corrective Action': '#8b5cf6'
-    };
-
-    await exportDetailToPDF({
-      moduleName: 'Non-Conformance Report (NCR)',
-      moduleId: 'ncr',
-      recordId: formData.id,
-      fileName: `NCR_${formData.id}`,
-      sections: [
-        {
-          title: '1. NCR Identification',
-          fields: [
-            { label: 'NCR Reference No.', value: formData.id },
-            { label: 'NCR Title', value: formData.ncrTitle || '—', fullWidth: true },
-            { label: 'Category', value: formData.ncrType || '—' },
-            { label: 'Detection Stage', value: formData.detectionStage || '—' },
-            { label: 'Detected By', value: formData.detectedBy || '—' },
-            { label: 'Quantity Impacted (Pcs)', value: String(formData.affectedQuantity || 0) },
-          ]
-        },
-        {
-          title: '2. Responsibility & Timeline',
-          fields: [
-            { label: 'Department', value: formData.department || '—' },
-            { label: 'Responsible Person', value: formData.responsiblePerson || '—' },
-            { label: 'Current Status', value: formData.status || '—' },
-            { label: 'Target Verification Date', value: formData.verificationDate || '—' },
-          ]
-        },
-        {
-          title: '3. Non-Conformance Description',
-          fields: [
-            { label: 'Detailed Description', value: formData.description || '—', fullWidth: true },
-          ]
-        },
-        {
-          title: '4. Disposition Decision',
-          fields: [
-            { label: 'Disposition', value: formData.disposition || '—' },
-            { label: 'ISO Reference', value: 'ISO 9001:2015 — Clause 8.7' },
-          ]
-        },
-        {
-          title: '5. Root Cause & Corrective Action',
-          fields: [
-            { label: 'Root Cause (Initial Assessment)', value: formData.rootCause || 'Pending analysis.', fullWidth: true },
-            { label: 'Corrective Action Taken', value: formData.correctiveAction || 'Pending.', fullWidth: true },
-          ]
-        }
+  
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Nonconformance Report (NCR)',
+      moduleId: 'ncr_record',
+      recordId: formData.id || 'N/A',
+      fileName: `NCR_${formData.id || 'export'}`,
+      fields: [
+        { label: 'NCR Title', value: formData.ncrTitle || 'N/A' },
+        { label: 'Category', value: formData.ncrType || 'N/A' },
+        { label: 'Department', value: formData.department || 'N/A' },
+        { label: 'Responsible Person', value: formData.responsiblePerson || 'N/A' },
+        { label: 'Detected By', value: formData.detectedBy || 'N/A' },
+        { label: 'Detection Stage', value: formData.detectionStage || 'N/A' },
+        { label: 'Affected Quantity', value: String(formData.affectedQuantity || 0) },
+        { label: 'Disposition', value: formData.disposition || 'N/A' },
+        { label: 'Workflow Status', value: formData.status || 'N/A' },
+        { label: 'Target Verification', value: formData.verificationDate || 'N/A' },
+        { label: 'Description', value: formData.description || 'N/A', fullWidth: true },
+        { label: 'Initial Root Cause', value: formData.rootCause || 'N/A', fullWidth: true },
+        { label: 'Corrective Action Taken', value: formData.correctiveAction || 'N/A', fullWidth: true },
       ],
-      summary: [
-        `Disposition Decision: ${formData.disposition || 'Pending'}`,
-        `Current Status: ${formData.status} — ${formData.status === 'Closed' ? 'NCR resolved and closed.' : 'Action still required.'}`
-      ],
-      signatureLabels: ['QC Inspector', 'Dept. Head', 'QA Manager', 'Closure Authorization'],
-      styleOverrides: { accentColor: statusColor[formData.status] || severityColor }
+      attachments: formData.attachments
     });
   };
 
+  
   const inputClass = "w-full bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm font-bold text-text-1 focus:ring-2 focus:ring-accent outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
@@ -196,11 +156,11 @@ export function NCRForm({ onNavigate, params }: Props) {
         <div className="flex items-center gap-3">
           {isReadOnly ? (
              <>
-               <button type="button" onClick={() => onNavigate('ncr-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
-                  <Trash2 className="w-4 h-4 rotate-45" /> Edit Record
+               <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Download className="w-4 h-4" /> Export
                </button>
-               <button type="button" onClick={exportPDF} className="btn btn-primary shadow-lg shadow-accent/20">
-                  <Download className="w-4 h-4 mr-2" /> Download NCR
+               <button type="button" onClick={() => onNavigate('ncr-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Edit2 className="w-4 h-4" /> Edit Record
                </button>
              </>
           ) : (

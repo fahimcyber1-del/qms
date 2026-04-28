@@ -6,12 +6,8 @@ import {
   Building2, MapPin, Camera, Trash2, FileText, Sliders, Droplets, CheckCircle2, Zap, AlignLeft, AlignCenter,
   AlertTriangle, AlertCircle, Award
 } from 'lucide-react';
-import {
-  loadOrgSettings, saveOrgSettings, OrgSettings,
-  loadPdfSettings, savePdfSettings,
-  PdfExportSettings, PdfHeaderStyle, PdfColorAccent, PdfFontStyle, PdfModuleId,
-  ACCENT_PALETTES, HEADER_STYLE_META, MODULE_META, DEFAULT_PDF_SETTINGS
-} from '../utils/pdfHeader';
+// @ts-ignore
+import { loadOrgSettings, saveOrgSettings, OrgSettings, loadPdfSettings, savePdfSettings, PdfExportSettings, PdfHeaderStyle, PdfColorAccent, PdfFontStyle, PdfModuleId, ACCENT_PALETTES, HEADER_STYLE_META, MODULE_META, DEFAULT_PDF_SETTINGS } from '../utils/pdfEngine';
 import { exportFullBackup, importRestoreBackup, downloadBackupFile, BackupData } from '../utils/backupRestore';
 
 import {
@@ -326,6 +322,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
      entries.push([String(entries.length + 1), sessionStart, 'SYSTEM_INFO', 'ISO 9001:2015 compliance modules operational.']);
      entries.push([String(entries.length + 1), sessionStart, 'SYSTEM_INFO', 'Data stored in local IndexedDB — no external transmission.']);
 
+     // @ts-ignore
      const { exportTableToPDF } = await import('../utils/pdfExportUtils');
      await exportTableToPDF({
        moduleName: 'Security Audit Logs',
@@ -686,7 +683,9 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
                     <h3 className="text-sm font-bold text-text-1 uppercase tracking-wide mb-4">Color Palette & Fonts</h3>
                     <label className="text-[11px] font-bold text-text-3 uppercase block mb-2">Accent Color</label>
                     <div className="flex flex-wrap gap-2 mb-5">
-                      {Object.entries(ACCENT_PALETTES).map(([color, palette]) => (
+                      {Object.entries(ACCENT_PALETTES).map(([color, p]) => {
+                        const palette = p as any;
+                        return (
                         <button key={color} disabled={!pdfSettings.globalEnableHeader}
                           onClick={() => updatePdf({ colorAccent: color as PdfColorAccent })}
                           className="flex flex-col items-center gap-1" title={palette.label}>
@@ -694,7 +693,7 @@ export function Settings({ isDarkMode, onToggleDarkMode, onAppearanceChange }: S
                             style={{ backgroundColor: `rgb(${palette.mid.join(',')})` }} />
                           <span className="text-[8px] text-text-3 font-medium">{palette.label}</span>
                         </button>
-                      ))}
+                      )})}
                     </div>
                     <label className="text-[11px] font-bold text-text-3 uppercase block mb-2">Typography</label>
                     <select disabled={!pdfSettings.globalEnableHeader} className="w-full bg-bg-2 border border-border-main rounded px-3 py-2 text-xs font-semibold text-text-1" value={pdfSettings.fontStyle} onChange={e => updatePdf({ fontStyle: e.target.value as PdfFontStyle })}>

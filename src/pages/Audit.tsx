@@ -1,5 +1,5 @@
+import { openExportPreview } from '../utils/exportUtils';
 import React, { useState, useMemo } from 'react';
-import { ExportModal } from '../components/ExportModal';
 import { Pagination } from '../components/Pagination';
 import { autoGenerateCAPA } from '../utils/capaUtils';
 
@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ClipboardCheck, AlertCircle, Clock, CheckCircle2, Plus, Download, 
   Database, Eye, Edit2, Trash2, FileText, X, Save, Filter, Calendar, 
-  Building, User, Users, Award, Search, ChevronRight, ShieldCheck
+  Building, User, Users, Award, Search, ChevronRight, ShieldCheck, CheckSquare, Square
 } from 'lucide-react';
 
 const containerVariants = {
@@ -241,8 +241,69 @@ export function Audit({ onNavigate }: AuditProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // Modals & Panels
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === paginatedAudits.length && paginatedAudits.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedAudits.map(a => a.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = () => {
+    if (window.confirm(`Delete ${selectedIds.size} audits?`)) {
+      const updated = audits.filter(a => !selectedIds.has(a.id));
+      setAudits(updated);
+      localStorage.setItem('garmentqms_audits', JSON.stringify(updated));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const exportBulkPDF = () => {
+    const records = filteredAudits.filter(a => selectedIds.has(a.id));
+    openExportPreview({
+      moduleName: 'Audit Management',
+      moduleId: 'audit_bulk',
+      fileName: 'Audit_Records_Export',
+      columns: ['Audit ID', 'Type', 'Department', 'Date', 'Result', 'Status'],
+      rows: records.map(a => [
+        a.auditId,
+        a.auditType,
+        a.department,
+        a.auditDate,
+        a.result,
+        a.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Audit Master Register',
+      moduleId: 'audit_global',
+      fileName: 'Audit_Management_Masterlist',
+      columns: ['Audit ID', 'Type', 'Department', 'Auditor', 'Date', 'Result', 'Status'],
+      rows: filteredAudits.map(a => [
+        a.auditId,
+        a.auditType,
+        a.department,
+        a.auditorName,
+        a.auditDate,
+        a.result,
+        a.status
+      ])
+    });
+  };
 
   // Derived Data
   const filteredAudits = useMemo(() => {
@@ -320,8 +381,6 @@ export function Audit({ onNavigate }: AuditProps) {
   };
 
   const downloadIndividualPDF = async (audit: AuditRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-
     const checklistRows: string[][] = [];
     if (audit.checklist) {
       AUDIT_CLAUSES.forEach(group => {
@@ -340,7 +399,7 @@ export function Audit({ onNavigate }: AuditProps) {
       });
     }
 
-    const attachments: { name: string; data: string }[] = [];
+    const attachments: any[] = [];
     if (audit.attachments) {
       audit.attachments.forEach((data, i) => attachments.push({ name: `Attachment ${i + 1}`, data }));
     }
@@ -352,7 +411,7 @@ export function Audit({ onNavigate }: AuditProps) {
       });
     }
 
-    await exportDetailToPDF({
+    openExportPreview({
       moduleName: 'Audit Compliance Report',
       moduleId: 'audit',
       recordId: audit.auditId,
@@ -371,13 +430,6 @@ export function Audit({ onNavigate }: AuditProps) {
         title: 'Audit Findings & Observations',
         columns: ['ID', 'Checkpoint', 'Finding', 'Evidence', 'Docs'],
         rows: checklistRows,
-        columnStyles: {
-          0: { cellWidth: 15, halign: 'center', fontStyle: 'bold' },
-          1: { cellWidth: 'auto' },
-          2: { cellWidth: 35, fontStyle: 'bold' },
-          3: { cellWidth: 60 },
-          4: { cellWidth: 15, halign: 'center' },
-        }
       }] : [],
       attachments
     });
@@ -399,8 +451,8 @@ export function Audit({ onNavigate }: AuditProps) {
           <button className="btn btn-ghost flex items-center gap-2" onClick={seedMockData}>
             <Database className="w-4 h-4" /> Seed Data
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={() => setIsExportModalOpen(true)}>
-            <Download className="w-4 h-4" /> Export
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
           <button className="btn btn-primary flex items-center gap-2" onClick={openCreate}>
             <Plus className="w-4 h-4" /> New Audit
@@ -444,26 +496,41 @@ export function Audit({ onNavigate }: AuditProps) {
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <select className="w-full md:w-36 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterType} onChange={(e) => {setFilterType(e.target.value); setCurrentPage(1);}}>
-            <option value="All">All Types</option>
-            <option value="Internal Audit">Internal Audit</option>
-            <option value="3rd Party Audit">3rd Party Audit</option>
-            <option value="Buyer Audit">Buyer Audit</option>
-          </select>
-          <select className="w-full md:w-36 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => {setFilterStatus(e.target.value); setCurrentPage(1);}}>
-            <option value="All">All Statuses</option>
-            <option value="Open">Open</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Closed">Closed</option>
-          </select>
-          <div className="flex items-center gap-2 bg-bg-2 px-3 py-1.5 rounded-xl flex-1 md:flex-none">
-            <Calendar className="w-4 h-4 text-text-2" />
-            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => {setStartDate(e.target.value); setCurrentPage(1);}} />
-            <span className="text-text-2 text-sm px-1">-</span>
-            <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => {setEndDate(e.target.value); setCurrentPage(1);}} />
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+            <button onClick={exportBulkPDF} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+              <Download className="w-4 h-4" /> Export PDF
+            </button>
+            <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <select className="w-full md:w-36 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterType} onChange={(e) => {setFilterType(e.target.value); setCurrentPage(1);}}>
+              <option value="All">All Types</option>
+              <option value="Internal Audit">Internal Audit</option>
+              <option value="3rd Party Audit">3rd Party Audit</option>
+              <option value="Buyer Audit">Buyer Audit</option>
+            </select>
+            <select className="w-full md:w-36 bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => {setFilterStatus(e.target.value); setCurrentPage(1);}}>
+              <option value="All">All Statuses</option>
+              <option value="Open">Open</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Closed">Closed</option>
+            </select>
+            <div className="flex items-center gap-2 bg-bg-2 px-3 py-1.5 rounded-xl flex-1 md:flex-none">
+              <Calendar className="w-4 h-4 text-text-2" />
+              <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={startDate} onChange={(e) => {setStartDate(e.target.value); setCurrentPage(1);}} />
+              <span className="text-text-2 text-sm px-1">-</span>
+              <input type="date" className="bg-transparent border-none text-sm text-text-1 outline-none w-full md:w-auto" value={endDate} onChange={(e) => {setEndDate(e.target.value); setCurrentPage(1);}} />
+            </div>
+          </div>
+        )}
       </motion.div>
 
       {/* Data Table */}
@@ -472,7 +539,14 @@ export function Audit({ onNavigate }: AuditProps) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-bg-2/50 border-b border-border-main text-[10px] uppercase tracking-widest text-text-2 font-black">
-                <th className="p-4 pl-6">Audit ID</th>
+                <th className="p-4 w-10 pl-6">
+                  <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                    {selectedIds.size === paginatedAudits.length && paginatedAudits.length > 0
+                      ? <CheckSquare className="w-4 h-4 text-accent" />
+                      : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-4">Audit ID</th>
                 <th className="p-4">Type & Dept</th>
                 <th className="p-4">Date</th>
                 <th className="p-4">Result</th>
@@ -483,7 +557,7 @@ export function Audit({ onNavigate }: AuditProps) {
             <tbody className="divide-y divide-border-main">
               {paginatedAudits.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-12 text-center text-text-2">
+                  <td colSpan={7} className="p-12 text-center text-text-2">
                     <div className="flex flex-col items-center justify-center gap-3">
                       <Search className="w-8 h-8 opacity-20" />
                       <p className="text-sm font-medium">No audit records found matching your criteria.</p>
@@ -495,7 +569,12 @@ export function Audit({ onNavigate }: AuditProps) {
                   key={audit.id} 
                   className="hover:bg-bg-2/60 transition-all duration-200 group relative" 
                 >
-                  <td className="p-4 pl-6 font-mono font-bold text-text-1 text-sm">{audit.auditId}</td>
+                  <td className="p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => toggleSelect(audit.id)} className="text-text-3 hover:text-accent transition-colors">
+                      {selectedIds.has(audit.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  </td>
+                  <td className="p-4 font-mono font-bold text-text-1 text-sm">{audit.auditId}</td>
                   <td className="p-4">
                     <div className="font-bold text-text-1 text-sm">{audit.auditType}</div>
                     <div className="text-[11px] text-text-2 font-medium mt-0.5 opacity-80 uppercase tracking-tight">{audit.department} {audit.externalCompany ? `• ${audit.externalCompany}` : ''}</div>
@@ -538,13 +617,7 @@ export function Audit({ onNavigate }: AuditProps) {
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-green-500/10 hover:text-green-500 text-text-2 transition-all cursor-pointer" 
-                        title="Download PDF"
-                        onClick={(e) => { e.stopPropagation(); downloadIndividualPDF(audit); }}
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       {audit.result === 'Non Conformity' && (
                         <button 
                           className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-purple-main/10 hover:text-purple-main text-text-2 transition-all cursor-pointer" 
@@ -596,40 +669,10 @@ export function Audit({ onNavigate }: AuditProps) {
       </motion.div>
 
       {/* Slide-over Panel */}
-      <ExportModal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setIsExportModalOpen(false)} 
-        data={filteredAudits}
-        dateKey="auditDate"
-        extraFilters={[
-          {
-            key: 'result',
-            label: 'Filter by Result',
-            options: [
-              { label: 'Compliant', value: 'Compliant' },
-              { label: 'Non Conformity', value: 'Non Conformity' },
-              { label: 'Observation', value: 'Observation' },
-              { label: 'Pass', value: 'Pass' },
-              { label: 'Fail', value: 'Fail' },
-              { label: 'Conditional Pass', value: 'Conditional Pass' }
-            ]
-          }
-        ]}
-        columns={[
-          {key: 'auditId', label: 'Audit ID'},
-          {key: 'auditType', label: 'Audit Type'},
-          {key: 'externalCompany', label: 'External Company'},
-          {key: 'department', label: 'Department'},
-          {key: 'nonConformitySummary', label: 'Non Conformity Summary'},
-          {key: 'result', label: 'Result'},
-          {key: 'score', label: 'Score'},
-          {key: 'auditorName', label: 'Auditor'},
-          {key: 'auditDate', label: 'Date'},
-          {key: 'status', label: 'Status'}
-        ]}
-        title="Audit Report"
-      />
+      
     </motion.div>
   );
 }
+
+
 

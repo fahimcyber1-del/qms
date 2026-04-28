@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Plus, Save, Activity, Calendar, User, AlertTriangle, Layers, X, Edit2, Trash2, Download, Search, BookOpen, Tag, ChevronDown } from 'lucide-react';
 import { InspectionRecord, InspectionDefect } from '../types';
 import { getProductionQualityRecords, saveProductionQualityRecords } from '../utils/qualityUtils';
-import jsPDF from 'jspdf';
-import { addPdfHeader, loadPdfSettings, loadOrgSettings } from '../utils/pdfHeader';
+import { openExportPreview } from '../utils/exportUtils';
 import { db } from '../db/db';
 
 /* ─────────────────────── DefectAutocomplete component ─────────────────────── */
@@ -551,277 +550,42 @@ export function ProductionQualityForm({ params, onNavigate }: ProductionQualityF
     return (((formData.totalDefects || 0) / (formData.checkedQuantity || 1)) * 100).toFixed(1);
   };
 
-  const exportPDF = async () => {
-    try {
-
-    const r = formData as InspectionRecord;
-    const rft  = parseFloat(calculateRFT());
-    const dhu  = parseFloat(calculateDHU());
-    const rftTarget = r.standardRft || 95;
-    const dhuTarget = r.standardDhu || 5;
-    const isPass = rft >= rftTarget && dhu <= dhuTarget;
-
-    const s = loadPdfSettings();
-    const font = s.fontStyle || 'helvetica';
-    const accent: [number,number,number] = isPass ? [22, 163, 74] : [220, 38, 38];
-    const accentLight: [number,number,number] = isPass ? [220, 252, 231] : [254, 226, 226];
-
-    const doc = new jsPDF('l', 'mm', 'a4');
-    const pageW = doc.internal.pageSize.width;
-    const pageH = doc.internal.pageSize.height;
-
-    // 1. HEADER
-    let y = 10;
-    try {
-      y = addPdfHeader(doc, 'Production Quality Inspection Report',
-        `Line: ${r.lineNumber || '-'}  |  Date: ${r.date || '-'}  |  Shift: ${r.shift || '-'}`,
-        true, 'production_quality');
-    } catch {
-      doc.setFont(font, 'bold'); doc.setFontSize(14);
-      doc.setTextColor(...accent);
-      doc.text('Production Quality Inspection Report', 14, 18);
-      y = 26;
-    }
-
-    // 2. VERDICT BANNER
-    const bannerH = 13;
-    doc.setFillColor(...accent);
-    doc.rect(12, y, pageW - 24, bannerH, 'F');
-    doc.setFont(font, 'bold'); doc.setFontSize(10);
-    doc.setTextColor(255, 255, 255);
-    doc.text(isPass ? 'LINE VERDICT: PASS - Within Quality Standards' : 'LINE VERDICT: FAIL - Corrective Action Required', 20, y + 8.5);
-    doc.setFont(font, 'normal'); doc.setFontSize(7.5);
-    doc.text(`Ref: ${r.id || '-'}`, pageW - 16, y + 8.5, { align: 'right' });
-    y += bannerH + 6;
-
-    // 3. KPI SCORECARD BOXES
-    const kpiBoxes = [
-      { label: 'CHECKED',  value: String(r.checkedQuantity || 0), unit: 'pcs',          color: [37,99,235]   as [number,number,number], light: [219,234,254] as [number,number,number] },
-      { label: 'PASSED',   value: String(r.goodsQuantity || 0),   unit: 'pcs',          color: [22,163,74]   as [number,number,number], light: [220,252,231] as [number,number,number] },
-      { label: 'DEFECTS',  value: String(r.totalDefects || 0),    unit: 'pcs',          color: [220,38,38]   as [number,number,number], light: [254,226,226] as [number,number,number] },
-      { label: 'RFT',      value: `${rft}%`,  unit: `target >= ${rftTarget}%`,   color: rft >= rftTarget ? [22,163,74] as [number,number,number] : [220,38,38] as [number,number,number], light: rft >= rftTarget ? [220,252,231] as [number,number,number] : [254,226,226] as [number,number,number] },
-      { label: 'DHU',      value: `${dhu}%`,  unit: `target <= ${dhuTarget}%`,   color: dhu <= dhuTarget ? [22,163,74] as [number,number,number] : [220,38,38] as [number,number,number], light: dhu <= dhuTarget ? [220,252,231] as [number,number,number] : [254,226,226] as [number,number,number] },
-    ];
-
-    const kpiBoxW = (pageW - 30) / kpiBoxes.length;
-    const kpiBoxH = 26;
-
-    kpiBoxes.forEach((kpi, i) => {
-      const bx = 12 + i * (kpiBoxW + 1.5);
-      doc.setFillColor(...kpi.light);
-      doc.roundedRect(bx, y, kpiBoxW, kpiBoxH, 2, 2, 'F');
-      doc.setFillColor(...kpi.color);
-      doc.roundedRect(bx, y, kpiBoxW, 4, 2, 2, 'F');
-      doc.rect(bx, y + 2, kpiBoxW, 2, 'F');
-      doc.setFont(font, 'bold'); doc.setFontSize(6.5);
-      doc.setTextColor(...kpi.color);
-      doc.text(kpi.label, bx + kpiBoxW / 2, y + 9.5, { align: 'center' });
-      doc.setFont(font, 'bold'); doc.setFontSize(13);
-      doc.setTextColor(15, 23, 42);
-      doc.text(kpi.value, bx + kpiBoxW / 2, y + 19, { align: 'center' });
-      doc.setFont(font, 'normal'); doc.setFontSize(5.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text(kpi.unit, bx + kpiBoxW / 2, y + 24, { align: 'center' });
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Production Quality Report',
+      moduleId: 'production_quality',
+      recordId: formData.id || 'N/A',
+      fileName: `Production_Quality_${formData.id || 'export'}`,
+      fields: [
+        { label: 'Date', value: formData.date || 'N/A' },
+        { label: 'Shift', value: formData.shift || 'N/A' },
+        { label: 'Unit', value: formData.unit || 'N/A' },
+        { label: 'Section', value: formData.section || 'N/A' },
+        { label: 'Line Number', value: formData.lineNumber || 'N/A' },
+        { label: 'Buyer', value: formData.buyer || 'N/A' },
+        { label: 'Style', value: formData.style || 'N/A' },
+        { label: 'Order No.', value: formData.orderNumber || 'N/A' },
+        { label: 'QC Inspector', value: formData.qcInspector || 'N/A' },
+      ],
+      sections: [
+        {
+          title: 'Inspection Results',
+          fields: [
+            { label: 'Checked Qty', value: String(formData.checkedQuantity || 0) },
+            { label: 'Goods Qty (Passed)', value: String(formData.goodsQuantity || 0) },
+            { label: 'Total Defects', value: String(formData.totalDefects || 0) },
+            { label: 'Right First Time (RFT)', value: `${calculateRFT()}%` },
+            { label: 'Defect per Hundred Units (DHU)', value: `${calculateDHU()}%` },
+          ]
+        }
+      ],
+      tables: formData.topDefects && formData.topDefects.length > 0 ? [{
+        title: 'Detected Defects Breakdown',
+        columns: ['Defect Name / Description', 'Occurrences'],
+        rows: formData.topDefects.map((d: any) => [d.name || 'Unknown', String(d.count || 0)])
+      }] : undefined
     });
-    y += kpiBoxH + 8;
-
-    // 4. TWO-COLUMN INFO GRID
-    const colW = (pageW - 28) / 2;
-    const leftX = 12;
-    const rightX = 14 + colW + 2;
-    const gridTop = y;
-
-    const drawSectionHeader = (title: string, x: number, sy: number) => {
-      doc.setFillColor(...accent);
-      doc.rect(x, sy, 4, 8, 'F');
-      doc.setFont(font, 'bold'); doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(title, x + 7, sy + 6);
-      doc.setDrawColor(...accent); doc.setLineWidth(0.15);
-      doc.line(x + 7 + doc.getTextWidth(title) + 3, sy + 4, x + colW, sy + 4);
-    };
-
-    drawSectionHeader('INSPECTION IDENTIFICATION & LOCATION', leftX, y);
-    y += 11;
-
-    const leftFields: [string,string][] = [
-      ['Date',            r.date || '-'],
-      ['Shift',           r.shift || '-'],
-      ['Factory / Unit',  r.unit || r.factory || '-'],
-      ['Section',         r.section || '-'],
-      ['Production Line', r.lineNumber || '-'],
-      ['Floor / Zone',    r.floor || '-'],
-    ];
-    leftFields.forEach(([lbl, val], i) => {
-      const ry = y + i * 8;
-      doc.setFillColor(i % 2 === 0 ? 248 : 255, i % 2 === 0 ? 250 : 255, i % 2 === 0 ? 253 : 255);
-      doc.rect(leftX, ry, colW, 8, 'F');
-      doc.setFont(font, 'bold'); doc.setFontSize(6);
-      doc.setTextColor(...accent);
-      doc.text(lbl.toUpperCase(), leftX + 3, ry + 5);
-      doc.setFont(font, 'normal'); doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(val, leftX + colW - 3, ry + 5.5, { align: 'right' });
-      doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.1);
-      doc.line(leftX, ry + 8, leftX + colW, ry + 8);
-    });
-
-    drawSectionHeader('ORDER & PERSONNEL DETAILS', rightX, gridTop);
-    const rightFields: [string,string][] = [
-      ['Buyer',         r.buyer || '-'],
-      ['Style Number',  r.style || '-'],
-      ['Order / PO No', r.orderNumber || '-'],
-      ['QC Inspector',  r.qcInspector || '-'],
-      ['Machine No.',   r.machineNumber || '-'],
-      ['Operator ID',   r.operatorId || '-'],
-    ];
-    rightFields.forEach(([lbl, val], i) => {
-      const ry = gridTop + 11 + i * 8;
-      doc.setFillColor(i % 2 === 0 ? 248 : 255, i % 2 === 0 ? 250 : 255, i % 2 === 0 ? 253 : 255);
-      doc.rect(rightX, ry, colW, 8, 'F');
-      doc.setFont(font, 'bold'); doc.setFontSize(6);
-      doc.setTextColor(...accent);
-      doc.text(lbl.toUpperCase(), rightX + 3, ry + 5);
-      doc.setFont(font, 'normal'); doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text(val, rightX + colW - 3, ry + 5.5, { align: 'right' });
-      doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.1);
-      doc.line(rightX, ry + 8, rightX + colW, ry + 8);
-    });
-
-    y += leftFields.length * 8 + 10;
-
-    // 5. DEFECT PARETO SECTION
-    const defects = (r.topDefects || []).filter((d: any) => d.name && (d.count || 0) > 0)
-      .sort((a: any, b: any) => (b.count || 0) - (a.count || 0));
-
-    if (defects.length > 0) {
-      const totalDef = defects.reduce((s: number, d: any) => s + (d.count || 0), 0);
-      const colDefName = 80; const colCount = 22; const colPct = 22;
-      const colBarW = pageW - 24 - colDefName - colCount - colPct - 6;
-
-      doc.setFillColor(...accent);
-      doc.rect(12, y, 4, 8, 'F');
-      doc.setFont(font, 'bold'); doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text('DEFECT PARETO ANALYSIS', 20, y + 6);
-      y += 11;
-
-      doc.setFillColor(...accent);
-      doc.rect(12, y, pageW - 24, 8, 'F');
-      doc.setFont(font, 'bold'); doc.setFontSize(7);
-      doc.setTextColor(255, 255, 255);
-      doc.text('DEFECT TYPE', 15, y + 5.5);
-      doc.text('COUNT', 12 + colDefName + colCount / 2, y + 5.5, { align: 'center' });
-      doc.text('SHARE', 12 + colDefName + colCount + colPct / 2, y + 5.5, { align: 'center' });
-      doc.text('DISTRIBUTION BAR', 12 + colDefName + colCount + colPct + colBarW / 2, y + 5.5, { align: 'center' });
-      y += 8;
-
-      defects.slice(0, 12).forEach((d: any, i: number) => {
-        const rowH = 9;
-        const pct = totalDef > 0 ? (d.count || 0) / totalDef : 0;
-        doc.setFillColor(i % 2 === 0 ? 248 : 255, i % 2 === 0 ? 250 : 255, i % 2 === 0 ? 253 : 255);
-        doc.rect(12, y, pageW - 24, rowH, 'F');
-        doc.setFont(font, 'bold'); doc.setFontSize(7.5);
-        doc.setTextColor(...accent);
-        doc.text(String(i + 1), 18, y + 6, { align: 'center' });
-        doc.setFont(font, 'normal'); doc.setFontSize(7.5);
-        doc.setTextColor(15, 23, 42);
-        doc.text(d.name.slice(0, 38), 23, y + 6);
-        doc.setFont(font, 'bold'); doc.setFontSize(8);
-        doc.setTextColor(220, 38, 38);
-        doc.text(String(d.count || 0), 12 + colDefName + colCount / 2, y + 6.5, { align: 'center' });
-        doc.setFont(font, 'normal'); doc.setFontSize(7.5);
-        doc.setTextColor(100, 116, 139);
-        doc.text((pct * 100).toFixed(1) + '%', 12 + colDefName + colCount + colPct / 2, y + 6.5, { align: 'center' });
-        const barX = 12 + colDefName + colCount + colPct + 3;
-        const barTrackW = colBarW - 4;
-        const barFillW = barTrackW * pct;
-        doc.setFillColor(226, 232, 240);
-        doc.roundedRect(barX, y + 3, barTrackW, 3, 1, 1, 'F');
-        if (barFillW > 0) { doc.setFillColor(...accent); doc.roundedRect(barX, y + 3, Math.max(barFillW, 2), 3, 1, 1, 'F'); }
-        doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.1);
-        doc.line(12, y + rowH, pageW - 12, y + rowH);
-        y += rowH;
-      });
-      y += 6;
-    }
-
-    // 6. REMARKS
-    if (r.remark) {
-      if (y > pageH - 36) { doc.addPage(); y = 16; }
-      doc.setFillColor(...accentLight);
-      doc.roundedRect(12, y, pageW - 24, 14, 2, 2, 'F');
-      doc.setFillColor(...accent);
-      doc.rect(12, y, 4, 14, 'F');
-      doc.setFont(font, 'bold'); doc.setFontSize(7);
-      doc.setTextColor(...accent);
-      doc.text('REMARKS / CORRECTIVE ACTIONS', 20, y + 5.5);
-      doc.setFont(font, 'normal'); doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text((r.remark || '').slice(0, 140), 20, y + 11.5);
-      y += 18;
-    }
-
-    // 7. SIGNATURES
-    const sigLabels = s.showSignatures
-      ? (s.signatureLabels?.length ? s.signatureLabels : ['QC Inspector', 'Line Supervisor', 'QA Manager', 'Authorized By'])
-      : [];
-
-    if (sigLabels.length > 0) {
-      if (y > pageH - 36) { doc.addPage(); y = 16; }
-      doc.setFillColor(...accent);
-      doc.rect(12, y, 4, 8, 'F');
-      doc.setFont(font, 'bold'); doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-      doc.text('AUTHORIZED SIGNATURES', 20, y + 6);
-      y += 12;
-      const sigW = (pageW - 28) / sigLabels.length;
-      sigLabels.forEach((label: string, i: number) => {
-        const sx = 12 + i * (sigW + 1);
-        const boxH = 20;
-        doc.setFillColor(248, 250, 253);
-        doc.setDrawColor(...accent); doc.setLineWidth(0.25);
-        doc.roundedRect(sx, y, sigW, boxH, 1.5, 1.5, 'FD');
-        doc.setFillColor(...accent);
-        doc.setGState(new (doc as any).GState({ opacity: 0.12 }));
-        doc.roundedRect(sx, y, sigW, 4, 1.5, 1.5, 'F');
-        doc.rect(sx, y + 2, sigW, 2, 'F');
-        doc.setGState(new (doc as any).GState({ opacity: 1 }));
-        doc.setDrawColor(...accent); doc.setLineWidth(0.5);
-        doc.line(sx + 5, y + boxH - 5, sx + sigW - 5, y + boxH - 5);
-        doc.setFont(font, 'bold'); doc.setFontSize(6);
-        doc.setTextColor(...accent);
-        doc.text(label.toUpperCase(), sx + sigW / 2, y + boxH - 1, { align: 'center' });
-        doc.setFont(font, 'normal'); doc.setFontSize(5.5);
-        doc.setTextColor(160, 170, 185);
-        doc.text('Signature & Date', sx + sigW / 2, y + 10, { align: 'center' });
-      });
-    }
-
-    // 8. FOOTER
-    const pageCount = (doc as any).internal.getNumberOfPages();
-    const org = loadOrgSettings();
-    for (let pg = 1; pg <= pageCount; pg++) {
-      doc.setPage(pg);
-      const ph = doc.internal.pageSize.height;
-      doc.setDrawColor(...accent); doc.setLineWidth(0.35);
-      doc.line(12, ph - 8, pageW - 12, ph - 8);
-      doc.setFont(font, 'normal'); doc.setFontSize(6.5);
-      doc.setTextColor(130, 140, 155);
-      doc.text(org.name || 'QMS ERP Pro', 14, ph - 3.5);
-      doc.text(`Page ${pg} of ${pageCount}`, pageW / 2, ph - 3.5, { align: 'center' });
-      doc.setTextColor(...accent);
-      doc.text(`Generated: ${new Date().toLocaleDateString('en-GB')}`, pageW - 14, ph - 3.5, { align: 'right' });
-    }
-
-    doc.save(`PQ_Report_${r.lineNumber || 'L'}_${r.date || 'today'}.pdf`);
-    } catch (err) {
-      console.error('PDF Export Error:', err);
-      alert('PDF export failed: ' + String(err));
-    }
   };
-
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 md:p-8 space-y-6">
@@ -842,8 +606,8 @@ export function ProductionQualityForm({ params, onNavigate }: ProductionQualityF
             <button className="btn btn-ghost border border-border-main" onClick={() => onNavigate('prod-quality-form', { mode: 'edit', data: formData })}>
               <Edit2 className="w-4 h-4 mr-2" /> Edit Record
             </button>
-            <button className="btn btn-primary shadow-md" onClick={exportPDF}>
-              <Download className="w-4 h-4 mr-2" /> Download Report
+            <button className="btn btn-ghost border border-border-main flex items-center gap-2" onClick={handleExport}>
+              <Download className="w-4 h-4" /> Export
             </button>
           </div>
         ) : (

@@ -1,10 +1,12 @@
+import { openExportPreview } from '../utils/exportUtils';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   ArrowLeft, Save, X, ShoppingBag, Building, User, Calendar, 
   Package, CheckCircle2, AlertCircle, Info, Paperclip, Plus, Trash2, FileText, 
-  Truck, DollarSign, Tag, Info as InfoIcon, Download, Flag, Search, Activity, Layers
+  Truck, DollarSign, Tag, Info as InfoIcon, Download, Flag, Search, Activity, Layers, Edit2, Maximize2
 } from 'lucide-react';
+import { AnimatePresence } from 'motion/react';
 import { getTable } from '../db/db';
 import { AttachmentList } from '../components/AttachmentList';
 
@@ -52,6 +54,7 @@ export function BuyerOrderSummaryForm({ onNavigate, params }: Props) {
   const mode = params?.mode || 'create';
   const initialData = params?.data || {};
   const isReadOnly = mode === 'view';
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     id: initialData.id || `ORD-${Date.now()}`,
@@ -73,6 +76,7 @@ export function BuyerOrderSummaryForm({ onNavigate, params }: Props) {
     shipmentMode: initialData.shipmentMode || 'Sea',
     destinationPort: initialData.destinationPort || '',
     remarks: initialData.remarks || '',
+    productImage: initialData.productImage || '',
     attachments: initialData.attachments || [],
     createdAt: initialData.createdAt || new Date().toISOString(),
     updatedAt: initialData.updatedAt || initialData.createdAt || new Date().toISOString(),
@@ -92,6 +96,64 @@ export function BuyerOrderSummaryForm({ onNavigate, params }: Props) {
       outputQty: 0
     }))
   });
+
+  const handleExport = () => {
+    openExportPreview({
+      moduleName: 'Order Specification Report',
+      moduleId: 'buyer_order_detail',
+      recordId: formData.orderNo,
+      fileName: `Order_${formData.orderNo}_Spec`,
+      layout: 'technical',
+      fields: [
+        { label: 'Order No', value: formData.orderNo },
+        { label: 'Buyer', value: formData.buyer },
+        { label: 'Style', value: formData.styleNo },
+        { label: 'Quantity', value: formData.qty.toLocaleString() },
+        { label: 'PO Date', value: formData.poDate },
+        { label: 'Ship Date', value: formData.shipDate },
+        { label: 'Status', value: formData.status },
+        { label: 'Priority', value: formData.priority },
+        { label: 'Season', value: formData.season },
+        { label: 'Merchandiser', value: formData.merchandiser },
+        { label: 'FOB Price', value: `${formData.currency} ${formData.fobPrice}` },
+        { label: 'CM Price', value: `${formData.currency} ${formData.cmPrice}` },
+        { label: 'Ship Mode', value: formData.shipmentMode },
+        { label: 'Destination', value: formData.destinationPort },
+        { label: 'Fabrics/Materials', value: formData.fabricsUsed, fullWidth: true },
+        { label: 'Internal Remarks', value: formData.remarks, fullWidth: true }
+      ],
+      tables: [
+        {
+          title: 'Production Stage Progress',
+          columns: ['Stage Identification', 'Status', 'Schedule', 'Input', 'Output', 'Efficiency', 'Balance'],
+          rows: formData.productionStages.map((s: any) => {
+            const eff = s.inputQty > 0 ? Math.round((s.outputQty / s.inputQty) * 100) : 0;
+            return [
+              s.name,
+              s.status,
+              s.date || '—',
+              s.inputQty.toLocaleString(),
+              s.outputQty.toLocaleString(),
+              `${eff}%`,
+              (s.inputQty - s.outputQty).toLocaleString()
+            ];
+          })
+        },
+        {
+          title: 'Order Tracking History',
+          columns: ['Date', 'Action', 'User', 'Notes'],
+          rows: formData.trackingHistory.map((h: any) => [
+            new Date(h.date).toLocaleDateString(),
+            h.action,
+            h.user,
+            h.notes || '—'
+          ])
+        }
+      ],
+      attachments: formData.attachments,
+      productImage: formData.productImage
+    });
+  };
 
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -147,28 +209,20 @@ export function BuyerOrderSummaryForm({ onNavigate, params }: Props) {
     setFormData(prev => ({ ...prev, attachments: [...prev.attachments, ...newAtts] }));
   };
 
-  const exportPDF = async () => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Buyer Order Specification',
-      moduleId: 'merchandising',
-      recordId: formData.orderNo,
-      fileName: `Order_${formData.orderNo}`,
-      fields: [
-        { label: 'Order No',     value: formData.orderNo },
-        { label: 'Buyer',        value: formData.buyer },
-        { label: 'Style',        value: formData.styleNo },
-        { label: 'Quantity',     value: String(formData.qty) },
-        { label: 'FOB Price',    value: `${formData.fobPrice} ${formData.currency}` },
-        { label: 'CM Price',     value: `${formData.cmPrice} ${formData.currency}` },
-        { label: 'Ship Date',    value: formData.shipDate },
-        { label: 'Status',       value: formData.status },
-        { label: 'Merchandiser', value: formData.merchandiser },
-      ],
-      summary: formData.remarks ? ['Order Remarks:', formData.remarks] : undefined
+  const handleProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const data = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
     });
+    
+    setFormData(prev => ({ ...prev, productImage: data }));
   };
 
+  
   const baseInputClass = "bg-bg-2 border border-border-main rounded-xl px-4 py-3 text-sm font-bold text-text-1 focus:ring-2 focus:ring-accent outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed";
   const inputClass = `w-full ${baseInputClass}`;
 
@@ -200,11 +254,11 @@ export function BuyerOrderSummaryForm({ onNavigate, params }: Props) {
         <div className="flex items-center gap-3">
           {isReadOnly ? (
              <>
-               <button type="button" onClick={() => onNavigate('buyer-order-summary-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
-                  <Trash2 className="w-4 h-4 rotate-45" /> Modify Record
+               <button type="button" onClick={handleExport} className="btn btn-ghost border border-border-main flex items-center gap-2 px-6">
+                  <Download className="w-4 h-4" /> Export Report
                </button>
-               <button type="button" onClick={exportPDF} className="btn btn-primary shadow-lg shadow-accent/20">
-                  <Download className="w-4 h-4 mr-2" /> Download Specification
+               <button type="button" onClick={() => onNavigate('buyer-order-summary-form', { mode: 'edit', data: formData })} className="btn btn-ghost border border-border-main flex items-center gap-2">
+                  <Edit2 className="w-4 h-4" /> Modify Record
                </button>
              </>
           ) : (
@@ -244,6 +298,88 @@ export function BuyerOrderSummaryForm({ onNavigate, params }: Props) {
             </div>
           </div>
         )}
+
+
+
+        {/* Executive Order Summary Dashboard - Top Level */}
+        <div className="mb-12">
+          <div className="bg-bg-1 p-8 md:p-10 rounded-[2.5rem] border border-border-main shadow-sm flex flex-col lg:flex-row gap-12 items-center lg:items-stretch">
+            {/* Product Visual Container - Strict Square Ratio */}
+            <div className="w-72 h-72 rounded-[2.5rem] border-2 border-dashed border-border-main bg-bg-2 overflow-hidden flex flex-col items-center justify-center relative group shadow-inner flex-shrink-0">
+              {formData.productImage ? (
+                <>
+                  <img src={formData.productImage} alt="Product" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-3">
+                    <button 
+                      onClick={() => setIsLightboxOpen(true)}
+                      className="p-4 bg-white/20 backdrop-blur-md text-white rounded-2xl hover:bg-white/40 transition-all"
+                      title="View Full Size"
+                    >
+                      <Maximize2 className="w-6 h-6" />
+                    </button>
+                    <a 
+                      href={formData.productImage} 
+                      download={`Product_${formData.styleNo || 'Image'}.png`}
+                      className="p-4 bg-white/20 backdrop-blur-md text-white rounded-2xl hover:bg-white/40 transition-all"
+                      title="Download Image"
+                    >
+                      <Download className="w-6 h-6" />
+                    </a>
+                    {!isReadOnly && (
+                      <button 
+                        onClick={() => setFormData(p => ({ ...p, productImage: '' }))}
+                        className="p-4 bg-rose-500 text-white rounded-2xl hover:bg-rose-600 transition-all"
+                        title="Remove Image"
+                      >
+                        <X className="w-6 h-6" />
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <label className="flex flex-col items-center justify-center cursor-pointer p-8 text-center w-full h-full hover:bg-bg-1 transition-colors">
+                  <div className="w-24 h-24 rounded-3xl bg-accent/5 flex items-center justify-center mb-6">
+                    <ShoppingBag className="w-10 h-10 text-accent opacity-40" />
+                  </div>
+                  <span className="text-sm font-black uppercase tracking-[0.25em] text-text-1">Product Visual</span>
+                  <span className="text-xs text-text-3 font-bold mt-2 uppercase tracking-wide opacity-50">Upload specification visual</span>
+                  {!isReadOnly && <input type="file" accept="image/*" className="hidden" onChange={handleProductImageUpload} />}
+                </label>
+              )}
+            </div>
+
+            {/* Summary Stats - Professional Dashboard Layout */}
+            <div className="flex-1 flex flex-col justify-center space-y-12 py-6">
+              <div className="flex items-center gap-8">
+                <div className="w-20 h-20 rounded-3xl bg-accent/10 flex items-center justify-center text-accent shadow-inner">
+                  <Layers className="w-10 h-10" />
+                </div>
+                <div>
+                  <h3 className="text-4xl font-black text-text-1 uppercase tracking-tight leading-none">Executive Order Summary</h3>
+                  <p className="text-xs font-black text-text-3 uppercase tracking-[0.3em] mt-4 opacity-50">Manufacturing Intelligence & Commercial Overview</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-8">
+                {[
+                  { label: 'Production Status', value: `${Math.round((formData.productionStages.filter((s: any) => s.status === 'Completed').length / STAGES.length) * 100)}%`, color: 'accent' },
+                  { label: 'Avg Efficiency', value: '84.2%', color: 'purple-main' },
+                  { label: 'Shipment Mode', value: formData.shipmentMode, color: 'text-1' },
+                  { label: 'Total Revenue Est.', value: `${formData.currency} ${((Number(formData.qty) || 0) * (Number(formData.fobPrice) || 0)).toLocaleString()}`, color: 'accent', isRevenue: true }
+                ].map((stat, i) => (
+                  <div key={i} className="p-8 bg-bg-2/40 rounded-[2.5rem] border border-border-main shadow-sm hover:border-accent/40 transition-all group flex flex-col justify-center min-h-[140px]">
+                    <div className="text-[10px] font-black text-text-3 uppercase tracking-[0.2em] mb-4 opacity-40 group-hover:opacity-100 transition-opacity">
+                      {stat.label}
+                    </div>
+                    <div className={`text-3xl font-black font-mono tracking-tighter ${stat.isRevenue ? 'text-accent' : 'text-text-1'} truncate`}>
+                      {stat.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-8 space-y-8">
@@ -306,6 +442,7 @@ export function BuyerOrderSummaryForm({ onNavigate, params }: Props) {
               </select>
             </Field>
           </Section>
+
 
           <Section title="Commercials & Materials" icon={Package} number="02">
             <Field label="Order Quantity" icon={Package} required>
@@ -461,109 +598,153 @@ export function BuyerOrderSummaryForm({ onNavigate, params }: Props) {
                 />
              </Field>
           </Section>
+        </div>
 
-          {/* ── Production Stage Tracking ── */}
-          <div className="bg-bg-1 p-6 md:p-8 rounded-2xl border border-border-main shadow-sm space-y-6 lg:col-span-12">
+        {/* ── Production Stage Tracking ── */}
+        <div className="lg:col-span-12 mt-4">
+          <div className="bg-bg-1 p-6 md:p-8 rounded-[2rem] border border-border-main shadow-sm space-y-8">
             <div className="flex items-center justify-between border-b border-border-main pb-4">
-              <h3 className="text-lg font-bold text-text-1 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple-main/10 flex items-center justify-center text-purple-main">
-                  <Activity className="w-5 h-5" />
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-purple-main/10 flex items-center justify-center text-purple-main shadow-inner">
+                  <Activity className="w-6 h-6" />
                 </div>
-                Production Progress & Stage Tracking
-              </h3>
+                <div>
+                  <h3 className="text-xl font-black text-text-1 uppercase tracking-tight">Production Progress & Stage Tracking</h3>
+                  <p className="text-xs font-bold text-text-3 uppercase tracking-widest mt-0.5">Real-time manufacturing lifecycle monitoring</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 px-4 py-2 bg-bg-2 rounded-xl border border-border-main shadow-sm">
+                <span className="text-[10px] font-black text-text-3 uppercase tracking-widest">Global Completion</span>
+                <div className="w-32 h-2 bg-border-main rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-purple-main transition-all duration-1000" 
+                    style={{ width: `${(formData.productionStages.filter((s: any) => s.status === 'Completed').length / STAGES.length) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs font-black text-purple-main">
+                  {Math.round((formData.productionStages.filter((s: any) => s.status === 'Completed').length / STAGES.length) * 100)}%
+                </span>
+              </div>
             </div>
             
             <div className="overflow-x-auto -mx-2 px-2">
-              <table className="w-full text-left border-separate border-spacing-y-2">
+              <table className="w-full text-left border-separate border-spacing-y-3">
                 <thead>
                   <tr className="text-[10px] font-black text-text-3 uppercase tracking-widest">
-                    <th className="pb-2 px-4 w-[20%]">Stage Name</th>
-                    <th className="pb-2 px-4 w-[15%]">Current Status</th>
-                    <th className="pb-2 px-4 w-[15%]">Event Date</th>
-                    <th className="pb-2 px-4 w-[15%] text-center">Input Qty</th>
-                    <th className="pb-2 px-4 w-[15%] text-center">Output Qty</th>
-                    <th className="pb-2 px-4 w-[15%] text-right pr-8">Balance</th>
+                    <th className="pb-2 px-6 w-[25%]">Stage Identification</th>
+                    <th className="pb-2 px-4 w-[15%] text-center">Lifecycle Status</th>
+                    <th className="pb-2 px-4 w-[15%] text-center">Event Schedule</th>
+                    <th className="pb-2 px-4 w-[12%] text-center">Input (Units)</th>
+                    <th className="pb-2 px-4 w-[12%] text-center">Output (Units)</th>
+                    <th className="pb-2 px-4 w-[21%] pr-8">Progress Velocity</th>
                   </tr>
                 </thead>
                 <tbody className="">
-                  {formData.productionStages.map((stage: any, idx: number) => (
-                    <tr key={idx} className="bg-bg-2/30 hover:bg-bg-2/60 transition-all group">
-                      <td className="py-3 px-4 rounded-l-xl border-y border-l border-border-main/50">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full shadow-sm ${
-                            stage.status === 'Completed' ? 'bg-green-500' : 
-                            stage.status === 'In Progress' || stage.status === 'Started' ? 'bg-amber-500 animate-pulse' : 
-                            'bg-bg-3'
-                          }`}></div>
-                          <span className="text-xs font-black text-text-1 uppercase tracking-tight">{stage.name}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 border-y border-border-main/50">
-                        <select 
-                          disabled={isReadOnly}
-                          className="w-full bg-bg-1 border border-border-main/50 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-accent outline-none text-text-2 shadow-sm"
-                          value={stage.status}
-                          onChange={e => {
-                            const newStages = [...formData.productionStages];
-                            newStages[idx].status = e.target.value;
-                            setFormData(p => ({ ...p, productionStages: newStages }));
-                          }}
-                        >
-                          <option>Pending</option>
-                          <option>Started</option>
-                          <option>In Progress</option>
-                          <option>Delayed</option>
-                          <option>Completed</option>
-                          <option>Hold</option>
-                        </select>
-                      </td>
-                      <td className="py-3 px-4 border-y border-border-main/50">
-                        <input 
-                          type="date" disabled={isReadOnly}
-                          className="w-full bg-bg-1 border border-border-main/50 rounded-lg px-3 py-1.5 text-[10px] font-bold focus:ring-2 focus:ring-accent outline-none text-text-2 shadow-sm"
-                          value={stage.date}
-                          onChange={e => {
-                            const newStages = [...formData.productionStages];
-                            newStages[idx].date = e.target.value;
-                            setFormData(p => ({ ...p, productionStages: newStages }));
-                          }}
-                        />
-                      </td>
-                      <td className="py-3 px-4 border-y border-border-main/50">
-                        <input 
-                          type="number" disabled={isReadOnly}
-                          className="w-full max-w-[100px] mx-auto block bg-bg-1 border border-border-main/50 rounded-lg px-3 py-1.5 text-xs font-mono font-bold focus:ring-2 focus:ring-accent outline-none text-text-1 text-center shadow-sm"
-                          value={stage.inputQty || ''}
-                          placeholder="0"
-                          onChange={e => {
-                            const newStages = [...formData.productionStages];
-                            newStages[idx].inputQty = Number(e.target.value);
-                            setFormData(p => ({ ...p, productionStages: newStages }));
-                          }}
-                        />
-                      </td>
-                      <td className="py-3 px-4 border-y border-border-main/50">
-                        <input 
-                          type="number" disabled={isReadOnly}
-                          className="w-full max-w-[100px] mx-auto block bg-bg-1 border border-border-main/50 rounded-lg px-3 py-1.5 text-xs font-mono font-bold focus:ring-2 focus:ring-accent outline-none text-text-1 text-center shadow-sm"
-                          value={stage.outputQty || ''}
-                          placeholder="0"
-                          onChange={e => {
-                            const newStages = [...formData.productionStages];
-                            newStages[idx].outputQty = Number(e.target.value);
-                            setFormData(p => ({ ...p, productionStages: newStages }));
-                          }}
-                        />
-                      </td>
-                      <td className="py-3 px-4 rounded-r-xl border-y border-r border-border-main/50 pr-8">
-                        <div className="text-right">
-                          <span className={`text-xs font-mono font-black ${stage.inputQty - stage.outputQty > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                            {(stage.inputQty - stage.outputQty).toLocaleString()}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {formData.productionStages.map((stage: any, idx: number) => {
+                    const progress = stage.inputQty > 0 ? (stage.outputQty / stage.inputQty) * 100 : 0;
+                    return (
+                      <tr key={idx} className="bg-bg-1 border border-border-main hover:bg-bg-2/30 transition-all group shadow-sm">
+                        <td className="py-5 px-6 rounded-l-2xl border-y border-l border-border-main/60">
+                          <div className="flex items-center gap-4">
+                            <div className={`w-3 h-3 rounded-full border-2 border-white shadow-sm ${
+                              stage.status === 'Completed' ? 'bg-green-500' : 
+                              stage.status === 'In Progress' || stage.status === 'Started' ? 'bg-amber-500 animate-pulse' : 
+                              'bg-text-3/20'
+                            }`}></div>
+                            <div>
+                              <div className="text-sm font-black text-text-1 uppercase tracking-tighter">{stage.name}</div>
+                              <div className="text-[9px] font-bold text-text-3 uppercase tracking-widest mt-0.5">Stage {idx + 1}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-5 px-4 border-y border-border-main/60">
+                          <select 
+                            disabled={isReadOnly}
+                            className={`w-full bg-bg-2/50 border border-border-main/50 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-accent outline-none shadow-sm transition-all ${
+                              stage.status === 'Completed' ? 'text-green-600' : 
+                              stage.status === 'Delayed' ? 'text-rose-600' : 
+                              'text-text-2'
+                            }`}
+                            value={stage.status}
+                            onChange={e => {
+                              const newStages = [...formData.productionStages];
+                              newStages[idx].status = e.target.value;
+                              setFormData(p => ({ ...p, productionStages: newStages }));
+                            }}
+                          >
+                            <option>Pending</option>
+                            <option>Started</option>
+                            <option>In Progress</option>
+                            <option>Delayed</option>
+                            <option>Completed</option>
+                            <option>Hold</option>
+                          </select>
+                        </td>
+                        <td className="py-5 px-4 border-y border-border-main/60">
+                          <input 
+                            type="date" disabled={isReadOnly}
+                            className="w-full bg-bg-2/50 border border-border-main/50 rounded-xl px-3 py-2 text-[10px] font-bold focus:ring-2 focus:ring-accent outline-none text-text-2 shadow-sm"
+                            value={stage.date}
+                            onChange={e => {
+                              const newStages = [...formData.productionStages];
+                              newStages[idx].date = e.target.value;
+                              setFormData(p => ({ ...p, productionStages: newStages }));
+                            }}
+                          />
+                        </td>
+                        <td className="py-5 px-4 border-y border-border-main/60">
+                          <input 
+                            type="number" disabled={isReadOnly}
+                            className="w-full bg-bg-2/50 border border-border-main/50 rounded-xl px-3 py-2 text-sm font-mono font-black focus:ring-2 focus:ring-accent outline-none text-text-1 text-center shadow-sm"
+                            value={stage.inputQty || ''}
+                            placeholder="0"
+                            onChange={e => {
+                              const newStages = [...formData.productionStages];
+                              newStages[idx].inputQty = Number(e.target.value);
+                              setFormData(p => ({ ...p, productionStages: newStages }));
+                            }}
+                          />
+                        </td>
+                        <td className="py-5 px-4 border-y border-border-main/60">
+                          <input 
+                            type="number" disabled={isReadOnly}
+                            className="w-full bg-bg-2/50 border border-border-main/50 rounded-xl px-3 py-2 text-sm font-mono font-black focus:ring-2 focus:ring-accent outline-none text-text-1 text-center shadow-sm"
+                            value={stage.outputQty || ''}
+                            placeholder="0"
+                            onChange={e => {
+                              const newStages = [...formData.productionStages];
+                              newStages[idx].outputQty = Number(e.target.value);
+                              setFormData(p => ({ ...p, productionStages: newStages }));
+                            }}
+                          />
+                        </td>
+                        <td className="py-5 px-6 rounded-r-2xl border-y border-r border-border-main/60 pr-8">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-widest">
+                              <span className="text-text-3">Efficiency</span>
+                              <span className={progress >= 100 ? 'text-green-600' : progress > 80 ? 'text-accent' : 'text-amber-600'}>
+                                {Math.round(progress)}%
+                              </span>
+                            </div>
+                            <div className="w-full h-2 bg-bg-2 rounded-full overflow-hidden border border-border-main/30 shadow-inner">
+                              <div 
+                                className={`h-full transition-all duration-500 ${
+                                  progress >= 100 ? 'bg-green-500' : progress > 80 ? 'bg-accent' : 'bg-amber-500'
+                                }`}
+                                style={{ width: `${Math.min(100, progress)}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between items-center text-[9px] font-bold font-mono">
+                              <span className="text-text-3">BAL:</span>
+                              <span className={stage.inputQty - stage.outputQty > 0 ? 'text-amber-600' : 'text-green-600'}>
+                                {(stage.inputQty - stage.outputQty).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -629,8 +810,44 @@ export function BuyerOrderSummaryForm({ onNavigate, params }: Props) {
             </div>
           </div>
         </div>
-      </div>
-      </div>
+
+      {/* Lightbox Modal */}
+      <AnimatePresence>
+        {isLightboxOpen && formData.productImage && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-4 md:p-10"
+            onClick={() => setIsLightboxOpen(false)}
+          >
+            <button className="absolute top-6 right-6 p-4 text-white hover:bg-white/10 rounded-full transition-all">
+              <X className="w-8 h-8" />
+            </button>
+            <div 
+              className="relative max-w-5xl max-h-[80vh] w-full h-full flex items-center justify-center"
+              onClick={e => e.stopPropagation()}
+            >
+              <img 
+                src={formData.productImage} 
+                alt="Product Full Size" 
+                className="max-w-full max-h-full object-contain rounded-3xl shadow-2xl border border-white/10" 
+              />
+              <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-6">
+                <a 
+                  href={formData.productImage} 
+                  download={`Product_${formData.styleNo || 'Image'}.png`}
+                  className="btn btn-primary flex items-center gap-2 px-8 py-4 rounded-2xl text-lg shadow-2xl shadow-accent/40"
+                >
+                  <Download className="w-6 h-6" /> Download Specimen
+                </a>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
-  );
+  </div>
+</div>
+);
 }

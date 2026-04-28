@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ExportModal } from '../components/ExportModal';
 import { Pagination } from '../components/Pagination';
 import { 
   Search, Plus, Trash2, Edit2, Download, Filter, 
@@ -8,7 +7,8 @@ import {
   ClipboardCheck, Eye, FileDown, Calendar
 } from 'lucide-react';
 import { AQLInspectionRecord } from '../types';
-import { db } from '../db/db';
+import { db, getTable } from '../db/db';
+import { openExportPreview } from '../utils/exportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -140,37 +140,26 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
     }
   };
 
-  const exportPDF = async (record: AQLInspectionRecord, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    const { getSamplingPlan } = await import('../utils/inspectionUtils');
-    
-    const plan = getSamplingPlan(record.inspectionQty || 0, record.aqlLevel || '2.5');
-
-    await exportDetailToPDF({
-      moduleName: 'AQL Inspection Certificate',
-      moduleId: 'inspection',
-      recordId: record.id,
-      fileName: `AQL_${record.id}`,
-      fields: [
-        { label: 'Inspection Type', value: record.type },
-        { label: 'Date',            value: record.updatedAt?.split('T')[0] || '—' },
-        { label: 'Style/Order',      value: `${record.style || ''} ${record.order ? '/ ' + record.order : ''}` },
-        { label: 'Buyer',           value: record.buyer || '—' },
-        { label: 'Lot Size',        value: String(record.orderQty) },
-        { label: 'Sample Size',     value: String(record.sampleSize) },
-        { label: 'Result',          value: record.result },
-        { label: 'Insp. Qty',       value: String(record.inspectionQty) },
-        { label: 'Fail Qty',        value: String(record.failQty) },
-        { label: 'DHU%',            value: `${((record.failQty || 0) / (record.inspectionQty || 1) * 100).toFixed(2)}%` },
-        { label: 'Critical Defects', value: String(record.criticalDefect || 0) },
-        { label: 'Major/Minor AC',  value: String(plan.ac) },
-        { label: 'Major/Minor RE',  value: String(plan.re) },
-      ],
-      attachments: record.attachments?.map(a => typeof a === 'string' ? { name: 'Photo', data: a } : a),
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Quality Inspections (AQL)',
+      moduleId: 'inspection_bulk',
+      fileName: 'Quality_Inspections_Report',
+      columns: ['ID', 'Buyer', 'Style', 'Type', 'AQL', 'Sample', 'Defects', 'Result'],
+      rows: filteredInspections.map(r => [
+        r.id,
+        r.buyer,
+        r.style,
+        r.type,
+        r.aqlLevel,
+        r.sampleSize.toString(),
+        `${r.criticalDefect}/${r.majorDefect}/${r.minorDefect}`,
+        r.result
+      ])
     });
   };
 
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       
@@ -184,7 +173,7 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
           <p className="text-text-2 text-base mt-2">Comprehensive tracking of statistical inline, endline, and final audits.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={() => setIsExportModalOpen(true)}>
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
             <Download className="w-4 h-4" /> Global Export
           </button>
           <button className="btn btn-primary flex items-center gap-2 shadow-md" onClick={() => handleNavigateToForm('create')}>
@@ -343,9 +332,7 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
                         <button className="p-2 text-text-2 hover:bg-blue-500/10 hover:text-blue-500 rounded-lg transition-all" title="Modify Index" onClick={() => handleNavigateToForm('edit', row)}>
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button className="p-2 text-text-2 hover:bg-indigo-500/10 hover:text-indigo-500 rounded-lg transition-all" title="Download Print Report" onClick={(e) => exportPDF(row, e)}>
-                          <FileDown className="w-4 h-4" />
-                        </button>
+                        
                         <button className="p-2 text-text-2 hover:bg-red-500/10 hover:text-red-500 rounded-lg transition-all" title="Scrap Record" onClick={(e) => handleDelete(row.id, e)}>
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -368,18 +355,7 @@ export function Inspection({ onNavigate }: { onNavigate: (page: string, params?:
         />
       </motion.div>
 
-      <ExportModal 
-        isOpen={isExportModalOpen} 
-        onClose={() => setIsExportModalOpen(false)} 
-        data={filteredInspections}
-        columns={[
-          {key: 'id', label: 'ID'}, {key: 'type', label: 'Type'}, {key: 'buyer', label: 'Buyer'},
-          {key: 'style', label: 'Style'}, {key: 'order', label: 'Order'}, {key: 'line', label: 'Line'},
-          {key: 'inspector', label: 'Inspector'}, {key: 'inspectionQty', label: 'Insp Qty'},
-          {key: 'passQty', label: 'Pass'}, {key: 'failQty', label: 'Fail'}, {key: 'result', label: 'Result'}
-        ]}
-        title="Global Inspection Data"
-      />
+      
     </motion.div>
   );
 }

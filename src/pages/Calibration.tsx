@@ -1,13 +1,13 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { openExportPreview } from '../utils/exportUtils';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings2, CheckCircle2, AlertCircle, Plus, Download, 
   Search, Filter, Calendar, Eye, Edit2, Trash2, FileText, 
-  ChevronRight, Wrench, Clock, User, Building, X, Microscope, Activity
+  ChevronRight, Wrench, Clock, User, Building, X, Microscope, Activity, CheckSquare, Square
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -42,6 +42,7 @@ export function Calibration({ onNavigate }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDept, setFilterDept] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const load = async () => {
@@ -64,6 +65,67 @@ export function Calibration({ onNavigate }: Props) {
       return matchesSearch && matchesDept && matchesStatus;
     });
   }, [records, searchQuery, filterDept, filterStatus]);
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredRecords.length && filteredRecords.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredRecords.map(r => r.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (window.confirm(`Delete ${selectedIds.size} calibration records?`)) {
+      const idsToDelete = Array.from(selectedIds);
+      await Promise.all(idsToDelete.map(id => getTable('calibration').delete(id)));
+      setRecords(records.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+    }
+  };
+
+  const exportBulkPDF = () => {
+    const recordsToExport = filteredRecords.filter(r => selectedIds.has(r.id));
+    openExportPreview({
+      moduleName: 'Calibration Management',
+      moduleId: 'calibration_bulk',
+      fileName: 'Calibration_Records_Export',
+      columns: ['Equipment', 'ID', 'Certificate', 'Last Cal', 'Next Cal', 'Status'],
+      rows: recordsToExport.map(r => [
+        r.equipmentName,
+        r.equipmentId,
+        r.certificateNumber,
+        new Date(r.lastCalibrationDate).toLocaleDateString(),
+        new Date(r.nextCalibrationDate).toLocaleDateString(),
+        r.status
+      ])
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleGlobalExport = () => {
+    openExportPreview({
+      moduleName: 'Calibration Master Register',
+      moduleId: 'calibration_global',
+      fileName: 'Calibration_Records_Masterlist',
+      columns: ['Equipment', 'ID', 'Department', 'Agency', 'Certificate', 'Next Cal', 'Status'],
+      rows: filteredRecords.map(r => [
+        r.equipmentName,
+        r.equipmentId,
+        r.department,
+        r.calibrationAgency,
+        r.certificateNumber,
+        new Date(r.nextCalibrationDate).toLocaleDateString(),
+        r.status
+      ])
+    });
+  };
 
   const stats = useMemo(() => {
     const today = new Date();
@@ -93,65 +155,8 @@ export function Calibration({ onNavigate }: Props) {
     XLSX.writeFile(wb, "Calibration_Masterlist.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Calibration Management',
-      columns: ['Equipment ID', 'Name', 'Last Cal', 'Next Cal', 'Cert #', 'Status'],
-      rows: filteredRecords.map(r => [r.equipmentId, r.equipmentName, r.lastCalibrationDate, r.nextCalibrationDate, r.certificateNumber, r.status]),
-      fileName: 'Calibration_Management_Report'
-    });
-  };
-
-  const exportSinglePDF = async (record: CalibrationRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    const isValid = record.status === 'Valid';
-    const today = new Date();
-    const nextDue = record.nextCalibrationDate ? new Date(record.nextCalibrationDate) : null;
-    const daysRemaining = nextDue ? Math.ceil((nextDue.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
-    const dueStatus = daysRemaining === null ? '—'
-      : daysRemaining < 0 ? `OVERDUE by ${Math.abs(daysRemaining)} days`
-      : daysRemaining <= 30 ? `DUE SOON — ${daysRemaining} days remaining`
-      : `${daysRemaining} days remaining`;
-
-    await exportDetailToPDF({
-      moduleName: 'Equipment Calibration Certificate',
-      moduleId: 'calibration',
-      recordId: record.equipmentId,
-      fileName: `CalibrationCert_${record.equipmentId}`,
-      sections: [
-        {
-          title: '1. Instrument Identification',
-          fields: [
-            { label: 'Equipment Name', value: record.equipmentName },
-            { label: 'Equipment Tag ID', value: record.equipmentId },
-            { label: 'Custodian Department', value: record.department },
-            { label: 'Responsible Custodian', value: record.responsiblePerson },
-            { label: 'Integrity Status', value: record.status },
-            { label: 'Days Until Next Due', value: dueStatus },
-          ]
-        },
-        {
-          title: '2. Calibration Details & Certificate',
-          fields: [
-            { label: 'Certificate Number', value: record.certificateNumber },
-            { label: 'Calibration Agency / Lab', value: record.calibrationAgency },
-            { label: 'Last Calibration Date', value: record.lastCalibrationDate },
-            { label: 'Next Calibration Due', value: record.nextCalibrationDate },
-            { label: 'ISO Reference', value: 'ISO 9001:2015 — Clause 7.1.5' },
-          ]
-        }
-      ],
-      summary: [
-        `Calibration Result: ${record.status}`,
-        isValid
-          ? `Equipment is in calibrated service. Next due: ${record.nextCalibrationDate || 'N/A'}.`
-          : `Equipment is ${record.status}. Immediate recalibration or withdrawal from service required.`
-      ],
-      signatureLabels: ['Calibration Technician', 'QA Approval', 'Custodian', 'Valid Until'],
-      styleOverrides: { accentColor: isValid ? '#16a34a' : '#dc2626' }
-    });
-  };
-
+  
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -163,12 +168,10 @@ export function Calibration({ onNavigate }: Props) {
           <p className="text-text-2 text-base mt-2">Precision equipment tracking, calibration schedules, and certificate control.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
-            <Download className="w-4 h-4" /> Excel
+          <button className="btn btn-ghost flex items-center gap-2 border border-border-main" onClick={handleGlobalExport}>
+            <Download className="w-4 h-4" /> Global Export
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('calibration-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New Equipment
           </button>
@@ -206,12 +209,27 @@ export function Calibration({ onNavigate }: Props) {
           />
         </div>
         <div className="w-px h-8 bg-border-main hidden md:block"></div>
-        <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-          <option value="All">All Statuses</option>
-          <option value="Valid">Valid</option>
-          <option value="Expired">Expired</option>
-          <option value="Out of Service">Out of Service</option>
-        </select>
+        {selectedIds.size > 0 ? (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <span className="text-sm font-bold text-accent">{selectedIds.size} selected</span>
+            <button onClick={exportBulkPDF} className="btn btn-ghost flex items-center gap-2 border border-accent/30 text-accent hover:bg-accent/10">
+              <Download className="w-4 h-4" /> Export PDF
+            </button>
+            <button onClick={handleBulkDelete} className="btn btn-ghost flex items-center gap-2 border border-red-500/30 text-red-500 hover:bg-red-500/10">
+              <Trash2 className="w-4 h-4" /> Delete
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="btn btn-ghost px-2">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <select className="bg-bg-2 border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-accent outline-none text-text-1" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+            <option value="All">All Statuses</option>
+            <option value="Valid">Valid</option>
+            <option value="Expired">Expired</option>
+            <option value="Out of Service">Out of Service</option>
+          </select>
+        )}
       </motion.div>
 
       <motion.div variants={itemVariants} className="bg-bg-1 border border-border-main rounded-2xl overflow-hidden shadow-sm">
@@ -219,7 +237,14 @@ export function Calibration({ onNavigate }: Props) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-bg-2/50 border-b border-border-main text-[10px] uppercase tracking-widest text-text-2 font-black">
-                <th className="p-4 pl-6">Equipment Detail</th>
+                <th className="p-4 w-10 pl-6">
+                  <button onClick={toggleSelectAll} className="text-text-3 hover:text-accent transition-colors">
+                    {selectedIds.size === filteredRecords.length && filteredRecords.length > 0
+                      ? <CheckSquare className="w-4 h-4 text-accent" />
+                      : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-4">Equipment Detail</th>
                 <th className="p-4">Certificate & Agency</th>
                 <th className="p-4 text-center">Calibration Cycle</th>
                 <th className="p-4 text-center">Status</th>
@@ -229,7 +254,12 @@ export function Calibration({ onNavigate }: Props) {
             <tbody className="divide-y divide-border-main">
               {filteredRecords.map(r => (
                 <tr key={r.id} className="hover:bg-bg-2/60 transition-all duration-200 group">
-                  <td className="p-4 pl-6">
+                  <td className="p-4 pl-6" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => toggleSelect(r.id)} className="text-text-3 hover:text-accent transition-colors">
+                      {selectedIds.has(r.id) ? <CheckSquare className="w-4 h-4 text-accent" /> : <Square className="w-4 h-4" />}
+                    </button>
+                  </td>
+                  <td className="p-4">
                     <div className="font-bold text-text-1 text-sm">{r.equipmentName}</div>
                     <div className="text-[11px] text-text-3 mt-1 font-mono uppercase tracking-tight">{r.equipmentId} • {r.department}</div>
                   </td>
@@ -271,9 +301,7 @@ export function Calibration({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('calibration-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>

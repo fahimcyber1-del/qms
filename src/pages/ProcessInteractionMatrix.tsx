@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Network, CheckCircle2, AlertCircle, Plus, Download, 
@@ -6,8 +7,6 @@ import {
   ChevronRight, Workflow, Clock, User, Building, X, GitPullRequest, Share2
 } from 'lucide-react';
 import { getTable } from '../db/db';
-import * as XLSX from 'xlsx';
-import { exportTableToPDF } from '../utils/pdfExportUtils';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -84,34 +83,8 @@ export function ProcessInteractionMatrix({ onNavigate }: Props) {
     XLSX.writeFile(wb, "Process_Interaction_Matrix.xlsx");
   };
 
-  const exportPDF = () => {
-    exportTableToPDF({
-      moduleName: 'Process Interaction Matrix (ISO 9001:2015)',
-      columns: ['Process Name', 'Input Source', 'Output Receiver', 'Dept', 'Criticality', 'Status'],
-      rows: filteredRecords.map(r => [r.processName, r.inputSource, r.outputReceiver, r.department, r.criticality, r.status]),
-      fileName: 'Process_Interaction_Matrix_Report'
-    });
-  };
-
-  const exportSinglePDF = async (record: MatrixRecord) => {
-    const { exportDetailToPDF } = await import('../utils/pdfExportUtils');
-    await exportDetailToPDF({
-      moduleName: 'Process Interaction Profile',
-      moduleId: 'process-matrix',
-      recordId: record.id,
-      fileName: `Process_${record.processName.replace(/\s+/g, '_')}`,
-      fields: [
-        { label: 'Process Name',       value: record.processName },
-        { label: 'Input Source',       value: record.inputSource },
-        { label: 'Output Receiver',    value: record.outputReceiver },
-        { label: 'Responsible Dept',   value: record.department },
-        { label: 'Process Owner',      value: record.owner },
-        { label: 'System Criticality', value: record.criticality },
-        { label: 'Interaction Status', value: record.status },
-      ]
-    });
-  };
-
+  
+  
   return (
     <motion.div className="p-4 md:p-8 space-y-8" variants={containerVariants} initial="hidden" animate="show">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -126,9 +99,7 @@ export function ProcessInteractionMatrix({ onNavigate }: Props) {
           <button className="btn btn-ghost flex items-center gap-2" onClick={exportExcel}>
             <Download className="w-4 h-4" /> Excel
           </button>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportPDF}>
-            <Download className="w-4 h-4" /> PDF
-          </button>
+          
           <button className="btn btn-primary flex items-center gap-2" onClick={() => onNavigate('process-interaction-matrix-form', { mode: 'create' })}>
             <Plus className="w-4 h-4" /> New Mapping
           </button>
@@ -231,9 +202,7 @@ export function ProcessInteractionMatrix({ onNavigate }: Props) {
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-blue-500/10 hover:text-blue-500 text-text-2" onClick={() => onNavigate('process-interaction-matrix-form', { mode: 'edit', data: r })}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-indigo-500/10 hover:text-indigo-500 text-text-2" title="Download PDF" onClick={() => exportSinglePDF(r)}>
-                        <Download className="w-4 h-4" />
-                      </button>
+                      
                       <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/10 hover:text-red-500 text-text-2" onClick={() => handleDelete(r.id)}>
                         <Trash2 className="w-4 h-4" />
                       </button>
